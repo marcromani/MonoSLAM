@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
@@ -45,6 +46,9 @@ int main() {
     Size patternSize(9, 6);
     double squareSize = 0.0255;
 
+    // Camera initial state variances
+    vector<double> var({0.02, 0.02, 0.02, 0.18});
+
     // Initialize video feed device
     VideoCapture cap(0);
 
@@ -65,28 +69,43 @@ int main() {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
-        if (map.initMap(gray, patternSize, squareSize)) {
+        if (map.initMap(gray, patternSize, squareSize, var)) {
 
             cout << map.x << endl;
             cout << map.P << endl;
+
+            map.x.at<double>(0, 0) = -1;
+
+            map.x.at<double>(13, 0) = -1;
+            map.x.at<double>(16, 0) = -1;
+            map.x.at<double>(19, 0) = -1;
             map.x.at<double>(22, 0) = -1;
+
+            cout << map.camera.r << endl;
+
             cout << map.features[0].pos << endl;
             cout << map.features[1].pos << endl;
             cout << map.features[2].pos << endl;
             cout << map.features[3].pos << endl;
 
-            cout << map.features[0].roi << endl;
-            imshow(window, map.features[0].image(map.features[0].roi));
+            map.P.at<double>(0, 0) = -1;
 
-            if (waitKey(1000000) == 27)
-                break;
+            map.P.at<double>(13, 13) = -1;
+            map.P.at<double>(16, 16) = -1;
+            map.P.at<double>(19, 19) = -1;
+            map.P.at<double>(22, 22) = -1;
 
-            //break;
+            cout << map.camera.P.at<double>(0, 0) << endl;
+
+            cout << map.features[0].P.at<double>(0, 0) << endl;
+            cout << map.features[1].P.at<double>(0, 0) << endl;
+            cout << map.features[2].P.at<double>(0, 0) << endl;
+            cout << map.features[3].P.at<double>(0, 0) << endl;
+
+            break;
         }
 
         if (waitKey(1) == 27)
             break;
     }
-
-
 }

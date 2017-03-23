@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
@@ -13,13 +11,15 @@ using namespace std;
 /*
  * Initializes the map by detecting a known chessboard pattern. It provides an
  * absolute scale reference, some manually initialized features to track, and
- * the world frame origin and camera pose.
+ * the world frame origin and initial camera pose.
  *
  * frame            Grayscale frame
  * patternSize      Pattern dimensions (see findChessboardCorners)
  * squareSize       Size of a chessboard square, in meters
+ * var              Variance of the initial camera state
  */
-bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize) {
+bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
+                  const vector<double>& var) {
 
     vector<Point2f> imageCorners;
 
@@ -57,53 +57,48 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize) 
     t = - R.t() * tvec;
 
     // Compute the camera orientation quaternion
-    Mat q = computeQuaternion(rvec);
+    Mat q = quaternionInv(computeQuaternion(rvec));
 
-    // Update the map state vector with the camera state vector
+    // Update the map state vector with the camera state vector (zero linear and angular velocity)
     t.copyTo(x(Rect(0, 0, 1, 3)));
     q.copyTo(x(Rect(0, 3, 1, 4)));
 
     // Update the map covariance matrix with the camera covariance matrix
-    P.at<double>(0, 0) = 0.01;
-    P.at<double>(1, 1) = 0.01;
-    P.at<double>(2, 2) = 0.01;
-    P.at<double>(3, 3) = 0;
-    P.at<double>(4, 4) = 0.05;
-    P.at<double>(5, 5) = 0.05;
-    P.at<double>(6, 6) = 0.05;
-    P.at<double>(7, 7) = 0.02;
-    P.at<double>(8, 8) = 0.02;
-    P.at<double>(9, 9) = 0.02;
-    P.at<double>(10, 10) = 0.18;
-    P.at<double>(11, 11) = 0.18;
-    P.at<double>(12, 12) = 0.18;
+    Mat var_r = var[0] * Mat::eye(3, 3, CV_64FC1);
+    Mat var_q = var[1] * Mat::eye(4, 4, CV_64FC1);
+    Mat var_v = var[2] * Mat::eye(3, 3, CV_64FC1);
+    Mat var_w = var[3] * Mat::eye(3, 3, CV_64FC1);
 
-    // Extract the pattern outer corners and update
-    int idx;
+    var_r.copyTo(P(Rect(0, 0, 3, 3)));
+    var_q.copyTo(P(Rect(3, 3, 4, 4)));
+    var_v.copyTo(P(Rect(7, 7, 3, 3)));
+    var_w.copyTo(P(Rect(10, 10, 3, 3)));
+
+    // Feature position covariance (position is known with zero uncertainty)
     Mat cov(3, 3, CV_64FC1, Scalar(0));
 
+    // Extract the chessboard outer corners and initialize features
+    int idx;
+
     idx = 0;
-    addFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
 
     idx = patternSize.width - 1;
-    addFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
 
     idx = (patternSize.height - 1) * patternSize.width;
-    addFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
 
     idx = patternSize.width * patternSize.height - 1;
-    addFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
 
-    updateStates();
-
-    cout << R << endl;
-    cout << camera.R << endl;
+    update();
 
     return true;
 }
 
-void Map::addFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D, const Mat& cov,
-                     const Mat& R, const Mat& t) {
+void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D, const Mat& cov,
+                            const Mat& R, const Mat& t) {
 
     // Resize the state vector to accommodate the new feature position
     x.resize(x.rows + 3);
@@ -131,7 +126,7 @@ void Map::addFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3
                                t));
 }
 
-void Map::updateStates() {
+void Map::update() {
 
     camera.r = x(Rect(0, 0, 1, 3));
     camera.q = x(Rect(0, 3, 1, 4));
