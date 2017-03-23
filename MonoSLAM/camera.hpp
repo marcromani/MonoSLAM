@@ -25,14 +25,12 @@ public:
     /*
      * Constructor for a lens distortion camera model.
      */
-    Camera(const cv::Mat& r_, const cv::Mat& q_, const cv::Mat& v_, const cv::Mat& w_, const cv::Mat& P_,
-           const cv::Mat& K_, const cv::Mat& distCoeffs_, const cv::Size& frameSize_);
+    Camera(const cv::Mat& K, const cv::Mat& distCoeffs, const cv::Size& frameSize);
 
     /*
      * Constructor for a pinhole camera model (distCoeffs is left empty by default).
      */
-    Camera(const cv::Mat& r_, const cv::Mat& q_, const cv::Mat& v_, const cv::Mat& w_, const cv::Mat& P_,
-           const cv::Mat& K_, const cv::Size& frameSize_);
+    Camera(const cv::Mat& K, const cv::Size& frameSize);
 
     /*
      * Returns the distorted version of a camera image, for which no lens distortion

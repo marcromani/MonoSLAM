@@ -5,16 +5,14 @@ using namespace cv;
 /*
  * Constructor for a fully initialized feature.
  */
-Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& pos_, const Mat& normal_,
-                 const Mat& R_, const Mat& t_, const Mat& P_) {
+Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
+                 const Mat& R_, const Mat& t_) {
 
     image_.copyTo(image);
     roi = roi_;
-    pos_.copyTo(pos);
     normal_.copyTo(normal);
     R_.copyTo(R);
     t_.copyTo(t);
-    P_.copyTo(P);
 }
 
 /*

@@ -9,14 +9,8 @@ using namespace cv;
 /*
  * Constructor for a lens distortion camera model.
  */
-Camera::Camera(const Mat& r_, const Mat& q_, const Mat& v_, const Mat& w_, const Mat& P_,
-               const Mat& K_, const Mat& distCoeffs_, const Size& frameSize_) {
+Camera::Camera(const Mat& K_, const Mat& distCoeffs_, const Size& frameSize_) {
 
-    r_.copyTo(r);
-    q_.copyTo(q);
-    v_.copyTo(v);
-    w_.copyTo(w);
-    P_.copyTo(P);
     K_.copyTo(K);
     frameSize = frameSize_;
 
@@ -25,25 +19,15 @@ Camera::Camera(const Mat& r_, const Mat& q_, const Mat& v_, const Mat& w_, const
         distCoeffs_.copyTo(distCoeffs);
         distortionMap = buildDistortionMap(frameSize, K, distCoeffs);
     }
-
-    R = getRotationMatrix(q);
 }
 
 /*
  * Constructor for a pinhole camera model (distCoeffs is left empty by default).
  */
-Camera::Camera(const Mat& r_, const Mat& q_, const Mat& v_, const Mat& w_, const Mat& P_,
-               const Mat& K_, const Size& frameSize_) {
+Camera::Camera(const Mat& K_, const Size& frameSize_) {
 
-    r_.copyTo(r);
-    q_.copyTo(q);
-    v_.copyTo(v);
-    w_.copyTo(w);
-    P_.copyTo(P);
     K_.copyTo(K);
     frameSize = frameSize_;
-
-    R = getRotationMatrix(q);
 }
 
 /*

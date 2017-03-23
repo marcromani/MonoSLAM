@@ -25,8 +25,8 @@ public:
     /*
      * Constructor for a fully initialized feature.
      */
-    Feature(const cv::Mat& image_, const cv::Rect& roi_, const cv::Mat& pos_,
-            const cv::Mat& normal_, const cv::Mat& R_, const cv::Mat& t_, const cv::Mat& P_);
+    Feature(const cv::Mat& image_, const cv::Rect& roi_, const cv::Mat& normal_,
+            const cv::Mat& R_, const cv::Mat& t_);
 
     /*
      * Constructor for a pre-initialized feature.
