@@ -2,7 +2,7 @@
 CC = g++
 
 # Source files
-FILES_C = calibration.cpp
+FILES_C = calibration2.cpp
 
 # Executable
 TARGET = main

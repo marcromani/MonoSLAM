@@ -1,4 +1,5 @@
 #include <iostream>
+#include <vector>
 
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/highgui/highgui.hpp"
@@ -7,6 +8,7 @@
 #include "camera.hpp"
 #include "feature.hpp"
 #include "map.hpp"
+#include "poly.hpp"
 #include "quaternion.hpp"
 #include "util.hpp"
 
@@ -15,6 +17,38 @@ using namespace std;
 
 int main() {
 
+    vector<Point3d> vertices;
+    vector<Point3i> faces;
+
+    vertices.push_back(Point3d(-1, -1, -1));
+    vertices.push_back(Point3d(-1, -1, 1));
+    vertices.push_back(Point3d(-1, 1, -1));
+    vertices.push_back(Point3d(-1, 1, 1));
+    vertices.push_back(Point3d(1, -1, -1));
+    vertices.push_back(Point3d(1, -1, 1));
+    vertices.push_back(Point3d(1, 1, -1));
+    vertices.push_back(Point3d(1, 1, 1));
+
+    faces.push_back(Point3d(0, 1, 5));
+    faces.push_back(Point3d(0, 4, 5));
+    faces.push_back(Point3d(2, 3, 7));
+    faces.push_back(Point3d(2, 6, 7));
+    faces.push_back(Point3d(0, 1, 3));
+    faces.push_back(Point3d(0, 2, 3));
+    faces.push_back(Point3d(4, 5, 7));
+    faces.push_back(Point3d(4, 6, 7));
+    faces.push_back(Point3d(1, 3, 5));
+    faces.push_back(Point3d(3, 5, 7));
+    faces.push_back(Point3d(0, 2, 4));
+    faces.push_back(Point3d(2, 4, 6));
+
+    Polyhedron poly(vertices, faces);
+
+    cout << poly.edges << endl;
+
+    cout << poly.intersect(poly).vertices << endl;
+
+    /*
     // Camera intrinsic matrix
     double K_[] = {700.0852831876811, 0, 309.660602685939,
                    0, 700.3188537735915, 240.0018995844528,
@@ -107,5 +141,5 @@ int main() {
 
         if (waitKey(1) == 27)
             break;
-    }
+    }*/
 }
