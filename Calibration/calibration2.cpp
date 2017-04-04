@@ -1,5 +1,4 @@
 #include <chrono>
-#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -35,8 +34,8 @@ int main(int argc, char *argv[]) {
     }
 
     cout << "Calibrating with a " << cols << "x" << rows
-         << " chessboard with a square size of " << squareSize << " meters" << endl;
-    cout << "Sample reprojection error tolerance is set to " << tol << " pixels" << endl;
+         << " chessboard with a square size of " << squareSize << " meters" << endl
+         << "Sample reprojection error tolerance is set to " << tol << " pixels" << endl;
 
     // Initialize video feed device
     VideoCapture cap(0);
