@@ -2,7 +2,7 @@
 CC = g++
 
 # Source files
-FILES_C = camera.cpp feature.cpp main.cpp map.cpp poly.cpp quaternion.cpp util.cpp
+FILES_C = camera.cpp feature.cpp main.cpp map.cpp quaternion.cpp util.cpp
 
 # Executable
 TARGET = main

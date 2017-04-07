@@ -47,10 +47,10 @@ Mat buildDistortionMap(const Size& size, const Mat& K, const Mat& distCoeffs) {
     double cy = K.at<double>(1, 2);
 
     double k1 = distCoeffs.at<double>(0, 0);
-    double k2 = distCoeffs.at<double>(1, 0);
-    double p1 = distCoeffs.at<double>(2, 0);
-    double p2 = distCoeffs.at<double>(3, 0);
-    double k3 = distCoeffs.total() > 4 ? distCoeffs.at<double>(4, 0) : 0;
+    double k2 = distCoeffs.at<double>(0, 1);
+    double p1 = distCoeffs.at<double>(0, 2);
+    double p2 = distCoeffs.at<double>(0, 3);
+    double k3 = distCoeffs.total() > 4 ? distCoeffs.at<double>(0, 4) : 0;
 
     for (int u = 0; u < 5*size.width; u++) {
         for (int v = 0; v < 5*size.height; v++) {

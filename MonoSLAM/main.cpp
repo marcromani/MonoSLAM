@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "opencv2/calib3d/calib3d.hpp"
@@ -8,7 +9,6 @@
 #include "camera.hpp"
 #include "feature.hpp"
 #include "map.hpp"
-#include "poly.hpp"
 #include "quaternion.hpp"
 #include "util.hpp"
 
@@ -17,58 +17,22 @@ using namespace std;
 
 int main() {
 
-    vector<Point3d> vertices;
-    vector<Point3i> faces;
+    string cameraConfig("../Calibration/camera.xml");
 
-    vertices.push_back(Point3d(-1, -1, -1));
-    vertices.push_back(Point3d(-1, -1, 1));
-    vertices.push_back(Point3d(-1, 1, -1));
-    vertices.push_back(Point3d(-1, 1, 1));
-    vertices.push_back(Point3d(1, -1, -1));
-    vertices.push_back(Point3d(1, -1, 1));
-    vertices.push_back(Point3d(1, 1, -1));
-    vertices.push_back(Point3d(1, 1, 1));
+    FileStorage fs(cameraConfig, FileStorage::READ);
 
-    faces.push_back(Point3d(0, 1, 5));
-    faces.push_back(Point3d(0, 4, 5));
-    faces.push_back(Point3d(2, 3, 7));
-    faces.push_back(Point3d(2, 6, 7));
-    faces.push_back(Point3d(0, 1, 3));
-    faces.push_back(Point3d(0, 2, 3));
-    faces.push_back(Point3d(4, 5, 7));
-    faces.push_back(Point3d(4, 6, 7));
-    faces.push_back(Point3d(1, 3, 5));
-    faces.push_back(Point3d(3, 5, 7));
-    faces.push_back(Point3d(0, 2, 4));
-    faces.push_back(Point3d(2, 4, 6));
+    if (!fs.isOpened()) {
 
-    Polyhedron poly(vertices, faces);
+        cout << "Could not open \"" << cameraConfig << "\": camera settings not loaded" << endl;
+        return -1;
+    }
 
-    cout << poly.edges << endl;
+    Size frameSize;
+    Mat K, distCoeffs;
 
-    cout << poly.intersect(poly).vertices << endl;
-
-    /*
-    // Camera intrinsic matrix
-    double K_[] = {700.0852831876811, 0, 309.660602685939,
-                   0, 700.3188537735915, 240.0018995844528,
-                   0, 0, 1
-                  };
-
-    Mat K(3, 3, CV_64FC1, K_);
-
-    // Camera distortion coeffs
-    double distCoeffs_[] = {0.05753383038985068,
-                            1.237208677293374,
-                            0.003663057067132502,
-                            0.0002173028769866434,
-                            -5.930454782147544
-                           };
-
-    Mat distCoeffs(5, 1, CV_64FC1, distCoeffs_);
-
-    // Camera image size
-    Size frameSize(640, 480);
+    fs["Image_Size"] >> frameSize;
+    fs["Intrinsic_Matrix"] >> K;
+    fs["Distortion_Coefficients"] >> distCoeffs;
 
     // Features patch size
     int patchSize = 11;
@@ -141,5 +105,5 @@ int main() {
 
         if (waitKey(1) == 27)
             break;
-    }*/
+    }
 }
