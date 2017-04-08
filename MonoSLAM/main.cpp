@@ -19,6 +19,8 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
                 double& squareSize);
 void printUsage(const char *execName);
 
+void drawFeatures(const Mat& frame, const vector<Feature>& features);
+
 int main(int argc, char *argv[]) {
 
     string cameraFile;
@@ -72,6 +74,8 @@ int main(int argc, char *argv[]) {
 
     Mat frame, gray;
 
+    bool init;
+
     for (;;) {
 
         cap.read(frame);
@@ -80,41 +84,21 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
-        if (map.initMap(gray, patternSize, squareSize, var)) {
-
-            cout << map.x << endl;
-            cout << map.P << endl;
-
-            map.x.at<double>(0, 0) = -1;
-
-            map.x.at<double>(13, 0) = -1;
-            map.x.at<double>(16, 0) = -1;
-            map.x.at<double>(19, 0) = -1;
-            map.x.at<double>(22, 0) = -1;
-
-            cout << map.camera.r << endl;
-
-            cout << map.features[0].pos << endl;
-            cout << map.features[1].pos << endl;
-            cout << map.features[2].pos << endl;
-            cout << map.features[3].pos << endl;
-
-            map.P.at<double>(0, 0) = -1;
-
-            map.P.at<double>(13, 13) = -1;
-            map.P.at<double>(16, 16) = -1;
-            map.P.at<double>(19, 19) = -1;
-            map.P.at<double>(22, 22) = -1;
-
-            cout << map.camera.P.at<double>(0, 0) << endl;
-
-            cout << map.features[0].P.at<double>(0, 0) << endl;
-            cout << map.features[1].P.at<double>(0, 0) << endl;
-            cout << map.features[2].P.at<double>(0, 0) << endl;
-            cout << map.features[3].P.at<double>(0, 0) << endl;
-
+        if ((init = map.initMap(gray, patternSize, squareSize, var)))
             break;
-        }
+
+        if (waitKey(1) == 27)
+            break;
+    }
+
+    if (!init)
+        return 0;
+
+    for (;;) {
+
+        cap.read(frame);
+
+        imshow(window, frame);
 
         if (waitKey(1) == 27)
             break;
@@ -150,4 +134,17 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
 void printUsage(const char *execName) {
 
     cerr << "Usage: " << execName << " cameraFile patternRows patternCols squareSize (-h for help)" << endl;
+}
+
+void drawFeatures(const Mat& frame, const vector<Feature>& features) {
+
+    for (unsigned int i = 0; i < features.size(); i++) {
+
+        Rect roi = features[i].roi;
+
+        int x = roi.x + roi.width / 2;
+        int y = roi.y + roi.height / 2;
+
+        circle(frame, Point2i(x, y), 5, Scalar(0, 0, 255), 1, CV_AA, 0);
+    }
 }
