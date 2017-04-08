@@ -15,15 +15,27 @@
 using namespace cv;
 using namespace std;
 
-int main() {
+bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
+                double& squareSize);
+void printUsage(const char *execName);
 
-    string cameraConfig("../Calibration/camera.xml");
+int main(int argc, char *argv[]) {
 
-    FileStorage fs(cameraConfig, FileStorage::READ);
+    string cameraFile;
+    int patternRows, patternCols;
+    double squareSize;
+
+    if (!getOptions(argc, argv, cameraFile, patternRows, patternCols, squareSize)) {
+
+        printUsage(argv[0]);
+        return -1;
+    }
+
+    FileStorage fs(cameraFile, FileStorage::READ);
 
     if (!fs.isOpened()) {
 
-        cout << "Could not open \"" << cameraConfig << "\": camera settings not loaded" << endl;
+        cout << "Could not open \"" << cameraFile << "\": camera settings not loaded" << endl;
         return -1;
     }
 
@@ -34,15 +46,16 @@ int main() {
     fs["Intrinsic_Matrix"] >> K;
     fs["Distortion_Coefficients"] >> distCoeffs;
 
+    fs.release();
+
     // Features patch size
     int patchSize = 11;
 
     // Build new map
     Map map(K, distCoeffs, frameSize, patchSize);
 
-    // Chessboard physical properties
-    Size patternSize(9, 6);
-    double squareSize = 0.0255;
+    // Chessboard size
+    Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
     vector<double> var({0.02, 0.02, 0.02, 0.18});
@@ -106,4 +119,35 @@ int main() {
         if (waitKey(1) == 27)
             break;
     }
+}
+
+bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
+                double& squareSize) {
+
+    // Look for the help option
+    for (int i = 1; i < argc; i++)
+        if (string(argv[i]) == "-h")
+            return false;
+
+    // Check the number of input options
+    if (argc != 5)
+        return false;
+
+    cameraFile = argv[1];
+
+    patternRows = (int) strtol(argv[2], NULL, 10);
+    if (patternRows == 0 || errno == ERANGE) return false;
+
+    patternCols = (int) strtol(argv[3], NULL, 10);
+    if (patternCols == 0 || errno == ERANGE) return false;
+
+    squareSize = strtod(argv[4], NULL);
+    if (squareSize == 0 || errno == ERANGE) return false;
+
+    return true;
+}
+
+void printUsage(const char *execName) {
+
+    cerr << "Usage: " << execName << " cameraFile patternRows patternCols squareSize (-h for help)" << endl;
 }
