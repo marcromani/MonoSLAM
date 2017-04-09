@@ -40,4 +40,13 @@ cv::Mat buildDistortionMap(const cv::Size& size, const cv::Mat& K, const cv::Mat
  */
 cv::Rect buildSquare(const cv::Point2i& center, int size);
 
+/*
+ * Removes the nth row and column of a square matrix. The matrix is not reduced in-place,
+ * but a deep copy is returned.
+ *
+ * mat      Matrix to be reduced
+ * idx      Row and column to be deleted
+ */
+cv::Mat reduceMat(const cv::Mat& mat, int idx);
+
 #endif

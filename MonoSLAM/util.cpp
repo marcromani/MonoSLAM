@@ -92,3 +92,32 @@ Rect buildSquare(const Point2i& center, int size) {
 
     return Rect(left, top, size, size);
 }
+
+/*
+ * Removes the nth row and column of a square matrix. The matrix is not reduced in-place,
+ * but a deep copy is returned.
+ *
+ * mat      Matrix to be reduced
+ * idx      Row and column to be deleted
+ */
+Mat reduceMat(const Mat& mat, int idx) {
+
+    int n = mat.rows;
+
+    Mat reduced(n - 1, n - 1, mat.type());
+
+    if (idx == 0)
+        mat(Rect(1, 1, n - 1, n - 1)).copyTo(reduced(Rect(0, 0, n - 1, n - 1)));
+
+    else if (idx == n - 1)
+        mat(Rect(0, 0, n - 1, n - 1)).copyTo(reduced(Rect(0, 0, n - 1, n - 1)));
+
+    else {
+        mat(Rect(0, 0, idx, idx)).copyTo(reduced(Rect(0, 0, idx, idx)));
+        mat(Rect(idx+1, 0, n-idx-1, idx)).copyTo(reduced(Rect(idx, 0, n-idx-1, idx)));
+        mat(Rect(0, idx+1, idx, n-idx-1)).copyTo(reduced(Rect(0, idx, idx, n-idx-1)));
+        mat(Rect(idx+1, idx+1, n-idx-1, n-idx-1)).copyTo(reduced(Rect(idx, idx, n-idx-1, n-idx-1)));
+    }
+
+    return reduced;
+}
