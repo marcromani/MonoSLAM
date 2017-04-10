@@ -21,7 +21,6 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
 void printUsage(const char *execName);
 
 void drawFeatures(const Mat& frame, const vector<Feature>& features);
-Mat findCandidates(const Mat& frame, const vector<Feature>& features);
 
 int main(int argc, char *argv[]) {
 
@@ -52,17 +51,23 @@ int main(int argc, char *argv[]) {
 
     fs.release();
 
-    // Features patch size
     int patchSize = 11;
+    int minDensity = 8;
+    int maxDensity = 18;
+    double failTol = 0.4;
 
     // Build new map
-    Map map(K, distCoeffs, frameSize, patchSize);
+    Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTol);
 
     // Chessboard size
     Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
-    vector<double> var({0.02, 0.02, 0.02, 0.18});
+    vector<double> var({0.02, 0.02, 0.02,
+                        0.02, 0.02, 0.02, 0.02,
+                        0.1, 0.1, 0.1,
+                        0.18, 0.18, 0.18
+                       });
 
     // Initialize video feed device
     VideoCapture cap(0);
@@ -71,7 +76,7 @@ int main(int argc, char *argv[]) {
         return -1;
 
     // Create a window
-    string window = "Test";
+    string window = "MonoSLAM";
     namedWindow(window, CV_WINDOW_AUTOSIZE);
 
     Mat frame, gray;
@@ -101,19 +106,6 @@ int main(int argc, char *argv[]) {
         cap.read(frame);
 
         cvtColor(frame, gray, CV_BGR2GRAY);
-
-        drawFeatures(frame, map.features);
-
-        Mat corners = findCandidates(gray, map.features);
-
-        // Draw a circle around corners
-        for (int j = 0; j < corners.rows; j++) {
-            for (int i = 0; i < corners.cols; i++) {
-
-                Point p = corners.at<Point2f>(j, i);
-                circle(frame, p, 5, Scalar(0, 0, 255), 1, CV_AA, 0);
-            }
-        }
 
         imshow(window, frame);
 
@@ -164,48 +156,4 @@ void drawFeatures(const Mat& frame, const vector<Feature>& features) {
 
         circle(frame, Point2i(x, y), 5, Scalar(0, 0, 255), 1, CV_AA, 0);
     }
-}
-
-Mat findCandidates(const Mat& frame, const vector<Feature>& features) {
-
-    Mat corners;
-
-    int maxCorners = 15 - features.size();
-    double qualityLevel = 0.2;
-    double minDistance = 60;
-
-    Mat mask(frame.size(), CV_8UC1, Scalar(0));
-
-    // Set a margin around the mask to enclose the detected corners inside
-    // a rectangle and avoid premature corner loss due to camera movement
-    int pad = 30;
-    mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
-
-    // Compute the additional length that a feature patch must have
-    // so that new detected corners are the same minimum distance apart
-    // from already initialized features than from themselves
-    int len = 2 * minDistance - features[0].roi.width;
-
-    for (unsigned int i = 0; i < features.size(); i++) {
-
-        Rect roi = features[i].roi;
-
-        roi.x = max(0, roi.x - len / 2);
-        roi.y = max(0, roi.y - len / 2);
-
-        roi.width += len;
-        roi.height += len;
-
-        if (roi.x + roi.width > frame.cols)
-            roi.width = frame.cols - roi.x;
-        if (roi.y + roi.height > frame.rows)
-            roi.height = frame.rows - roi.y;
-
-        // Update the mask to reject the region around the ith feature
-        mask(roi).setTo(Scalar(0));
-    }
-
-    goodFeaturesToTrack(frame, corners, maxCorners, qualityLevel, minDistance, mask);
-
-    return corners;
 }

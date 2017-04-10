@@ -11,12 +11,16 @@ using namespace std;
 /*
  * Initializes the map by detecting a known chessboard pattern. It provides an
  * absolute scale reference, some manually initialized features to track, and
- * the world frame origin and initial camera pose.
+ * the world frame origin and initial camera pose. The world frame origin is
+ * positioned at the top left corner of the pattern, with the x axis pointing
+ * along the pattern height and the y axis pointing along the pattern width.
+ * Note that the z axis is determined by the right-hand rule (see solvePnP).
+ * It is assumed the camera has zero linear and angular velocities.
  *
  * frame            Grayscale frame
  * patternSize      Pattern dimensions (see findChessboardCorners)
  * squareSize       Size of a chessboard square, in meters
- * var              Variance of the initial camera state
+ * var              Variances of the initial camera state components
  */
 bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
                   const vector<double>& var) {
@@ -59,45 +63,61 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     // Compute the camera orientation quaternion
     Mat q = quaternionInv(computeQuaternion(rvec));
 
-    // Update the map state vector with the camera state vector (zero linear and angular velocity)
+    // Update the map state vector with the camera state vector (zero linear and angular velocities)
     t.copyTo(x(Rect(0, 0, 1, 3)));
     q.copyTo(x(Rect(0, 3, 1, 4)));
 
     // Update the map covariance matrix with the camera covariance matrix
-    Mat var_r = var[0] * Mat::eye(3, 3, CV_64FC1);
-    Mat var_q = var[1] * Mat::eye(4, 4, CV_64FC1);
-    Mat var_v = var[2] * Mat::eye(3, 3, CV_64FC1);
-    Mat var_w = var[3] * Mat::eye(3, 3, CV_64FC1);
+    P = Mat::eye(13, 13, CV_64FC1) * Mat(var);
 
-    var_r.copyTo(P(Rect(0, 0, 3, 3)));
-    var_q.copyTo(P(Rect(3, 3, 4, 4)));
-    var_v.copyTo(P(Rect(7, 7, 3, 3)));
-    var_w.copyTo(P(Rect(10, 10, 3, 3)));
-
-    // Feature position covariance (position is known with zero uncertainty)
-    Mat cov(3, 3, CV_64FC1, Scalar(0));
-
-    // Extract the chessboard outer corners and initialize features
+    // Extract the chessboard outer corners and add initial features
     int idx;
 
     idx = 0;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = patternSize.width - 1;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = (patternSize.height - 1) * patternSize.width;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = patternSize.width * patternSize.height - 1;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], cov, R, t);
-
-    update();
+    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     return true;
 }
 
-void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D, const Mat& cov,
+bool Map::trackNewCandidates(const cv::Mat& frame) {
+
+    // If there are enough features there is no need to detect new ones
+    if (features.size() >= minFeatureDensity)
+        return false;
+
+    // The same applies if there are few features but candidates are already being tracked
+    if (!candidates.empty())
+        return false;
+
+    vector<Point2f> corners = findCorners(frame);
+
+    // TODO: add pre-initialized features
+
+    return true;
+}
+
+/*
+ * Adds an initial feature to the map. Its position is known with zero uncertainty
+ * hence the associated covariance matrix is the zero matrix. Moreover, since the
+ * feature patch lies on the chessboard pattern its normal vector is taken to be
+ * the z axis unit vector.
+ *
+ * frame    Grayscale frame
+ * pos2D    Feature position in the image, in pixels
+ * pos3D    Feature position, in world coordinates
+ * R        Camera rotation (world to camera)
+ * t        Camera position, in world coordinates
+ */
+void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
                             const Mat& R, const Mat& t) {
 
     // Resize the state vector to accommodate the new feature position
@@ -112,9 +132,6 @@ void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
     P.copyTo(tmp(Rect(0, 0, P.cols, P.rows)));
     P = tmp;
 
-    // Copy the new feature covariance matrix into the map state covariance matrix
-    cov.copyTo(P(Rect(P.cols - 3, P.rows - 3, 3, 3)));
-
     // Compute the feature patch normal
     double n[] = {0, 0, 1};
     Mat normal(3, 1, CV_64FC1, n);
@@ -126,6 +143,11 @@ void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
                                t));
 }
 
+/*
+ * Updates the camera and features data with the map state vector and covariance matrix
+ * data. Only shallow copies are performed. This function should be called whenever the
+ * current state of some (or all) of the system parts is required.
+ */
 void Map::update() {
 
     camera.r = x(Rect(0, 0, 1, 3));
@@ -142,4 +164,48 @@ void Map::update() {
         features[i].pos = x(Rect(0, 13 + 3*i, 1, 3));
         features[i].P = P(Rect(13 + 3*i, 13 + 3*i, 3, 3));
     }
+}
+
+vector<Point2f> Mat::findCorners(const Mat& frame) {
+
+    vector<Point2f> corners;
+
+    int maxCorners = maxFeatureDensity - features.size();
+    double qualityLevel = 0.2;
+    double minDistance = 60;
+
+    Mat mask(frame.size(), CV_8UC1, Scalar(0));
+
+    // Set a margin around the mask to enclose the detected corners inside
+    // a rectangle and avoid premature corner loss due to camera movement
+    int pad = 30;
+    mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
+
+    // Compute the additional length that a feature patch must have
+    // so that new detected corners are the same minimum distance apart
+    // from already initialized features than from themselves
+    int len = 2 * minDistance - patchSize;
+
+    for (unsigned int i = 0; i < features.size(); i++) {
+
+        Rect roi = features[i].roi;
+
+        roi.x = max(0, roi.x - len / 2);
+        roi.y = max(0, roi.y - len / 2);
+
+        roi.width += len;
+        roi.height += len;
+
+        if (roi.x + roi.width > frame.cols)
+            roi.width = frame.cols - roi.x;
+        if (roi.y + roi.height > frame.rows)
+            roi.height = frame.rows - roi.y;
+
+        // Update the mask to reject the region around the ith feature
+        mask(roi).setTo(Scalar(0));
+    }
+
+    goodFeaturesToTrack(frame, corners, maxCorners, qualityLevel, minDistance, mask);
+
+    return corners;
 }
