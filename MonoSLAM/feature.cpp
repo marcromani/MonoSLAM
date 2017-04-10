@@ -13,6 +13,8 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
     normal_.copyTo(normal);
     R_.copyTo(R);
     t_.copyTo(t);
+
+    failRatio = 0;
 }
 
 /*
@@ -38,4 +40,6 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& 
         depths[i] = depthInterval.x + step * i;
 
     probs.resize(depthSamples, 1.0 / depthSamples);
+
+    failRatio = 0;
 }

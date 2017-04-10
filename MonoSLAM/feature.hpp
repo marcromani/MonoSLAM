@@ -18,6 +18,8 @@ public:
 
     cv::Mat P;                      // Feature state (position) covariance matrix
 
+    double failRatio;               // Proportion of times the feature could not be matched
+
     cv::Mat dir;                    // Feature line unit direction vector, in world coordinates
     std::vector<double> depths;     // Feature depth hypotheses
     std::vector<double> probs;      // Hypotheses probabilities

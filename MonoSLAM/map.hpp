@@ -18,6 +18,8 @@ public:
 
     int patchSize;                      // Size of the feature planar patch
 
+    double failTolerance;               // Maximum ratio of matching fails before a feature is rejected
+
     cv::Mat x;                          // Map state (camera and features states)
     cv::Mat P;                          // Map state covariance matrix
 
@@ -27,9 +29,11 @@ public:
     Map(const cv::Mat& K,
         const cv::Mat& distCoeffs,
         const cv::Size& frameSize,
-        int patchSize_) :
+        int patchSize_,
+        double failTolerance_) :
         camera(K, distCoeffs, frameSize),
         patchSize(patchSize_),
+        failTolerance(failTolerance_),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
         P(13, 13, CV_64FC1, cv::Scalar(0)) {}
 
@@ -38,9 +42,11 @@ public:
      */
     Map(const cv::Mat& K,
         const cv::Size& frameSize,
-        int patchSize_) :
+        int patchSize_,
+        double failTolerance_) :
         camera(K, frameSize),
         patchSize(patchSize_),
+        failTolerance(failTolerance_),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
         P(13, 13, CV_64FC1, cv::Scalar(0)) {}
 
