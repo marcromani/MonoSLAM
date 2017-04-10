@@ -107,6 +107,8 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
+        map.trackNewCandidates(gray);
+
         imshow(window, frame);
 
         if (waitKey(1) == 27)

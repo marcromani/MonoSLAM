@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
@@ -68,9 +70,9 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     q.copyTo(x(Rect(0, 3, 1, 4)));
 
     // Update the map covariance matrix with the camera covariance matrix
-    P = Mat::eye(13, 13, CV_64FC1) * Mat(var);
+    P = Mat::diag(Mat(var));
 
-    // Extract the chessboard outer corners and add initial features
+    // Extract the chessboard outer corners and add the initial features
     int idx;
 
     idx = 0;
@@ -88,10 +90,10 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     return true;
 }
 
-bool Map::trackNewCandidates(const cv::Mat& frame) {
+bool Map::trackNewCandidates(const Mat& frame) {
 
-    // If there are enough features there is no need to detect new ones
-    if (features.size() >= minFeatureDensity)
+    // If there are enough visible features there is no need to detect new ones
+    if (int(visibleFeatures.size()) >= minFeatureDensity)
         return false;
 
     // The same applies if there are few features but candidates are already being tracked
@@ -99,6 +101,8 @@ bool Map::trackNewCandidates(const cv::Mat& frame) {
         return false;
 
     vector<Point2f> corners = findCorners(frame);
+
+    cout << visibleFeatures.size() << endl;
 
     // TODO: add pre-initialized features
 
@@ -109,7 +113,7 @@ bool Map::trackNewCandidates(const cv::Mat& frame) {
  * Adds an initial feature to the map. Its position is known with zero uncertainty
  * hence the associated covariance matrix is the zero matrix. Moreover, since the
  * feature patch lies on the chessboard pattern its normal vector is taken to be
- * the z axis unit vector.
+ * the z axis unit vector. The feature is also set as visible.
  *
  * frame    Grayscale frame
  * pos2D    Feature position in the image, in pixels
@@ -136,11 +140,12 @@ void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
     double n[] = {0, 0, 1};
     Mat normal(3, 1, CV_64FC1, n);
 
-    features.push_back(Feature(frame,
-                               buildSquare(Point2i(pos2D), patchSize),
-                               normal,
-                               R,
-                               t));
+    Feature feat(frame, buildSquare(Point2i(pos2D), patchSize), normal, R, t);
+    features.push_back(feat);
+
+    // Set the feature as visible
+    feat.currentPos2D = pos2D;
+    visibleFeatures.push_back(&feat);
 }
 
 /*
@@ -166,13 +171,13 @@ void Map::update() {
     }
 }
 
-vector<Point2f> Mat::findCorners(const Mat& frame) {
+vector<Point2f> Map::findCorners(const Mat& frame) {
 
     vector<Point2f> corners;
 
-    int maxCorners = maxFeatureDensity - features.size();
+    int maxCorners = maxFeatureDensity - visibleFeatures.size();
+    int minDistance = 60;
     double qualityLevel = 0.2;
-    double minDistance = 60;
 
     Mat mask(frame.size(), CV_8UC1, Scalar(0));
 
@@ -181,20 +186,12 @@ vector<Point2f> Mat::findCorners(const Mat& frame) {
     int pad = 30;
     mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
 
-    // Compute the additional length that a feature patch must have
-    // so that new detected corners are the same minimum distance apart
-    // from already initialized features than from themselves
-    int len = 2 * minDistance - patchSize;
+    for (unsigned int i = 0; i < visibleFeatures.size(); i++) {
 
-    for (unsigned int i = 0; i < features.size(); i++) {
+        Rect roi = buildSquare(visibleFeatures[i]->currentPos2D, 2 * minDistance);
 
-        Rect roi = features[i].roi;
-
-        roi.x = max(0, roi.x - len / 2);
-        roi.y = max(0, roi.y - len / 2);
-
-        roi.width += len;
-        roi.height += len;
+        roi.x = max(0, roi.x);
+        roi.y = max(0, roi.y);
 
         if (roi.x + roi.width > frame.cols)
             roi.width = frame.cols - roi.x;

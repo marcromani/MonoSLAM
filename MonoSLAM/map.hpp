@@ -12,19 +12,21 @@ class Map {
 
 public:
 
-    Camera camera;                      // Camera
-    std::vector<Feature> features;      // Initialized map features
-    std::vector<Feature> candidates;    // Pre-initialized features
+    Camera camera;                              // Camera
+    std::vector<Feature> features;              // Initialized map features
+    std::vector<Feature> candidates;            // Pre-initialized features
 
-    int patchSize;                      // Size of the feature planar patch
+    int patchSize;                              // Size of the feature planar patch
 
-    int minFeatureDensity;              // Minimum number of features per frame
-    int maxFeatureDensity;              // Maximum number of features per frame
+    int minFeatureDensity;                      // Minimum number of features per frame
+    int maxFeatureDensity;                      // Maximum number of features per frame
 
-    double failTolerance;               // Max ratio of matching failures before a feature is rejected
+    double failTolerance;                       // Max ratio of matching failures before a feature is rejected
 
-    cv::Mat x;                          // Map state (camera and features states)
-    cv::Mat P;                          // Map state covariance matrix
+    std::vector<Feature *> visibleFeatures;     // Currently visible features
+
+    cv::Mat x;                                  // Map state (camera and features states)
+    cv::Mat P;                                  // Map state covariance matrix
 
     /*
      * Constructor for a lens distortion camera model.
@@ -104,7 +106,7 @@ private:
      */
     void update();
 
-    vector<Point2f> findCorners(const Mat& frame);
+    std::vector<cv::Point2f> findCorners(const cv::Mat& frame);
 };
 
 #endif

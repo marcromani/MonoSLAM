@@ -20,6 +20,8 @@ public:
 
     double failRatio;               // Proportion of times the feature could not be matched
 
+    cv::Point2i currentPos2D;       // Current pixel position (for a visible feature)
+
     cv::Mat dir;                    // Feature line unit direction vector, in world coordinates
     std::vector<double> depths;     // Feature depth hypotheses
     std::vector<double> probs;      // Hypotheses probabilities
