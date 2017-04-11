@@ -27,7 +27,9 @@ public:
     std::vector<double> probs;      // Hypotheses probabilities
 
     /*
-     * Constructor for a fully initialized feature.
+     * Constructor for a fully initialized feature. It is a convenient method used only
+     * during the map initialization step, when manually initialized features are added
+     * with zero position uncertainty.
      */
     Feature(const cv::Mat& image_, const cv::Rect& roi_, const cv::Mat& normal_,
             const cv::Mat& R_, const cv::Mat& t_);

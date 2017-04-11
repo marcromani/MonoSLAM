@@ -3,8 +3,10 @@
 using namespace cv;
 
 /*
- * Constructor for a fully initialized feature.
- */
+* Constructor for a fully initialized feature. It is a convenient method used only
+* during the map initialization step, when manually initialized features are added
+* with zero position uncertainty.
+*/
 Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
                  const Mat& R_, const Mat& t_) {
 
@@ -15,6 +17,9 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
     t_.copyTo(t);
 
     failRatio = 0;
+
+    // Manually added features are visible
+    currentPos2D = Point2i(roi.x + roi.width / 2, roi.y + roi.height / 2);
 }
 
 /*
@@ -40,6 +45,4 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& 
         depths[i] = depthInterval.x + step * i;
 
     probs.resize(depthSamples, 1.0 / depthSamples);
-
-    failRatio = 0;
 }

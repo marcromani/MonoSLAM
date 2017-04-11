@@ -80,25 +80,6 @@ public:
     bool initMap(const cv::Mat& frame, const cv::Size& patternSize, double squareSize,
                  const std::vector<double>& var);
 
-    bool trackNewCandidates(const cv::Mat& frame);
-
-private:
-
-    /*
-     * Adds an initial feature to the map. Its position is known with zero uncertainty
-     * hence the associated covariance matrix is the zero matrix. Moreover, since the
-     * feature patch lies on the chessboard pattern its normal vector is taken to be
-     * the z axis unit vector.
-     *
-     * frame    Grayscale frame
-     * pos2D    Feature position in the image, in pixels
-     * pos3D    Feature position, in world coordinates
-     * R        Camera rotation (world to camera)
-     * t        Camera position, in world coordinates
-     */
-    void addInitialFeature(const cv::Mat& frame, const cv::Point2f& pos2D, const cv::Point3f& pos3D,
-                           const cv::Mat& R, const cv::Mat& t);
-
     /*
      * Updates the camera and features data with the map state vector and covariance matrix
      * data. Only shallow copies are performed. This function should be called whenever the
@@ -106,7 +87,39 @@ private:
      */
     void update();
 
-    std::vector<cv::Point2f> findCorners(const cv::Mat& frame);
+    /*
+     * Detects corners and initializes new feature candidates whenever there are not
+     * enough visible features and no candidates are being tracked. Returns a boolean
+     * indicating whether new candidates were detected or not. It is mandatory that
+     * the map be updated before calling this method (see update).
+     *
+     * frame    Grayscale frame
+     */
+    bool trackNewCandidates(const cv::Mat& frame);
+
+    void drawVisibleFeatures(const cv::Mat& frame);
+
+private:
+
+    /*
+     * Adds an initial feature to the map. Its position is known with zero uncertainty
+     * hence the associated covariance matrix is the zero matrix. Moreover, since the
+     * feature patch lies on the chessboard pattern its normal vector is taken to be
+     * the z axis unit vector. The feature is also set as visible. If the feature patch
+     * exceeds the frame boundaries the feature is not initialized and false is returned.
+     *
+     * frame    Grayscale frame
+     * pos2D    Feature position in the image, in pixels
+     * pos3D    Feature position, in world coordinates
+     * R        Camera rotation (world to camera)
+     * t        Camera position, in world coordinates
+     */
+    bool addInitialFeature(const cv::Mat& frame, const cv::Point2f& pos2D, const cv::Point3f& pos3D,
+                           const cv::Mat& R, const cv::Mat& t);
+
+    cv::Mat findCorners(const cv::Mat& frame);
+
+    void reset();
 };
 
 #endif

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 
 #include "opencv2/calib3d/calib3d.hpp"
@@ -74,78 +75,34 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
 
     // Extract the chessboard outer corners and add the initial features
     int idx;
+    bool init = true;
 
     idx = 0;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+    init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = patternSize.width - 1;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+    init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = (patternSize.height - 1) * patternSize.width;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+    init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     idx = patternSize.width * patternSize.height - 1;
-    addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+    init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+
+    if (!init) {
+
+        reset();
+        return false;
+    }
+
+    // Add the features to the visible list. Note that pointers
+    // in visibleFeatures may break if the features vector is
+    // automatically resized and reallocated. It does not happen
+    // here because all features are already initialized.
+    for (unsigned int i = 0; i < features.size(); i++)
+        visibleFeatures.push_back(&features[i]);
 
     return true;
-}
-
-bool Map::trackNewCandidates(const Mat& frame) {
-
-    // If there are enough visible features there is no need to detect new ones
-    if (int(visibleFeatures.size()) >= minFeatureDensity)
-        return false;
-
-    // The same applies if there are few features but candidates are already being tracked
-    if (!candidates.empty())
-        return false;
-
-    vector<Point2f> corners = findCorners(frame);
-
-    cout << visibleFeatures.size() << endl;
-
-    // TODO: add pre-initialized features
-
-    return true;
-}
-
-/*
- * Adds an initial feature to the map. Its position is known with zero uncertainty
- * hence the associated covariance matrix is the zero matrix. Moreover, since the
- * feature patch lies on the chessboard pattern its normal vector is taken to be
- * the z axis unit vector. The feature is also set as visible.
- *
- * frame    Grayscale frame
- * pos2D    Feature position in the image, in pixels
- * pos3D    Feature position, in world coordinates
- * R        Camera rotation (world to camera)
- * t        Camera position, in world coordinates
- */
-void Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
-                            const Mat& R, const Mat& t) {
-
-    // Resize the state vector to accommodate the new feature position
-    x.resize(x.rows + 3);
-
-    // Copy the new feature position into the state vector
-    double pos3D_[] = {pos3D.x, pos3D.y, pos3D.z};
-    Mat(3, 1, CV_64FC1, pos3D_).copyTo(x(Rect(0, x.rows - 3, 1, 3)));
-
-    // Resize the state covariance matrix
-    Mat tmp(P.rows + 3, P.cols + 3, CV_64FC1, Scalar(0));
-    P.copyTo(tmp(Rect(0, 0, P.cols, P.rows)));
-    P = tmp;
-
-    // Compute the feature patch normal
-    double n[] = {0, 0, 1};
-    Mat normal(3, 1, CV_64FC1, n);
-
-    Feature feat(frame, buildSquare(Point2i(pos2D), patchSize), normal, R, t);
-    features.push_back(feat);
-
-    // Set the feature as visible
-    feat.currentPos2D = pos2D;
-    visibleFeatures.push_back(&feat);
 }
 
 /*
@@ -171,9 +128,114 @@ void Map::update() {
     }
 }
 
-vector<Point2f> Map::findCorners(const Mat& frame) {
+/*
+ * Detects corners and initializes new feature candidates whenever there are not
+ * enough visible features and no candidates are being tracked. Returns a boolean
+ * indicating whether new candidates were detected or not. It is mandatory that
+ * the map be updated before calling this method (see update).
+ *
+ * frame    Grayscale frame
+ */
+bool Map::trackNewCandidates(const Mat& frame) {
 
-    vector<Point2f> corners;
+    // If there are enough visible features there is no need to detect new ones
+    if (int(visibleFeatures.size()) >= minFeatureDensity)
+        return false;
+
+    // The same applies if there are few features but candidates are already being tracked
+    if (!candidates.empty())
+        return false;
+
+    Mat corners = findCorners(frame);
+
+    // If no good corners were found just pass
+    if (corners.empty())
+        return false;
+
+    // Undistort and normalize the pixels
+    Mat undistorted;
+    undistortPoints(corners, undistorted, camera.K, camera.distCoeffs);
+
+    // Add the z component and reshape to 3xN
+    undistorted = undistorted.reshape(1).t();
+    undistorted.resize(3, Scalar(1));
+
+    // Compute the directions (in world coordinates) of the lines that contain the features
+    undistorted.convertTo(undistorted, CV_64FC1);
+    Mat directions = camera.R * undistorted;
+
+    Point2d depthInterval(0.05, 5);
+    int depthSamples = 100;
+
+    // Normalize the direction vectors and add new pre-initialized features
+    for (int i = 0; i < directions.cols; i++) {
+
+        normalize(directions.col(i), directions.col(i));
+
+        Point2i p(corners.at<Point2f>(i));
+        candidates.push_back(Feature(frame, buildSquare(p, patchSize), camera.R.t(), camera.r,
+                                     directions.col(i), depthInterval, depthSamples));
+    }
+
+    return true;
+}
+
+void Map::drawVisibleFeatures(const Mat& frame) {
+
+    for (unsigned int i = 0; i < visibleFeatures.size(); i++)
+        circle(frame, visibleFeatures[i]->currentPos2D, 5, Scalar(0, 0, 255), 1, CV_AA, 0);
+}
+
+/*
+ * Adds an initial feature to the map. Its position is known with zero uncertainty
+ * hence the associated covariance matrix is the zero matrix. Moreover, since the
+ * feature patch lies on the chessboard pattern its normal vector is taken to be
+ * the z axis unit vector. The feature is also set as visible. If the feature patch
+ * exceeds the frame boundaries the feature is not initialized and false is returned.
+ *
+ * frame    Grayscale frame
+ * pos2D    Feature position in the image, in pixels
+ * pos3D    Feature position, in world coordinates
+ * R        Camera rotation (world to camera)
+ * t        Camera position, in world coordinates
+ */
+bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
+                            const Mat& R, const Mat& t) {
+
+    // Resize the state vector to accommodate the new feature position
+    x.resize(x.rows + 3);
+
+    // Copy the new feature position into the state vector
+    double pos3D_[] = {pos3D.x, pos3D.y, pos3D.z};
+    Mat(3, 1, CV_64FC1, pos3D_).copyTo(x(Rect(0, x.rows - 3, 1, 3)));
+
+    // Resize the state covariance matrix
+    Mat tmp(P.rows + 3, P.cols + 3, CV_64FC1, Scalar(0));
+    P.copyTo(tmp(Rect(0, 0, P.cols, P.rows)));
+    P = tmp;
+
+    // Compute the feature patch normal
+    double n[] = {0, 0, 1};
+    Mat normal(3, 1, CV_64FC1, n);
+
+    Rect roi = buildSquare(Point2i(pos2D), patchSize);
+
+    bool overflow = roi.x < 0 || roi.x + roi.width > frame.cols ||
+                    roi.y < 0 || roi.y + roi.height > frame.rows;
+
+    // Check if the feature patch is outside the frame boundaries
+    if (overflow)
+        return false;
+
+    // Add the feature
+    features.push_back(Feature(frame, roi, normal, R, t));
+
+    return true;
+}
+
+Mat Map::findCorners(const Mat& frame) {
+
+    Mat corners;
 
     int maxCorners = maxFeatureDensity - visibleFeatures.size();
     int minDistance = 60;
@@ -182,7 +244,9 @@ vector<Point2f> Map::findCorners(const Mat& frame) {
     Mat mask(frame.size(), CV_8UC1, Scalar(0));
 
     // Set a margin around the mask to enclose the detected corners inside
-    // a rectangle and avoid premature corner loss due to camera movement
+    // a rectangle and avoid premature corner loss due to camera movement.
+    // Pad should be larger than patchSize/2 so that new features patches
+    // fit inside the camera frame.
     int pad = 30;
     mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
 
@@ -205,4 +269,14 @@ vector<Point2f> Map::findCorners(const Mat& frame) {
     goodFeaturesToTrack(frame, corners, maxCorners, qualityLevel, minDistance, mask);
 
     return corners;
+}
+
+void Map::reset() {
+
+    features.clear();
+    candidates.clear();
+    visibleFeatures.clear();
+
+    x = Mat(13, 1, CV_64FC1, cv::Scalar(0));
+    P = Mat(13, 13, CV_64FC1, cv::Scalar(0));
 }

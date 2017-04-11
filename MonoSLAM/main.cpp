@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -19,8 +18,6 @@ using namespace std;
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
                 double& squareSize);
 void printUsage(const char *execName);
-
-void drawFeatures(const Mat& frame, const vector<Feature>& features);
 
 int main(int argc, char *argv[]) {
 
@@ -51,7 +48,7 @@ int main(int argc, char *argv[]) {
 
     fs.release();
 
-    int patchSize = 11;
+    int patchSize = 25;
     int minDensity = 8;
     int maxDensity = 18;
     double failTol = 0.4;
@@ -107,6 +104,8 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
+        map.update();
+        map.drawVisibleFeatures(frame);
         map.trackNewCandidates(gray);
 
         imshow(window, frame);
@@ -145,17 +144,4 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
 void printUsage(const char *execName) {
 
     cerr << "Usage: " << execName << " cameraFile patternRows patternCols squareSize (-h for help)" << endl;
-}
-
-void drawFeatures(const Mat& frame, const vector<Feature>& features) {
-
-    for (unsigned int i = 0; i < features.size(); i++) {
-
-        Rect roi = features[i].roi;
-
-        int x = roi.x + roi.width / 2;
-        int y = roi.y + roi.height / 2;
-
-        circle(frame, Point2i(x, y), 5, Scalar(0, 0, 255), 1, CV_AA, 0);
-    }
 }
