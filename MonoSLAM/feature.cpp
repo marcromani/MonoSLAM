@@ -16,10 +16,8 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
     R_.copyTo(R);
     t_.copyTo(t);
 
-    failRatio = 0;
-
-    // Manually added features are visible
-    currentPos2D = Point2i(roi.x + roi.width / 2, roi.y + roi.height / 2);
+    matchingFails = 0;
+    matchingAttempts = 1;
 }
 
 /*
@@ -45,4 +43,7 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& 
         depths[i] = depthInterval.x + step * i;
 
     probs.resize(depthSamples, 1.0 / depthSamples);
+
+    matchingFails = 0;
+    matchingAttempts = 0;
 }

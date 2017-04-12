@@ -104,8 +104,7 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
-        map.update();
-        map.drawVisibleFeatures(frame);
+        map.drawInViewFeatures(frame);
         map.trackNewCandidates(gray);
 
         imshow(window, frame);

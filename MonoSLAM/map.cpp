@@ -95,22 +95,18 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
         return false;
     }
 
-    // Add the features to the visible list. Note that pointers
-    // in visibleFeatures may break if the features vector is
-    // automatically resized and reallocated. It does not happen
-    // here because all features are already initialized.
-    for (unsigned int i = 0; i < features.size(); i++)
-        visibleFeatures.push_back(&features[i]);
-
     return true;
 }
 
 /*
- * Updates the camera and features data with the map state vector and covariance matrix
- * data. Only shallow copies are performed. This function should be called whenever the
- * current state of some (or all) of the system parts is required.
+ * Updates the camera and features data with the map state vector and map state
+ * covariance matrix data. Only shallow copies are performed. This function should
+ * be called whenever the current state of the system must be broadcast to each
+ * of its parts. This method exists because the map state (x and P) is continuously
+ * updated by the EKF and these changes will not be directly reflected in the camera
+ * and features instances.
  */
-void Map::update() {
+void Map::broadcastData() {
 
     camera.r = x(Rect(0, 0, 1, 3));
     camera.q = x(Rect(0, 3, 1, 4));
@@ -131,15 +127,14 @@ void Map::update() {
 /*
  * Detects corners and initializes new feature candidates whenever there are not
  * enough visible features and no candidates are being tracked. Returns a boolean
- * indicating whether new candidates were detected or not. It is mandatory that
- * the map be updated before calling this method (see update).
+ * indicating whether new candidates were detected or not.
  *
  * frame    Grayscale frame
  */
 bool Map::trackNewCandidates(const Mat& frame) {
 
     // If there are enough visible features there is no need to detect new ones
-    if (int(visibleFeatures.size()) >= minFeatureDensity)
+    if (numVisibleFeatures >= minFeatureDensity)
         return false;
 
     // The same applies if there are few features but candidates are already being tracked
@@ -160,9 +155,13 @@ bool Map::trackNewCandidates(const Mat& frame) {
     undistorted = undistorted.reshape(1).t();
     undistorted.resize(3, Scalar(1));
 
+    // Compute camera translation and rotation
+    Mat t = x(Rect(0, 0, 1, 3));
+    Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4)));
+
     // Compute the directions (in world coordinates) of the lines that contain the features
     undistorted.convertTo(undistorted, CV_64FC1);
-    Mat directions = camera.R * undistorted;
+    Mat directions = R * undistorted;
 
     Point2d depthInterval(0.05, 5);
     int depthSamples = 100;
@@ -172,18 +171,23 @@ bool Map::trackNewCandidates(const Mat& frame) {
 
         normalize(directions.col(i), directions.col(i));
 
-        Point2i p(corners.at<Point2f>(i));
-        candidates.push_back(Feature(frame, buildSquare(p, patchSize), camera.R.t(), camera.r,
+        Point2i pixel(corners.at<Point2f>(i));
+        candidates.push_back(Feature(frame, buildSquare(pixel, patchSize), R.t(), t,
                                      directions.col(i), depthInterval, depthSamples));
     }
 
     return true;
 }
 
-void Map::drawVisibleFeatures(const Mat& frame) {
+/*
+ * Draws features that are (theoretically) in view.
+ *
+ * frame    Camera frame
+ */
+void Map::drawInViewFeatures(const Mat& frame) {
 
-    for (unsigned int i = 0; i < visibleFeatures.size(); i++)
-        circle(frame, visibleFeatures[i]->currentPos2D, 5, Scalar(0, 0, 255), 1, CV_AA, 0);
+    for (unsigned int i = 0; i < inview.size(); i++)
+        circle(frame, inview[i], 5, Scalar(0, 0, 255), 1, CV_AA, 0);
 }
 
 /*
@@ -196,7 +200,7 @@ void Map::drawVisibleFeatures(const Mat& frame) {
  * frame    Grayscale frame
  * pos2D    Feature position in the image, in pixels
  * pos3D    Feature position, in world coordinates
- * R        Camera rotation (world to camera)
+ * R        Camera rotation (from world to camera)
  * t        Camera position, in world coordinates
  */
 bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
@@ -218,7 +222,8 @@ bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
     double n[] = {0, 0, 1};
     Mat normal(3, 1, CV_64FC1, n);
 
-    Rect roi = buildSquare(Point2i(pos2D), patchSize);
+    Point2i pixelPosition(pos2D);
+    Rect roi = buildSquare(pixelPosition, patchSize);
 
     bool overflow = roi.x < 0 || roi.x + roi.width > frame.cols ||
                     roi.y < 0 || roi.y + roi.height > frame.rows;
@@ -230,14 +235,42 @@ bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
     // Add the feature
     features.push_back(Feature(frame, roi, normal, R, t));
 
+    // Add its image position to the list of in view features
+    inview.push_back(pos2D);
+
+    numVisibleFeatures++;
+
     return true;
 }
 
+/*
+ * Sets the map as it was upon creation.
+ */
+void Map::reset() {
+
+    features.clear();
+    candidates.clear();
+    inview.clear();
+
+    numVisibleFeatures = 0;
+
+    x = Mat(13, 1, CV_64FC1, Scalar(0));
+    P = Mat(13, 13, CV_64FC1, Scalar(0));
+}
+
+/*
+ * Returns corners found by the Shi-Tomasi corner detector. In particular, the
+ * number of computed corners is such that when the associated pre-initialized
+ * features are added to the map for tracking, the number of visible features
+ * in the current frame will (hopefully) be the maximum allowed.
+ *
+ * frame    Grayscale frame
+ */
 Mat Map::findCorners(const Mat& frame) {
 
     Mat corners;
 
-    int maxCorners = maxFeatureDensity - visibleFeatures.size();
+    int maxCorners = maxFeatureDensity - numVisibleFeatures;
     int minDistance = 60;
     double qualityLevel = 0.2;
 
@@ -250,9 +283,9 @@ Mat Map::findCorners(const Mat& frame) {
     int pad = 30;
     mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
 
-    for (unsigned int i = 0; i < visibleFeatures.size(); i++) {
+    for (unsigned int i = 0; i < inview.size(); i++) {
 
-        Rect roi = buildSquare(visibleFeatures[i]->currentPos2D, 2 * minDistance);
+        Rect roi = buildSquare(inview[i], 2 * minDistance);
 
         roi.x = max(0, roi.x);
         roi.y = max(0, roi.y);
@@ -262,7 +295,7 @@ Mat Map::findCorners(const Mat& frame) {
         if (roi.y + roi.height > frame.rows)
             roi.height = frame.rows - roi.y;
 
-        // Update the mask to reject the region around the ith feature
+        // Update the mask to reject the region around the ith inview feature
         mask(roi).setTo(Scalar(0));
     }
 
@@ -271,12 +304,25 @@ Mat Map::findCorners(const Mat& frame) {
     return corners;
 }
 
-void Map::reset() {
+/*void Map::removeBadFeatures() {
 
-    features.clear();
-    candidates.clear();
-    visibleFeatures.clear();
+    remove_if(features.begin(), features.end(), [](const Feature& feature) {
 
-    x = Mat(13, 1, CV_64FC1, cv::Scalar(0));
-    P = Mat(13, 13, CV_64FC1, cv::Scalar(0));
-}
+        double r = feature.matchingFails / double(feature.matchingAttempts)
+
+                   double attempts;
+
+        if ((attempts = feature.matchingAttempts) == 0)
+            return  > failTolerance;
+    })
+
+    // Remove bad features from the list
+    features.erase(remove_if(features.begin(), features.end(), [](const Feature& feature) {
+        return feature.matchingFails / double(feature.matchingAttempts) > failTolerance;
+    }), features.end());
+
+    // Remove bad features states from the map state vector
+
+    // Remove bad features rows and columns from the map covariance matrix
+    for (int i = 0;)
+    }*/

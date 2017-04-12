@@ -12,21 +12,23 @@ class Map {
 
 public:
 
-    Camera camera;                              // Camera
-    std::vector<Feature> features;              // Initialized map features
-    std::vector<Feature> candidates;            // Pre-initialized features
+    Camera camera;                      // Camera
 
-    int patchSize;                              // Size of the feature planar patch
+    std::vector<Feature> features;      // Initialized map features (used for tracking)
+    std::vector<Feature> candidates;    // Pre-initialized features (updated by particle filter)
 
-    int minFeatureDensity;                      // Minimum number of features per frame
-    int maxFeatureDensity;                      // Maximum number of features per frame
+    int patchSize;                      // Size of the feature planar patch, in pixels
 
-    double failTolerance;                       // Max ratio of matching failures before a feature is rejected
+    int minFeatureDensity;              // Minimum number of features per frame
+    int maxFeatureDensity;              // Maximum number of features per frame
 
-    std::vector<Feature *> visibleFeatures;     // Currently visible features
+    double failTolerance;               // Maximum ratio of matching failures before feature rejection
 
-    cv::Mat x;                                  // Map state (camera and features states)
-    cv::Mat P;                                  // Map state covariance matrix
+    int numVisibleFeatures;             // Number of currently visible features (a subset of those in sight)
+    std::vector<cv::Point2i> inview;    // Image positions of currently in sight features
+
+    cv::Mat x;                          // Map state (camera and features states)
+    cv::Mat P;                          // Map state covariance matrix
 
     /*
      * Constructor for a lens distortion camera model.
@@ -43,6 +45,7 @@ public:
         minFeatureDensity(minFeatureDensity_),
         maxFeatureDensity(maxFeatureDensity_),
         failTolerance(failTolerance_),
+        numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
         P(13, 13, CV_64FC1, cv::Scalar(0)) {}
 
@@ -60,6 +63,7 @@ public:
         minFeatureDensity(minFeatureDensity_),
         maxFeatureDensity(maxFeatureDensity_),
         failTolerance(failTolerance_),
+        numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
         P(13, 13, CV_64FC1, cv::Scalar(0)) {}
 
@@ -81,23 +85,30 @@ public:
                  const std::vector<double>& var);
 
     /*
-     * Updates the camera and features data with the map state vector and covariance matrix
-     * data. Only shallow copies are performed. This function should be called whenever the
-     * current state of some (or all) of the system parts is required.
+     * Updates the camera and features data with the map state vector and map state
+     * covariance matrix data. Only shallow copies are performed. This function should
+     * be called whenever the current state of the system must be broadcast to each
+     * of its parts. This method exists because the map state (x and P) is continuously
+     * updated by the EKF and these changes will not be directly reflected in the camera
+     * and features instances.
      */
-    void update();
+    void broadcastData();
 
     /*
      * Detects corners and initializes new feature candidates whenever there are not
      * enough visible features and no candidates are being tracked. Returns a boolean
-     * indicating whether new candidates were detected or not. It is mandatory that
-     * the map be updated before calling this method (see update).
+     * indicating whether new candidates were detected or not.
      *
      * frame    Grayscale frame
      */
     bool trackNewCandidates(const cv::Mat& frame);
 
-    void drawVisibleFeatures(const cv::Mat& frame);
+    /*
+     * Draws features that are (theoretically) in view.
+     *
+     * frame    Camera frame
+     */
+    void drawInViewFeatures(const cv::Mat& frame);
 
 private:
 
@@ -111,15 +122,26 @@ private:
      * frame    Grayscale frame
      * pos2D    Feature position in the image, in pixels
      * pos3D    Feature position, in world coordinates
-     * R        Camera rotation (world to camera)
+     * R        Camera rotation (from world to camera)
      * t        Camera position, in world coordinates
      */
     bool addInitialFeature(const cv::Mat& frame, const cv::Point2f& pos2D, const cv::Point3f& pos3D,
                            const cv::Mat& R, const cv::Mat& t);
 
-    cv::Mat findCorners(const cv::Mat& frame);
-
+    /*
+     * Sets the map as it was upon creation.
+     */
     void reset();
+
+    /*
+     * Returns corners found by the Shi-Tomasi corner detector. In particular, the
+     * number of computed corners is such that when the associated pre-initialized
+     * features are added to the map for tracking, the number of visible features
+     * in the current frame will (hopefully) be the maximum allowed.
+     *
+     * frame    Grayscale frame
+     */
+    cv::Mat findCorners(const cv::Mat& frame);
 };
 
 #endif
