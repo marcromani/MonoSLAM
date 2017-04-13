@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -15,9 +16,14 @@
 using namespace cv;
 using namespace std;
 
+typedef chrono::duration<double, ratio<1, 1>> seconds_;
+typedef chrono::high_resolution_clock clock_;
+
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
                 double& squareSize);
 void printUsage(const char *execName);
+
+void readFrame(VideoCapture& cap, Mat& frame);
 
 int main(int argc, char *argv[]) {
 
@@ -48,13 +54,13 @@ int main(int argc, char *argv[]) {
 
     fs.release();
 
-    int patchSize = 25;
+    int patchSize = 11;
     int minDensity = 8;
     int maxDensity = 18;
-    double failTol = 0.4;
+    double failTolerance = 0.5;
 
     // Build new map
-    Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTol);
+    Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance);
 
     // Chessboard size
     Size patternSize(patternCols - 1, patternRows - 1);
@@ -80,9 +86,13 @@ int main(int argc, char *argv[]) {
 
     bool init;
 
+    chrono::time_point<clock_> t0;
+
     for (;;) {
 
-        cap.read(frame);
+        readFrame(cap, frame);
+
+        t0 = clock_::now();
 
         imshow(window, frame);
 
@@ -98,14 +108,27 @@ int main(int argc, char *argv[]) {
     if (!init)
         return 0;
 
+    chrono::time_point<clock_> t1;
+
     for (;;) {
 
-        cap.read(frame);
+        map.trackNewCandidates(gray);
+
+        readFrame(cap, frame);
+
+        t1 = clock_::now();
+        double dt = chrono::duration_cast<seconds_>(t1 - t0).count();
+        t0 = t1;
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
+        cout << dt << endl;
+
+        // predict
+
+        // measure + update
+
         map.drawInViewFeatures(frame);
-        map.trackNewCandidates(gray);
 
         imshow(window, frame);
 
@@ -143,4 +166,22 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
 void printUsage(const char *execName) {
 
     cerr << "Usage: " << execName << " cameraFile patternRows patternCols squareSize (-h for help)" << endl;
+}
+
+void readFrame(VideoCapture& cap, Mat& frame) {
+
+    chrono::time_point<clock_> t0;
+    double elapsed;
+
+    double tol = 1 / double(30);
+
+    do {
+
+        t0 = clock_::now();
+        cap.grab();
+        elapsed = chrono::duration_cast<seconds_>(clock_::now() - t0).count();
+
+    } while (elapsed < tol);
+
+    cap.retrieve(frame);
 }

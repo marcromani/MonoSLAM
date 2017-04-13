@@ -43,7 +43,4 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& 
         depths[i] = depthInterval.x + step * i;
 
     probs.resize(depthSamples, 1.0 / depthSamples);
-
-    matchingFails = 0;
-    matchingAttempts = 0;
 }

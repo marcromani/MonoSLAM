@@ -155,7 +155,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     undistorted = undistorted.reshape(1).t();
     undistorted.resize(3, Scalar(1));
 
-    // Compute camera translation and rotation
+    // Get camera translation and rotation
     Mat t = x(Rect(0, 0, 1, 3));
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4)));
 
