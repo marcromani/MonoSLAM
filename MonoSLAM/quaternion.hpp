@@ -4,7 +4,7 @@
 #include "opencv2/core/core.hpp"
 
 /*
- * Builds a rotation quaternion from a rotation vector.
+ * Builds a rotation quaternion from a (non-zero) rotation vector.
  */
 cv::Mat computeQuaternion(const cv::Mat&);
 

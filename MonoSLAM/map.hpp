@@ -30,6 +30,9 @@ public:
     cv::Mat x;                          // Map state (camera and features states)
     cv::Mat P;                          // Map state covariance matrix
 
+    cv::Mat A;                          // Linear and angular accelerations noise covariance matrix
+    cv::Mat R;                          // Measurement noise covariance matrix
+
     /*
      * Constructor for a lens distortion camera model.
      */
@@ -39,7 +42,9 @@ public:
         int patchSize_,
         int minFeatureDensity_,
         int maxFeatureDensity_,
-        double failTolerance_) :
+        double failTolerance_,
+        const std::vector<double>& accVariances,
+        const cv::Mat& R_) :
         camera(K, distCoeffs, frameSize),
         patchSize(patchSize_),
         minFeatureDensity(minFeatureDensity_),
@@ -47,7 +52,7 @@ public:
         failTolerance(failTolerance_),
         numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {}
+        P(13, 13, CV_64FC1, cv::Scalar(0)) {A = cv::Mat::diag(cv::Mat(accVariances)); R_.copyTo(R);}
 
     /*
      * Constructor for a pinhole camera model.
@@ -57,7 +62,9 @@ public:
         int patchSize_,
         int minFeatureDensity_,
         int maxFeatureDensity_,
-        double failTolerance_) :
+        double failTolerance_,
+        const std::vector<double>& accVariances,
+        const cv::Mat& R_) :
         camera(K, frameSize),
         patchSize(patchSize_),
         minFeatureDensity(minFeatureDensity_),
@@ -65,7 +72,7 @@ public:
         failTolerance(failTolerance_),
         numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {}
+        P(13, 13, CV_64FC1, cv::Scalar(0)) {A = cv::Mat::diag(cv::Mat(accVariances)); R_.copyTo(R);}
 
     /*
      * Initializes the map by detecting a known chessboard pattern. It provides an
@@ -110,6 +117,16 @@ public:
      */
     void drawInViewFeatures(const cv::Mat& frame);
 
+    /*
+     * Applies the first step of the Extended Kalman Filter. In particular, given the
+     * current state estimate x_k|k and the current state covariance matrix P_k|k, it
+     * computes the next a priori state estimate x_k+1|k (via the camera motion model)
+     * and its associated covariance matrix P_k+1|k.
+     *
+     * dt    Time interval between the current and past frames
+     */
+    void predict(double dt);
+
 private:
 
     /*
@@ -142,6 +159,29 @@ private:
      * frame    Grayscale frame
      */
     cv::Mat findCorners(const cv::Mat& frame);
+
+    /*
+     * Applies the state transition function to the current state estimate. It is
+     * mandatory that this method be called after computePredictionMatrices, since
+     * the latter expects the last a posteriori (corrected) state estimate in the
+     * state vector x.
+     *
+     * dt    Time interval between the current and past frames
+     */
+    void applyMotionModel(double dt);
+
+    /*
+     * Computes the Jacobian matrices of the state transition function with respect to
+     * the state (r, q, v, w, f1, ..., fn) and to the noise (V1, V2, V3, O1, O2, O3).
+     * These matrices are evaluated at the current state estimate on the assumption that
+     * there is zero process noise. This method must be called before applyMotionModel
+     * since the latter updates the current state estimate x.
+     *
+     * dt    Time interval between the current and past frames
+     * F     Jacobian matrix of the state transition function with respect to x
+     * W     Jacobian matrix of the state transition function with respect to noise
+     */
+    void computePredictionMatrices(double dt, cv::Mat& F, cv::Mat& W);
 };
 
 #endif

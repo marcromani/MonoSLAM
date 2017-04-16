@@ -3,6 +3,8 @@
 
 #include "opencv2/core/core.hpp"
 
+constexpr double PI = 3.1415926535897932385;
+
 /*
  * Computes the homography matrix H between two pinhole camera views of a plane.
  * In particular, p2 = H * p1, where p1 is the pixel in the first view which

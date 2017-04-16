@@ -191,6 +191,24 @@ void Map::drawInViewFeatures(const Mat& frame) {
 }
 
 /*
+ * Applies the first step of the Extended Kalman Filter. In particular, given the
+ * current state estimate x_k|k and the current state covariance matrix P_k|k, it
+ * computes the next a priori state estimate x_k+1|k (via the camera motion model)
+ * and its associated covariance matrix P_k+1|k.
+ *
+ * dt    Time interval between the current and past frames
+ */
+void Map::predict(double dt) {
+
+    Mat F, W;
+
+    computePredictionMatrices(dt, F, W);
+    applyMotionModel(dt);
+
+    P = F * P * F.t() + W * A*dt*dt * W.t();
+}
+
+/*
  * Adds an initial feature to the map. Its position is known with zero uncertainty
  * hence the associated covariance matrix is the zero matrix. Moreover, since the
  * feature patch lies on the chessboard pattern its normal vector is taken to be
@@ -304,25 +322,140 @@ Mat Map::findCorners(const Mat& frame) {
     return corners;
 }
 
-/*void Map::removeBadFeatures() {
+/*
+ * Applies the state transition function to the current state estimate. It is
+ * mandatory that this method be called after computePredictionMatrices, since
+ * the latter expects the last a posteriori (corrected) state estimate in the
+ * state vector x.
+ *
+ * dt    Time interval between the current and past frames
+ */
+void Map::applyMotionModel(double dt) {
 
-    remove_if(features.begin(), features.end(), [](const Feature& feature) {
+    x(Rect(0, 0, 1, 3)) += x(Rect(0, 7, 1, 3)) * dt;
 
-        double r = feature.matchingFails / double(feature.matchingAttempts)
+    if (x.at<double>(10, 0) != 0 || x.at<double>(11, 0) != 0 || x.at<double>(12, 0) != 0)
+        x(Rect(0, 3, 1, 4)) = quaternionMultiply(
+                                  x(Rect(0, 3, 1, 4)),
+                                  computeQuaternion(x(Rect(0, 10, 1, 3)) * dt)
+                              );
+}
 
-                   double attempts;
+/*
+ * Computes the Jacobian matrices of the state transition function with respect to
+ * the state (r, q, v, w, f1, ..., fn) and to the noise (V1, V2, V3, O1, O2, O3).
+ * These matrices are evaluated at the current state estimate on the assumption that
+ * there is zero process noise. This method must be called before applyMotionModel
+ * since the latter updates the current state estimate x.
+ *
+ * dt    Time interval between the current and past frames
+ * F     Jacobian matrix of the state transition function with respect to x
+ * W     Jacobian matrix of the state transition function with respect to noise
+ */
+void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
 
-        if ((attempts = feature.matchingAttempts) == 0)
-            return  > failTolerance;
-    })
+    F = Mat::eye(P.size(), CV_64FC1);
+    W = Mat(P.rows, 6, CV_64FC1, Scalar(0));
 
-    // Remove bad features from the list
-    features.erase(remove_if(features.begin(), features.end(), [](const Feature& feature) {
-        return feature.matchingFails / double(feature.matchingAttempts) > failTolerance;
-    }), features.end());
+    // Set D(r_new)/D(v_old)
+    F.at<double>(0, 7) = dt;
+    F.at<double>(1, 8) = dt;
+    F.at<double>(2, 9) = dt;
 
-    // Remove bad features states from the map state vector
+    // Set D(r_new)/D(V)
+    W.at<double>(0, 0) = dt;
+    W.at<double>(1, 1) = dt;
+    W.at<double>(2, 2) = dt;
 
-    // Remove bad features rows and columns from the map covariance matrix
-    for (int i = 0;)
-    }*/
+    // Set D(v_new)/D(V) and D(w_new)/D(O)
+    W.at<double>(7, 0) = 1;
+    W.at<double>(8, 1) = 1;
+    W.at<double>(9, 2) = 1;
+    W.at<double>(10, 3) = 1;
+    W.at<double>(11, 4) = 1;
+    W.at<double>(12, 5) = 1;
+
+    double w1 = x.at<double>(10, 0);
+    double w2 = x.at<double>(11, 0);
+    double w3 = x.at<double>(12, 0);
+
+    if (w1 == 0 && w2 == 0 && w3 == 0) {
+
+        // Set D(q_new)/D(w_old)
+        F.at<double>(4, 10) = 0.5;
+        F.at<double>(5, 11) = 0.5;
+        F.at<double>(6, 12) = 0.5;
+
+        // Set D(q_new)/D(O)
+        W.at<double>(4, 3) = 0.5;
+        W.at<double>(5, 4) = 0.5;
+        W.at<double>(6, 5) = 0.5;
+
+    } else {
+
+        Mat q = computeQuaternion(x(Rect(0, 10, 1, 3)) * dt);
+
+        double a2 = q.at<double>(0, 0);
+        double b2 = q.at<double>(1, 0);
+        double c2 = q.at<double>(2, 0);
+        double d2 = q.at<double>(3, 0);
+
+        // Set D(q_new)/D(q_old)
+        F.at<double>(3, 3) =  a2;
+        F.at<double>(3, 4) = -b2;
+        F.at<double>(3, 5) = -c2;
+        F.at<double>(3, 6) = -d2;
+        F.at<double>(4, 3) =  b2;
+        F.at<double>(4, 4) =  a2;
+        F.at<double>(4, 5) =  d2;
+        F.at<double>(4, 6) = -c2;
+        F.at<double>(5, 3) =  c2;
+        F.at<double>(5, 4) = -d2;
+        F.at<double>(5, 5) =  a2;
+        F.at<double>(5, 6) =  b2;
+        F.at<double>(6, 3) =  d2;
+        F.at<double>(6, 4) =  c2;
+        F.at<double>(6, 5) = -b2;
+        F.at<double>(6, 6) =  a2;
+
+        double w11 = w1 * w1;
+        double w22 = w2 * w2;
+        double w33 = w3 * w3;
+
+        double norm2 = w11 + w22 + w33;
+        double norm = sqrt(norm2);
+
+        double c = cos(0.5 * dt * norm);
+        double s = sin(0.5 * dt * norm);
+
+        double dq1dw_ = - 0.5 * dt * s / norm;
+        double z = s / (dt * norm);
+        double dq_dw_ = 0.5 * c / norm2 - z / norm2;
+
+        double w12 = w1 * w2;
+        double w13 = w1 * w3;
+        double w23 = w2 * w3;
+
+        double a1 = x.at<double>(3, 0);
+        double b1 = x.at<double>(4, 0);
+        double c1 = x.at<double>(5, 0);
+        double d1 = x.at<double>(6, 0);
+
+        // Set D(q_new)/D(w_old)
+        F.at<double>(3, 10) = a1 * dq1dw_*w1 - b1 * (dq_dw_*w11 + z) - c1 * dq_dw_*w12 - d1 * dq_dw_*w13;
+        F.at<double>(3, 11) = a1 * dq1dw_*w2 - b1 * dq_dw_*w12 - c1 * (dq_dw_*w22 + z) - d1 * dq_dw_*w23;
+        F.at<double>(3, 12) = a1 * dq1dw_*w3 - b1 * dq_dw_*w13 - c1 * dq_dw_*w23 - d1 * (dq_dw_*w33 + z);
+        F.at<double>(4, 10) = b1 * dq1dw_*w1 + a1 * (dq_dw_*w11 + z) - d1 * dq_dw_*w12 + c1 * dq_dw_*w13;
+        F.at<double>(4, 11) = b1 * dq1dw_*w2 + a1 * dq_dw_*w12 - d1 * (dq_dw_*w22 + z) + c1 * dq_dw_*w23;
+        F.at<double>(4, 12) = b1 * dq1dw_*w3 + a1 * dq_dw_*w13 - d1 * dq_dw_*w23 + c1 * (dq_dw_*w33 + z);
+        F.at<double>(5, 10) = c1 * dq1dw_*w1 + d1 * (dq_dw_*w11 + z) + a1 * dq_dw_*w12 - b1 * dq_dw_*w13;
+        F.at<double>(5, 11) = c1 * dq1dw_*w2 + d1 * dq_dw_*w12 + a1 * (dq_dw_*w22 + z) - b1 * dq_dw_*w23;
+        F.at<double>(5, 12) = c1 * dq1dw_*w3 + d1 * dq_dw_*w13 + a1 * dq_dw_*w23 - b1 * (dq_dw_*w33 + z);
+        F.at<double>(6, 10) = d1 * dq1dw_*w1 - c1 * (dq_dw_*w11 + z) + b1 * dq_dw_*w12 + a1 * dq_dw_*w13;
+        F.at<double>(6, 11) = d1 * dq1dw_*w2 - c1 * dq_dw_*w12 + b1 * (dq_dw_*w22 + z) + a1 * dq_dw_*w23;
+        F.at<double>(6, 12) = d1 * dq1dw_*w3 - c1 * dq_dw_*w13 + b1 * dq_dw_*w23 + a1 * (dq_dw_*w33 + z);
+
+        // Set D(q_new)/D(O)
+        F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
+    }
+}

@@ -5,7 +5,7 @@
 using namespace cv;
 
 /*
- * Builds a rotation quaternion from a rotation vector.
+ * Builds a rotation quaternion from a (non-zero) rotation vector.
  */
 Mat computeQuaternion(const Mat& rotv) {
 

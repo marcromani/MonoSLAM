@@ -58,9 +58,12 @@ int main(int argc, char *argv[]) {
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
+    vector<double> accVariances({1, 1, 1, 0.5 * PI, 0.5 * PI, 0.5 * PI});
+    Mat measurementNoiseCov = 4 * Mat::eye(2, 2, CV_64FC1);
 
     // Build new map
-    Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance);
+    Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance,
+            accVariances, measurementNoiseCov);
 
     // Chessboard size
     Size patternSize(patternCols - 1, patternRows - 1);
@@ -73,7 +76,7 @@ int main(int argc, char *argv[]) {
                        });
 
     // Initialize video feed device
-    VideoCapture cap(0);
+    VideoCapture cap("http://192.168.1.35:8080/video?video.mjpeg");
 
     if (!cap.isOpened())
         return -1;
@@ -122,11 +125,9 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
 
-        cout << dt << endl;
+        map.predict(dt);
 
-        // predict
-
-        // measure + update
+        // TODO: measure + update
 
         map.drawInViewFeatures(frame);
 
