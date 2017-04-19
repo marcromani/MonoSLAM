@@ -5,6 +5,7 @@
 #include "util.hpp"
 
 using namespace cv;
+using namespace std;
 
 /*
  * Constructor for a lens distortion camera model.
@@ -87,4 +88,40 @@ Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& 
     Mat distorted2 = distort(warped);
 
     return distorted2;
+}
+
+void Camera::projectPoints(const Mat& R, const Mat& t, const vector<Point3d>& points3D,
+                           vector<Point2d>& points2D) {
+
+    points2D.resize(points3D.size());
+
+    for (unsigned int i = 0; i < points3D.size(); i++) {
+
+        Mat pCam = R * (Mat(points3D[i]) - t);
+
+        // TODO: Check the z component, it might be zero!
+        double u = pCam.at<double>(0, 0) / pCam.at<double>(2, 0);
+        double v = pCam.at<double>(1, 0) / pCam.at<double>(2, 0);
+
+        double r2 = u*u + v*v;
+
+        double fx = K.at<double>(0, 0);
+        double fy = K.at<double>(1, 1);
+        double cx = K.at<double>(0, 2);
+        double cy = K.at<double>(1, 2);
+
+        double k1 = distCoeffs.at<double>(0, 0);
+        double k2 = distCoeffs.at<double>(0, 1);
+        double p1 = distCoeffs.at<double>(0, 2);
+        double p2 = distCoeffs.at<double>(0, 3);
+        double k3 = distCoeffs.at<double>(0, 4);
+
+        u = u * (1 + k1*r2 + k2*r2*r2 + k3*r2*r2*r2) + 2*p1*u*v + p2*(r2 + 2*u);
+        v = v * (1 + k1*r2 + k2*r2*r2 + k3*r2*r2*r2) + 2*p2*u*v + p1*(r2 + 2*v);
+
+        u = fx*u + cx;
+        v = fy*v + cy;
+
+        points2D[i] = Point2d(u, v);
+    }
 }

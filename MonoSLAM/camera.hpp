@@ -1,6 +1,8 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
+#include <vector>
+
 #include "opencv2/core/core.hpp"
 
 class Camera {
@@ -58,6 +60,9 @@ public:
      */
     cv::Mat warpPatch(const cv::Mat& p, const cv::Mat& n, const cv::Mat& view1, const cv::Rect& patch1,
                       const cv::Mat& R1, const cv::Mat& t1, const cv::Mat& R2, const cv::Mat& t2);
+
+    void projectPoints(const cv::Mat& R, const cv::Mat& t, const std::vector<cv::Point3d>& points3D,
+                       std::vector<cv::Point2d>& points2D);
 };
 
 #endif

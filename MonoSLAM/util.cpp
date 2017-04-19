@@ -50,7 +50,7 @@ Mat buildDistortionMap(const Size& size, const Mat& K, const Mat& distCoeffs) {
     double k2 = distCoeffs.at<double>(0, 1);
     double p1 = distCoeffs.at<double>(0, 2);
     double p2 = distCoeffs.at<double>(0, 3);
-    double k3 = distCoeffs.total() > 4 ? distCoeffs.at<double>(0, 4) : 0;
+    double k3 = distCoeffs.at<double>(0, 4);
 
     for (int u = 0; u < 5*size.width; u++) {
         for (int v = 0; v < 5*size.height; v++) {

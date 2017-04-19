@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <functional>
 #include <iostream>
 
 #include "opencv2/calib3d/calib3d.hpp"
@@ -206,6 +207,9 @@ void Map::predict(double dt) {
     applyMotionModel(dt);
 
     P = F * P * F.t() + W * A*dt*dt * W.t();
+
+    Mat H;
+    computeMeasurementMatrix(H);
 }
 
 /*
@@ -458,4 +462,35 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
         // Set D(q_new)/D(O)
         F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
     }
+}
+
+void Map::computeMeasurementMatrix(Mat& H) {
+
+    // Get the predicted camera rotation (from world basis to camera basis)
+    Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
+
+    // Get the predicted camera position (in world coordinates)
+    Mat t = x(Rect(0, 0, 1, 3));
+
+    vector<Point3d> points3D(features.size());
+
+    // Set a vector of features positions
+    for (unsigned int i = 0; i < points3D.size(); i++)
+        points3D[i] = Point3d(x(Rect(0, 13 + 3*i, 1, 3)));
+
+    vector<Point2d> points2D;
+
+    // Project all the features positions to the current view
+    camera.projectPoints(R, t, points3D, points2D);
+
+    // Features predicted to be in the current view
+    vector<reference_wrapper<Feature>> inview;
+
+    Rect box(Point2i(0, 0), camera.frameSize);
+
+    for (unsigned int i = 0; i < points2D.size(); i++)
+        if (box.contains(points2D[i]))
+            inview.push_back(ref(features[i]));
+
+    H = Mat(2 * inview.size(), x.rows, CV_64FC1, Scalar(0));
 }

@@ -182,6 +182,8 @@ private:
      * W     Jacobian matrix of the state transition function with respect to noise
      */
     void computePredictionMatrices(double dt, cv::Mat& F, cv::Mat& W);
+
+    void computeMeasurementMatrix(cv::Mat& H);
 };
 
 #endif
