@@ -81,3 +81,23 @@ Mat quaternionInv(const Mat& q) {
 
     return inv;
 }
+
+void getRotationMatrixDerivatives(const Mat& q, Mat& R1, Mat& R2, Mat& R3, Mat& R4) {
+
+    double a = q.at<double>(0, 0);
+    double b = q.at<double>(1, 0);
+    double c = q.at<double>(2, 0);
+    double d = q.at<double>(3, 0);
+
+    double R1_[] = {a, d, -c, -d, a, b, c, -b, a};
+    R1 = 2 * Mat(3, 3, CV_64FC1, R1_).clone();
+
+    double R2_[] = {b, c, d, c, -b, a, d, -a, -b};
+    R2 = 2 * Mat(3, 3, CV_64FC1, R2_).clone();
+
+    double R3_[] = {-c, b, -a, b, c, d, a, d, -c};
+    R3 = 2 * Mat(3, 3, CV_64FC1, R3_).clone();
+
+    double R4_[] = {-d, a, b, -a, -d, c, b, c, d};
+    R4 = 2 * Mat(3, 3, CV_64FC1, R4_).clone();
+}

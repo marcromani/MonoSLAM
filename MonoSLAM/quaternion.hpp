@@ -25,4 +25,6 @@ cv::Mat getRotationMatrix(const cv::Mat&);
  */
 cv::Mat quaternionInv(const cv::Mat&);
 
+void getRotationMatrixDerivatives(const cv::Mat& q, cv::Mat& R1, cv::Mat& R2, cv::Mat& R3, cv::Mat& R4);
+
 #endif
