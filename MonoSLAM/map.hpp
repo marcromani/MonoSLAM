@@ -161,29 +161,44 @@ private:
     cv::Mat findCorners(const cv::Mat& frame);
 
     /*
-     * Applies the state transition function to the current state estimate. It is
-     * mandatory that this method be called after computePredictionMatrices, since
-     * the latter expects the last a posteriori (corrected) state estimate in the
-     * state vector x.
+     * Applies the state transition function to the current state estimate. It is mandatory
+     * that this method be called after computeProcessMatrix and computeProcessNoiseMatrix
+     * since the latter expect the last a posteriori (corrected) state estimate in the state
+     * vector x.
      *
      * dt    Time interval between the current and past frames
      */
     void applyMotionModel(double dt);
 
     /*
-     * Computes the Jacobian matrices of the state transition function with respect to
-     * the state (r, q, v, w, f1, ..., fn) and to the noise (V1, V2, V3, O1, O2, O3).
-     * These matrices are evaluated at the current state estimate on the assumption that
-     * there is zero process noise. This method must be called before applyMotionModel
-     * since the latter updates the current state estimate x.
+     * Returns the Jacobian matrix of the state transition function with respect to the
+     * complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at the current
+     * state estimate on the assumption that there is zero process noise. This method must
+     * be called before applyMotionModel since the latter updates the current estimate x.
+     *
+     * dt    Time interval between the current and past frames
+     */
+    cv::Mat computeProcessMatrix(double dt);
+
+    /*
+     * Returns the product W * Q * W^t, where Q is the process noise covariance matrix
+     * and W is the Jacobian matrix of the state transition function with respect to
+     * the noise vector (V1, V2, V3, W1, W2, W3). The latter is evaluated at the current
+     * state estimate on the assumption that there is zero process noise. This method must
+     * be called before applyMotionModel since the latter updates the current estimate x.
      *
      * dt    Time interval between the current and past frames
      * F     Jacobian matrix of the state transition function with respect to x
-     * W     Jacobian matrix of the state transition function with respect to noise
      */
-    void computePredictionMatrices(double dt, cv::Mat& F, cv::Mat& W);
+    cv::Mat computeProcessNoiseMatrix(double dt, const cv::Mat& F);
 
-    void computeMeasurementMatrix(cv::Mat& H);
+    /*
+     * Returns the Jacobian matrix of the feature measurement function with respect
+     * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
+     * the predicted (a priori) state estimate, therefore it should only be called
+     * after applyMotionModel since the latter updates the current estimate x.
+     */
+    cv::Mat computeMeasurementMatrix();
 
     double u(double r1, double r2, double r3,
              double q1, double q2, double q3, double q4,

@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    vector<double> accVariances({0.01, 0.01, 0.01, 0.005 * PI, 0.005 * PI, 0.005 * PI});
+    vector<double> accVariances({1, 1, 1, 0.2 * PI, 0.2 * PI, 0.2 * PI});
     Mat measurementNoiseCov = 4 * Mat::eye(2, 2, CV_64FC1);
 
     // Build new map
@@ -69,10 +69,10 @@ int main(int argc, char *argv[]) {
     Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
-    vector<double> var({0.000064, 0.000064, 0.000064,
+    vector<double> var({0.0025, 0.0025, 0.0025,
                         0., 0., 0., 0.,
-                        0., 0., 0.,
-                        0., 0., 0.,
+                        0.0001, 0.0001, 0.0001,
+                        0.0004, 0.0004, 0.0004,
                        });
 
     // Initialize video feed device

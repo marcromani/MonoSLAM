@@ -202,19 +202,16 @@ void Map::drawInViewFeatures(const Mat& frame) {
  */
 void Map::predict(double dt) {
 
-    Mat F, W;
+    Mat F = computeProcessMatrix(dt);
+    Mat N = computeProcessNoiseMatrix(dt, F);
 
-    computePredictionMatrices(dt, F, W);
+    P = F * P * F.t() + N;
+
     applyMotionModel(dt);
 
-    P = F * P * F.t() + W * A*dt*dt * W.t();
+    Mat H = computeMeasurementMatrix();
 
-    Mat H;
-    computeMeasurementMatrix(H);
-
-    cout << P << endl;
-    cout << H << endl;
-    cout << H * P * H.t() << endl << endl;
+    cout << H * P * H.t() << endl;
 
     exit(0);
 }
@@ -334,10 +331,10 @@ Mat Map::findCorners(const Mat& frame) {
 }
 
 /*
- * Applies the state transition function to the current state estimate. It is
- * mandatory that this method be called after computePredictionMatrices, since
- * the latter expects the last a posteriori (corrected) state estimate in the
- * state vector x.
+ * Applies the state transition function to the current state estimate. It is mandatory
+ * that this method be called after computeProcessMatrix and computeProcessNoiseMatrix
+ * since the latter expect the last a posteriori (corrected) state estimate in the state
+ * vector x.
  *
  * dt    Time interval between the current and past frames
  */
@@ -353,38 +350,58 @@ void Map::applyMotionModel(double dt) {
 }
 
 /*
- * Computes the Jacobian matrices of the state transition function with respect to
- * the state (r, q, v, w, f1, ..., fn) and to the noise (V1, V2, V3, O1, O2, O3).
- * These matrices are evaluated at the current state estimate on the assumption that
- * there is zero process noise. This method must be called before applyMotionModel
- * since the latter updates the current state estimate x.
+ * Returns the Jacobian matrix of the state transition function with respect to the
+ * complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at the current
+ * state estimate on the assumption that there is zero process noise. This method must
+ * be called before applyMotionModel since the latter updates the current estimate x.
  *
  * dt    Time interval between the current and past frames
- * F     Jacobian matrix of the state transition function with respect to x
- * W     Jacobian matrix of the state transition function with respect to noise
  */
-void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
+Mat Map::computeProcessMatrix(double dt) {
 
-    F = Mat::eye(P.size(), CV_64FC1);
-    W = Mat(P.rows, 6, CV_64FC1, Scalar(0));
+    Mat F = Mat::eye(P.size(), CV_64FC1);
 
     // Set D(r_new)/D(v_old)
+
     F.at<double>(0, 7) = dt;
     F.at<double>(1, 8) = dt;
     F.at<double>(2, 9) = dt;
 
-    // Set D(r_new)/D(V)
-    W.at<double>(0, 0) = dt;
-    W.at<double>(1, 1) = dt;
-    W.at<double>(2, 2) = dt;
+    // Compute D(q_new/q(w*dt))
 
-    // Set D(v_new)/D(V) and D(w_new)/D(O)
-    W.at<double>(7, 0) = 1;
-    W.at<double>(8, 1) = 1;
-    W.at<double>(9, 2) = 1;
-    W.at<double>(10, 3) = 1;
-    W.at<double>(11, 4) = 1;
-    W.at<double>(12, 5) = 1;
+    Mat Q1(4, 4, CV_64FC1);
+
+    // Current pose quaternion (q_old)
+    double a1 = x.at<double>(3, 0);
+    double b1 = x.at<double>(4, 0);
+    double c1 = x.at<double>(5, 0);
+    double d1 = x.at<double>(6, 0);
+
+    // Row 1
+    Q1.at<double>(0, 0) =  a1;
+    Q1.at<double>(0, 1) = -b1;
+    Q1.at<double>(0, 2) = -c1;
+    Q1.at<double>(0, 3) = -d1;
+
+    // Row 2
+    Q1.at<double>(1, 0) =  b1;
+    Q1.at<double>(1, 1) =  a1;
+    Q1.at<double>(1, 2) = -d1;
+    Q1.at<double>(1, 3) =  c1;
+
+    // Row 3
+    Q1.at<double>(2, 0) =  c1;
+    Q1.at<double>(2, 1) =  d1;
+    Q1.at<double>(2, 2) =  a1;
+    Q1.at<double>(2, 3) = -b1;
+
+    // Row 4
+    Q1.at<double>(3, 0) =  d1;
+    Q1.at<double>(3, 1) = -c1;
+    Q1.at<double>(3, 2) =  b1;
+    Q1.at<double>(3, 3) =  a1;
+
+    Mat Q2(4, 3, CV_64FC1);
 
     double w1 = x.at<double>(10, 0);
     double w2 = x.at<double>(11, 0);
@@ -392,18 +409,19 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
 
     if (w1 == 0 && w2 == 0 && w3 == 0) {
 
-        // Set D(q_new)/D(w_old)
-        F.at<double>(4, 10) = 0.5 * dt;
-        F.at<double>(5, 11) = 0.5 * dt;
-        F.at<double>(6, 12) = 0.5 * dt;
+        // Compute D(q(w*dt))/D(w_old)
 
-        // Set D(q_new)/D(O)
-        W.at<double>(4, 3) = 0.5 * 0;
-        W.at<double>(5, 4) = 0.5 * 0;
-        W.at<double>(6, 5) = 0.5 * 0;
+        Q2.setTo(Scalar(0));
+
+        Q2.at<double>(1, 0) = 0.5 * dt;
+        Q2.at<double>(2, 1) = 0.5 * dt;
+        Q2.at<double>(3, 2) = 0.5 * dt;
 
     } else {
 
+        // Set D(q_new)/D(q_old)
+
+        // Rotation quaternion q(w*dt)
         Mat q = computeQuaternion(x(Rect(0, 10, 1, 3)) * dt);
 
         double a2 = q.at<double>(0, 0);
@@ -411,23 +429,31 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
         double c2 = q.at<double>(2, 0);
         double d2 = q.at<double>(3, 0);
 
-        // Set D(q_new)/D(q_old)
+        // Row 1
         F.at<double>(3, 3) =  a2;
         F.at<double>(3, 4) = -b2;
         F.at<double>(3, 5) = -c2;
         F.at<double>(3, 6) = -d2;
+
+        // Row 2
         F.at<double>(4, 3) =  b2;
         F.at<double>(4, 4) =  a2;
         F.at<double>(4, 5) =  d2;
         F.at<double>(4, 6) = -c2;
+
+        // Row 3
         F.at<double>(5, 3) =  c2;
         F.at<double>(5, 4) = -d2;
         F.at<double>(5, 5) =  a2;
         F.at<double>(5, 6) =  b2;
+
+        // Row 4
         F.at<double>(6, 3) =  d2;
         F.at<double>(6, 4) =  c2;
         F.at<double>(6, 5) = -b2;
         F.at<double>(6, 6) =  a2;
+
+        // Compute D(q(w*dt))/D(w_old)
 
         double w11 = w1 * w1;
         double w22 = w2 * w2;
@@ -439,36 +465,41 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
         double c = cos(0.5 * dt * norm);
         double s = sin(0.5 * dt * norm);
 
-        double dq1dw_ = - 0.5 * dt * s / norm;
-        double z = s / (dt * norm);
-        double dq_dw_ = 0.5 * c / norm2 - z / norm2;
+        double z = s / norm;
+
+        double dq1dw_ = - 0.5 * dt * z;
+        double dq_dw_ = 0.5 * dt * c / norm2 - z / norm2;
 
         double w12 = w1 * w2;
         double w13 = w1 * w3;
         double w23 = w2 * w3;
 
-        double a1 = x.at<double>(3, 0);
-        double b1 = x.at<double>(4, 0);
-        double c1 = x.at<double>(5, 0);
-        double d1 = x.at<double>(6, 0);
+        // Row 1
+        Q2.at<double>(0, 0) = dq1dw_ * w1;
+        Q2.at<double>(0, 1) = dq1dw_ * w2;
+        Q2.at<double>(0, 2) = dq1dw_ * w3;
 
-        // Set D(q_new)/D(w_old)
-        F.at<double>(3, 10) = a1 * dq1dw_*w1 - b1 * (dq_dw_*w11 + dt*z) - c1 * dq_dw_*w12 - d1 * dq_dw_*w13;
-        F.at<double>(3, 11) = a1 * dq1dw_*w2 - b1 * dq_dw_*w12 - c1 * (dq_dw_*w22 + dt*z) - d1 * dq_dw_*w23;
-        F.at<double>(3, 12) = a1 * dq1dw_*w3 - b1 * dq_dw_*w13 - c1 * dq_dw_*w23 - d1 * (dq_dw_*w33 + dt*z);
-        F.at<double>(4, 10) = b1 * dq1dw_*w1 + a1 * (dq_dw_*w11 + dt*z) - d1 * dq_dw_*w12 + c1 * dq_dw_*w13;
-        F.at<double>(4, 11) = b1 * dq1dw_*w2 + a1 * dq_dw_*w12 - d1 * (dq_dw_*w22 + dt*z) + c1 * dq_dw_*w23;
-        F.at<double>(4, 12) = b1 * dq1dw_*w3 + a1 * dq_dw_*w13 - d1 * dq_dw_*w23 + c1 * (dq_dw_*w33 + dt*z);
-        F.at<double>(5, 10) = c1 * dq1dw_*w1 + d1 * (dq_dw_*w11 + dt*z) + a1 * dq_dw_*w12 - b1 * dq_dw_*w13;
-        F.at<double>(5, 11) = c1 * dq1dw_*w2 + d1 * dq_dw_*w12 + a1 * (dq_dw_*w22 + dt*z) - b1 * dq_dw_*w23;
-        F.at<double>(5, 12) = c1 * dq1dw_*w3 + d1 * dq_dw_*w13 + a1 * dq_dw_*w23 - b1 * (dq_dw_*w33 + dt*z);
-        F.at<double>(6, 10) = d1 * dq1dw_*w1 - c1 * (dq_dw_*w11 + dt*z) + b1 * dq_dw_*w12 + a1 * dq_dw_*w13;
-        F.at<double>(6, 11) = d1 * dq1dw_*w2 - c1 * dq_dw_*w12 + b1 * (dq_dw_*w22 + dt*z) + a1 * dq_dw_*w23;
-        F.at<double>(6, 12) = d1 * dq1dw_*w3 - c1 * dq_dw_*w13 + b1 * dq_dw_*w23 + a1 * (dq_dw_*w33 + dt*z);
+        // Row 2
+        Q2.at<double>(1, 0) = dq_dw_ * w11 + z;
+        Q2.at<double>(1, 1) = dq_dw_ * w12;
+        Q2.at<double>(1, 2) = dq_dw_ * w13;
 
-        // Set D(q_new)/D(O)
-        F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
+        // Row 3
+        Q2.at<double>(2, 0) = dq_dw_ * w12;
+        Q2.at<double>(2, 1) = dq_dw_ * w22 + z;
+        Q2.at<double>(2, 2) = dq_dw_ * w23;
+
+        // Row 4
+        Q2.at<double>(3, 0) = dq_dw_ * w13;
+        Q2.at<double>(3, 1) = dq_dw_ * w23;
+        Q2.at<double>(3, 2) = dq_dw_ * w33 + z;
     }
+
+    // Set D(q_new)/D(w_old)
+
+    F(Rect(10, 3, 3, 4)) = Q1 * Q2;
+
+    // Numerical evaluation
 
     double r1 = x.at<double>(0, 0);
     double r2 = x.at<double>(1, 0);
@@ -480,33 +511,98 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
     double v1 = x.at<double>(7, 0);
     double v2 = x.at<double>(8, 0);
     double v3 = x.at<double>(9, 0);
-    double ww1 = x.at<double>(10, 0);
-    double ww2 = x.at<double>(11, 0);
-    double ww3 = x.at<double>(12, 0);
 
     for (int r = 1; r <= 13; r++) {
+
         for (int c = 1; c <= 13; c++) {
 
-            cout << dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, ww1, ww2, ww3, 0, 0, 0, 0, 0, 0, dt, r, c) << " ";
+            cout << dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, 0, 0, 0, 0, 0, 0, dt, r, c) << " ";
         }
 
         cout << endl;
     }
 
-    for (int r = 3; r <= 6; r++) {
-        for (int c = 10; c <= 12; c++) {
-
-            F.at<double>(r, c) = dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, ww1, ww2, ww3, 0, 0, 0, 0, 0, 0, dt, r+1, c+1);
-        }
-    }
-
-    cout << endl;
     cout << F << endl;
-    // Set D(q_new)/D(O)
-    F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
+
+    return F;
 }
 
-void Map::computeMeasurementMatrix(Mat& H) {
+/*
+ * Returns the product W * Q * W^t, where Q is the process noise covariance matrix
+ * and W is the Jacobian matrix of the state transition function with respect to
+ * the noise vector (V1, V2, V3, W1, W2, W3). The latter is evaluated at the current
+ * state estimate on the assumption that there is zero process noise. This method must
+ * be called before applyMotionModel since the latter updates the current estimate x.
+ *
+ * dt    Time interval between the current and past frames
+ * F     Jacobian matrix of the state transition function with respect to x
+ */
+Mat Map::computeProcessNoiseMatrix(double dt, const Mat& F) {
+
+    Mat W0(7, 6, CV_64FC1, Scalar(0));
+
+    // Set D(r_new)/D(V)
+
+    W0.at<double>(0, 0) = dt;
+    W0.at<double>(1, 1) = dt;
+    W0.at<double>(2, 2) = dt;
+
+    // Set D(q_new)/D(W)
+
+    F(Rect(10, 3, 3, 4)).copyTo(W0(Rect(3, 3, 3, 4)));
+
+    // Compute W * Q * W^t
+
+    Mat Q = A * dt * dt;
+    Mat W0_Q = W0 * Q;
+    Mat W0_Q_t = W0_Q.t();
+    Mat W0_Q_W0 = W0_Q * W0.t();
+
+    Mat N(P.size(), CV_64FC1, Scalar(0));
+
+    W0_Q_W0.copyTo(N(Rect(0, 0, 7, 7)));
+    W0_Q.copyTo(N(Rect(7, 0, 6, 7)));
+    W0_Q_t.copyTo(N(Rect(0, 7, 7, 6)));
+    Q.copyTo(N(Rect(7, 7, 6, 6)));
+
+    // Numerical evaluation
+
+    double r1 = x.at<double>(0, 0);
+    double r2 = x.at<double>(1, 0);
+    double r3 = x.at<double>(2, 0);
+    double q1 = x.at<double>(3, 0);
+    double q2 = x.at<double>(4, 0);
+    double q3 = x.at<double>(5, 0);
+    double q4 = x.at<double>(6, 0);
+    double v1 = x.at<double>(7, 0);
+    double v2 = x.at<double>(8, 0);
+    double v3 = x.at<double>(9, 0);
+    double w1 = x.at<double>(10, 0);
+    double w2 = x.at<double>(11, 0);
+    double w3 = x.at<double>(12, 0);
+
+    for (int r = 1; r <= 13; r++) {
+
+        for (int c = 14; c <= 19; c++) {
+
+            cout << dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, 0, 0, 0, 0, 0, 0, dt, r, c) << " ";
+        }
+
+        cout << endl;
+    }
+
+    cout << W0 << endl;
+
+    return N;
+}
+
+/*
+ * Returns the Jacobian matrix of the feature measurement function with respect
+ * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
+ * the predicted (a priori) state estimate, therefore it should only be called
+ * after applyMotionModel since the latter updates the current estimate x.
+ */
+Mat Map::computeMeasurementMatrix() {
 
     // Get the predicted camera rotation (from world basis to camera basis)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
@@ -544,7 +640,7 @@ void Map::computeMeasurementMatrix(Mat& H) {
         }
     }
 
-    H = Mat(2 * inview.size(), x.rows, CV_64FC1, Scalar(0));
+    Mat H(2 * inview.size(), x.rows, CV_64FC1, Scalar(0));
 
     Mat R1, R2, R3, R4;
 
@@ -683,29 +779,56 @@ void Map::computeMeasurementMatrix(Mat& H) {
         H.at<double>(2*i+1, 13 + 3*i) = dvdx1;
         H.at<double>(2*i+1, 13 + 3*i+1) = dvdx2;
         H.at<double>(2*i+1, 13 + 3*i+2) = dvdx3;
-
-        /*cout << dudr1 << " " << du(1, i) << endl;
-        cout << dudr2 << " " << du(2, i) << endl;
-        cout << dudr3 << " " << du(3, i) << endl;
-        cout << dudq1 << " " << du(4, i) << endl;
-        cout << dudq2 << " " << du(5, i) << endl;
-        cout << dudq3 << " " << du(6, i) << endl;
-        cout << dudq4 << " " << du(7, i) << endl;
-        cout << dudx1 << " " << du(8, i) << endl;
-        cout << dudx2 << " " << du(9, i) << endl;
-        cout << dudx3 << " " << du(10, i) << endl;
-
-        cout << dvdr1 << " " << dv(1, i) << endl;
-        cout << dvdr2 << " " << dv(2, i) << endl;
-        cout << dvdr3 << " " << dv(3, i) << endl;
-        cout << dvdq1 << " " << dv(4, i) << endl;
-        cout << dvdq2 << " " << dv(5, i) << endl;
-        cout << dvdq3 << " " << dv(6, i) << endl;
-        cout << dvdq4 << " " << dv(7, i) << endl;
-        cout << dvdx1 << " " << dv(8, i) << endl;
-        cout << dvdx2 << " " << dv(9, i) << endl;
-        cout << dvdx3 << " " << dv(10, i) << endl;*/
     }
+
+    // Numerical evaluation
+
+    for (int r = 0; r < H.rows / 2; r++) {
+
+        for (int c = 0; c < H.cols; c++) {
+
+            if (c < 7)
+                cout << du(c + 1, r) << " ";
+            else if (7 <= c && c < 13)
+                cout << 0 << " ";
+            else if (c <= 13 && c < 13 + 3*r)
+                cout << 0 << " ";
+            else if (c == 13 + 3*r)
+                cout << du(8, r) << " ";
+            else if (c == 13 + 3*r + 1)
+                cout << du(9, r) << " ";
+            else if (c == 13 + 3*r + 2)
+                cout << du(10, r) << " ";
+            else
+                cout << 0 << " ";
+        }
+
+        cout << endl;
+
+        for (int c = 0; c < H.cols; c++) {
+
+            if (c < 7)
+                cout << dv(c + 1, r) << " ";
+            else if (7 <= c && c < 13)
+                cout << 0 << " ";
+            else if (c <= 13 && c < 13 + 3*r)
+                cout << 0 << " ";
+            else if (c == 13 + 3*r)
+                cout << dv(8, r) << " ";
+            else if (c == 13 + 3*r + 1)
+                cout << dv(9, r) << " ";
+            else if (c == 13 + 3*r + 2)
+                cout << dv(10, r) << " ";
+            else
+                cout << 0 << " ";
+        }
+
+        cout << endl;
+    }
+
+    cout << H << endl;
+
+    return H;
 }
 
 double Map::u(double r1, double r2, double r3,
@@ -790,7 +913,7 @@ double Map::v(double r1, double r2, double r3,
 
 double Map::du(int i, int j) {
 
-    double h = 1e-10;
+    double h = 1e-5;
 
     double r1 = x.at<double>(0, 0);
     double r2 = x.at<double>(1, 0);
@@ -829,7 +952,7 @@ double Map::du(int i, int j) {
 
 double Map::dv(int i, int j) {
 
-    double h = 1e-10;
+    double h = 1e-5;
 
     double r1 = x.at<double>(0, 0);
     double r2 = x.at<double>(1, 0);
@@ -901,7 +1024,7 @@ double Map::model(double r1, double r2, double r3,
 
     r += (v + V) * dt;
 
-    if (w1 != 0 || w2 != 0 || w3 != 0)
+    if (w1 + W1 != 0 || w2 + W2 != 0 || w3 + W3 != 0)
         q = quaternionMultiply(
                 q,
                 computeQuaternion((w + W) * dt)
@@ -961,7 +1084,7 @@ double Map::dmodel(double r1, double r2, double r3,
                    double dt,
                    int i, int j) {
 
-    double h = 1e-3;
+    double h = 1e-5;
 
     if (j == 1)
         return (model(r1 + h, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
