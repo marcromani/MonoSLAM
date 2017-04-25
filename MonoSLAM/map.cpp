@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <iomanip>
 
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -392,14 +393,14 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
     if (w1 == 0 && w2 == 0 && w3 == 0) {
 
         // Set D(q_new)/D(w_old)
-        F.at<double>(4, 10) = 0.5;
-        F.at<double>(5, 11) = 0.5;
-        F.at<double>(6, 12) = 0.5;
+        F.at<double>(4, 10) = 0.5 * dt;
+        F.at<double>(5, 11) = 0.5 * dt;
+        F.at<double>(6, 12) = 0.5 * dt;
 
         // Set D(q_new)/D(O)
-        W.at<double>(4, 3) = 0.5;
-        W.at<double>(5, 4) = 0.5;
-        W.at<double>(6, 5) = 0.5;
+        W.at<double>(4, 3) = 0.5 * 0;
+        W.at<double>(5, 4) = 0.5 * 0;
+        W.at<double>(6, 5) = 0.5 * 0;
 
     } else {
 
@@ -452,22 +453,57 @@ void Map::computePredictionMatrices(double dt, Mat& F, Mat& W) {
         double d1 = x.at<double>(6, 0);
 
         // Set D(q_new)/D(w_old)
-        F.at<double>(3, 10) = a1 * dq1dw_*w1 - b1 * (dq_dw_*w11 + z) - c1 * dq_dw_*w12 - d1 * dq_dw_*w13;
-        F.at<double>(3, 11) = a1 * dq1dw_*w2 - b1 * dq_dw_*w12 - c1 * (dq_dw_*w22 + z) - d1 * dq_dw_*w23;
-        F.at<double>(3, 12) = a1 * dq1dw_*w3 - b1 * dq_dw_*w13 - c1 * dq_dw_*w23 - d1 * (dq_dw_*w33 + z);
-        F.at<double>(4, 10) = b1 * dq1dw_*w1 + a1 * (dq_dw_*w11 + z) - d1 * dq_dw_*w12 + c1 * dq_dw_*w13;
-        F.at<double>(4, 11) = b1 * dq1dw_*w2 + a1 * dq_dw_*w12 - d1 * (dq_dw_*w22 + z) + c1 * dq_dw_*w23;
-        F.at<double>(4, 12) = b1 * dq1dw_*w3 + a1 * dq_dw_*w13 - d1 * dq_dw_*w23 + c1 * (dq_dw_*w33 + z);
-        F.at<double>(5, 10) = c1 * dq1dw_*w1 + d1 * (dq_dw_*w11 + z) + a1 * dq_dw_*w12 - b1 * dq_dw_*w13;
-        F.at<double>(5, 11) = c1 * dq1dw_*w2 + d1 * dq_dw_*w12 + a1 * (dq_dw_*w22 + z) - b1 * dq_dw_*w23;
-        F.at<double>(5, 12) = c1 * dq1dw_*w3 + d1 * dq_dw_*w13 + a1 * dq_dw_*w23 - b1 * (dq_dw_*w33 + z);
-        F.at<double>(6, 10) = d1 * dq1dw_*w1 - c1 * (dq_dw_*w11 + z) + b1 * dq_dw_*w12 + a1 * dq_dw_*w13;
-        F.at<double>(6, 11) = d1 * dq1dw_*w2 - c1 * dq_dw_*w12 + b1 * (dq_dw_*w22 + z) + a1 * dq_dw_*w23;
-        F.at<double>(6, 12) = d1 * dq1dw_*w3 - c1 * dq_dw_*w13 + b1 * dq_dw_*w23 + a1 * (dq_dw_*w33 + z);
+        F.at<double>(3, 10) = a1 * dq1dw_*w1 - b1 * (dq_dw_*w11 + dt*z) - c1 * dq_dw_*w12 - d1 * dq_dw_*w13;
+        F.at<double>(3, 11) = a1 * dq1dw_*w2 - b1 * dq_dw_*w12 - c1 * (dq_dw_*w22 + dt*z) - d1 * dq_dw_*w23;
+        F.at<double>(3, 12) = a1 * dq1dw_*w3 - b1 * dq_dw_*w13 - c1 * dq_dw_*w23 - d1 * (dq_dw_*w33 + dt*z);
+        F.at<double>(4, 10) = b1 * dq1dw_*w1 + a1 * (dq_dw_*w11 + dt*z) - d1 * dq_dw_*w12 + c1 * dq_dw_*w13;
+        F.at<double>(4, 11) = b1 * dq1dw_*w2 + a1 * dq_dw_*w12 - d1 * (dq_dw_*w22 + dt*z) + c1 * dq_dw_*w23;
+        F.at<double>(4, 12) = b1 * dq1dw_*w3 + a1 * dq_dw_*w13 - d1 * dq_dw_*w23 + c1 * (dq_dw_*w33 + dt*z);
+        F.at<double>(5, 10) = c1 * dq1dw_*w1 + d1 * (dq_dw_*w11 + dt*z) + a1 * dq_dw_*w12 - b1 * dq_dw_*w13;
+        F.at<double>(5, 11) = c1 * dq1dw_*w2 + d1 * dq_dw_*w12 + a1 * (dq_dw_*w22 + dt*z) - b1 * dq_dw_*w23;
+        F.at<double>(5, 12) = c1 * dq1dw_*w3 + d1 * dq_dw_*w13 + a1 * dq_dw_*w23 - b1 * (dq_dw_*w33 + dt*z);
+        F.at<double>(6, 10) = d1 * dq1dw_*w1 - c1 * (dq_dw_*w11 + dt*z) + b1 * dq_dw_*w12 + a1 * dq_dw_*w13;
+        F.at<double>(6, 11) = d1 * dq1dw_*w2 - c1 * dq_dw_*w12 + b1 * (dq_dw_*w22 + dt*z) + a1 * dq_dw_*w23;
+        F.at<double>(6, 12) = d1 * dq1dw_*w3 - c1 * dq_dw_*w13 + b1 * dq_dw_*w23 + a1 * (dq_dw_*w33 + dt*z);
 
         // Set D(q_new)/D(O)
         F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
     }
+
+    double r1 = x.at<double>(0, 0);
+    double r2 = x.at<double>(1, 0);
+    double r3 = x.at<double>(2, 0);
+    double q1 = x.at<double>(3, 0);
+    double q2 = x.at<double>(4, 0);
+    double q3 = x.at<double>(5, 0);
+    double q4 = x.at<double>(6, 0);
+    double v1 = x.at<double>(7, 0);
+    double v2 = x.at<double>(8, 0);
+    double v3 = x.at<double>(9, 0);
+    double ww1 = x.at<double>(10, 0);
+    double ww2 = x.at<double>(11, 0);
+    double ww3 = x.at<double>(12, 0);
+
+    for (int r = 1; r <= 13; r++) {
+        for (int c = 1; c <= 13; c++) {
+
+            cout << dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, ww1, ww2, ww3, 0, 0, 0, 0, 0, 0, dt, r, c) << " ";
+        }
+
+        cout << endl;
+    }
+
+    for (int r = 3; r <= 6; r++) {
+        for (int c = 10; c <= 12; c++) {
+
+            F.at<double>(r, c) = dmodel(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, ww1, ww2, ww3, 0, 0, 0, 0, 0, 0, dt, r+1, c+1);
+        }
+    }
+
+    cout << endl;
+    cout << F << endl;
+    // Set D(q_new)/D(O)
+    F(Rect(10, 3, 3, 4)).copyTo(W(Rect(3, 3, 3, 4)));
 }
 
 void Map::computeMeasurementMatrix(Mat& H) {
@@ -647,5 +683,361 @@ void Map::computeMeasurementMatrix(Mat& H) {
         H.at<double>(2*i+1, 13 + 3*i) = dvdx1;
         H.at<double>(2*i+1, 13 + 3*i+1) = dvdx2;
         H.at<double>(2*i+1, 13 + 3*i+2) = dvdx3;
+
+        /*cout << dudr1 << " " << du(1, i) << endl;
+        cout << dudr2 << " " << du(2, i) << endl;
+        cout << dudr3 << " " << du(3, i) << endl;
+        cout << dudq1 << " " << du(4, i) << endl;
+        cout << dudq2 << " " << du(5, i) << endl;
+        cout << dudq3 << " " << du(6, i) << endl;
+        cout << dudq4 << " " << du(7, i) << endl;
+        cout << dudx1 << " " << du(8, i) << endl;
+        cout << dudx2 << " " << du(9, i) << endl;
+        cout << dudx3 << " " << du(10, i) << endl;
+
+        cout << dvdr1 << " " << dv(1, i) << endl;
+        cout << dvdr2 << " " << dv(2, i) << endl;
+        cout << dvdr3 << " " << dv(3, i) << endl;
+        cout << dvdq1 << " " << dv(4, i) << endl;
+        cout << dvdq2 << " " << dv(5, i) << endl;
+        cout << dvdq3 << " " << dv(6, i) << endl;
+        cout << dvdq4 << " " << dv(7, i) << endl;
+        cout << dvdx1 << " " << dv(8, i) << endl;
+        cout << dvdx2 << " " << dv(9, i) << endl;
+        cout << dvdx3 << " " << dv(10, i) << endl;*/
     }
+}
+
+double Map::u(double r1, double r2, double r3,
+              double q1, double q2, double q3, double q4,
+              double x1, double x2, double x3) {
+
+    double fx = camera.K.at<double>(0, 0);
+    double cx = camera.K.at<double>(0, 2);
+
+    double k1 = camera.distCoeffs.at<double>(0, 0);
+    double k2 = camera.distCoeffs.at<double>(0, 1);
+    double p1 = camera.distCoeffs.at<double>(0, 2);
+    double p2 = camera.distCoeffs.at<double>(0, 3);
+    double k3 = camera.distCoeffs.at<double>(0, 4);
+
+    // t
+    double r_[] = {r1, r2, r3};
+    Mat t(3, 1, CV_64FC1, r_);
+
+    // R
+    double q_[] = {q1, q2, q3, q4};
+    Mat q(4, 1, CV_64FC1, q_);
+    Mat R = getRotationMatrix(q).t();
+
+    // x
+    double x_[] = {x1, x2, x3};
+    Mat x(3, 1, CV_64FC1, x_);
+
+    Mat xc = R * (x - t);
+
+    double u = xc.at<double>(0, 0) / xc.at<double>(2, 0);
+    double v = xc.at<double>(1, 0) / xc.at<double>(2, 0);
+
+    double r22 = u*u + v*v;
+    double r4 = r22 * r22;
+    double r6 = r4 * r22;
+
+    u = u * (1 + k1*r22 + k2*r4 + k3*r6) + 2*p1*u*v + p2*(r22 + 2*u*u);
+
+    return fx*u + cx;
+}
+
+double Map::v(double r1, double r2, double r3,
+              double q1, double q2, double q3, double q4,
+              double x1, double x2, double x3) {
+
+    double fy = camera.K.at<double>(1, 1);
+    double cy = camera.K.at<double>(1, 2);
+
+    double k1 = camera.distCoeffs.at<double>(0, 0);
+    double k2 = camera.distCoeffs.at<double>(0, 1);
+    double p1 = camera.distCoeffs.at<double>(0, 2);
+    double p2 = camera.distCoeffs.at<double>(0, 3);
+    double k3 = camera.distCoeffs.at<double>(0, 4);
+
+    // t
+    double r_[] = {r1, r2, r3};
+    Mat t(3, 1, CV_64FC1, r_);
+
+    // R
+    double q_[] = {q1, q2, q3, q4};
+    Mat q(4, 1, CV_64FC1, q_);
+    Mat R = getRotationMatrix(q).t();
+
+    // x
+    double x_[] = {x1, x2, x3};
+    Mat x(3, 1, CV_64FC1, x_);
+
+    Mat xc = R * (x - t);
+
+    double u = xc.at<double>(0, 0) / xc.at<double>(2, 0);
+    double v = xc.at<double>(1, 0) / xc.at<double>(2, 0);
+
+    double r22 = u*u + v*v;
+    double r4 = r22 * r22;
+    double r6 = r4 * r22;
+
+    v = v * (1 + k1*r22 + k2*r4 + k3*r6) + 2*p2*u*v + p1*(r22 + 2*v*v);
+
+    return fy*v + cy;
+}
+
+double Map::du(int i, int j) {
+
+    double h = 1e-10;
+
+    double r1 = x.at<double>(0, 0);
+    double r2 = x.at<double>(1, 0);
+    double r3 = x.at<double>(2, 0);
+    double q1 = x.at<double>(3, 0);
+    double q2 = x.at<double>(4, 0);
+    double q3 = x.at<double>(5, 0);
+    double q4 = x.at<double>(6, 0);
+    double x1 = x.at<double>(13 + 3*j, 0);
+    double x2 = x.at<double>(13 + 3*j + 1, 0);
+    double x3 = x.at<double>(13 + 3*j + 2, 0);
+
+    if (i == 1)
+        return (u(r1 + h, r2, r3, q1, q2, q3, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 2)
+        return (u(r1, r2 + h, r3, q1, q2, q3, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 3)
+        return (u(r1, r2, r3 + h, q1, q2, q3, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 4)
+        return (u(r1, r2, r3, q1 + h, q2, q3, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 5)
+        return (u(r1, r2, r3, q1, q2 + h, q3, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 6)
+        return (u(r1, r2, r3, q1, q2, q3 + h, q4, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 7)
+        return (u(r1, r2, r3, q1, q2, q3, q4 + h, x1, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 8)
+        return (u(r1, r2, r3, q1, q2, q3, q4, x1 + h, x2, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 9)
+        return (u(r1, r2, r3, q1, q2, q3, q4, x1, x2 + h, x3) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 10)
+        return (u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3 + h) - u(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+
+    return -1;
+}
+
+double Map::dv(int i, int j) {
+
+    double h = 1e-10;
+
+    double r1 = x.at<double>(0, 0);
+    double r2 = x.at<double>(1, 0);
+    double r3 = x.at<double>(2, 0);
+    double q1 = x.at<double>(3, 0);
+    double q2 = x.at<double>(4, 0);
+    double q3 = x.at<double>(5, 0);
+    double q4 = x.at<double>(6, 0);
+    double x1 = x.at<double>(13 + 3*j, 0);
+    double x2 = x.at<double>(13 + 3*j + 1, 0);
+    double x3 = x.at<double>(13 + 3*j + 2, 0);
+
+    if (i == 1)
+        return (v(r1 + h, r2, r3, q1, q2, q3, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 2)
+        return (v(r1, r2 + h, r3, q1, q2, q3, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 3)
+        return (v(r1, r2, r3 + h, q1, q2, q3, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 4)
+        return (v(r1, r2, r3, q1 + h, q2, q3, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 5)
+        return (v(r1, r2, r3, q1, q2 + h, q3, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 6)
+        return (v(r1, r2, r3, q1, q2, q3 + h, q4, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 7)
+        return (v(r1, r2, r3, q1, q2, q3, q4 + h, x1, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 8)
+        return (v(r1, r2, r3, q1, q2, q3, q4, x1 + h, x2, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 9)
+        return (v(r1, r2, r3, q1, q2, q3, q4, x1, x2 + h, x3) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+    if (i == 10)
+        return (v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3 + h) - v(r1, r2, r3, q1, q2, q3, q4, x1, x2, x3)) / h;
+
+    return -1;
+}
+
+double Map::model(double r1, double r2, double r3,
+                  double q1, double q2, double q3, double q4,
+                  double v1, double v2, double v3,
+                  double w1, double w2, double w3,
+                  double V1, double V2, double V3,
+                  double W1, double W2, double W3,
+                  double dt,
+                  int i) {
+
+    // r
+    double r_[] = {r1, r2, r3};
+    Mat r(3, 1, CV_64FC1, r_);
+
+    // q
+    double q_[] = {q1, q2, q3, q4};
+    Mat q(4, 1, CV_64FC1, q_);
+
+    // v
+    double v_[] = {v1, v2, v3};
+    Mat v(3, 1, CV_64FC1, v_);
+
+    // w
+    double w_[] = {w1, w2, w3};
+    Mat w(3, 1, CV_64FC1, w_);
+
+    // V
+    double V_[] = {V1, V2, V3};
+    Mat V(3, 1, CV_64FC1, V_);
+
+    // W
+    double W_[] = {W1, W2, W3};
+    Mat W(3, 1, CV_64FC1, W_);
+
+    r += (v + V) * dt;
+
+    if (w1 != 0 || w2 != 0 || w3 != 0)
+        q = quaternionMultiply(
+                q,
+                computeQuaternion((w + W) * dt)
+            );
+
+    v += V;
+    w += W;
+
+    if (i == 1)
+        return r.at<double>(0, 0);
+    if (i == 2)
+        return r.at<double>(1, 0);
+    if (i == 3)
+        return r.at<double>(2, 0);
+    if (i == 4)
+        return q.at<double>(0, 0);
+    if (i == 5)
+        return q.at<double>(1, 0);
+    if (i == 6)
+        return q.at<double>(2, 0);
+    if (i == 7)
+        return q.at<double>(3, 0);
+    if (i == 8)
+        return v.at<double>(0, 0);
+    if (i == 9)
+        return v.at<double>(1, 0);
+    if (i == 10)
+        return v.at<double>(2, 0);
+    if (i == 11)
+        return w.at<double>(0, 0);
+    if (i == 12)
+        return w.at<double>(1, 0);
+    if (i == 13)
+        return w.at<double>(2, 0);
+    if (i == 14)
+        return V.at<double>(0, 0);
+    if (i == 15)
+        return V.at<double>(1, 0);
+    if (i == 16)
+        return V.at<double>(2, 0);
+    if (i == 17)
+        return W.at<double>(0, 0);
+    if (i == 18)
+        return W.at<double>(1, 0);
+    if (i == 19)
+        return W.at<double>(2, 0);
+
+    return -1;
+}
+
+double Map::dmodel(double r1, double r2, double r3,
+                   double q1, double q2, double q3, double q4,
+                   double v1, double v2, double v3,
+                   double w1, double w2, double w3,
+                   double V1, double V2, double V3,
+                   double W1, double W2, double W3,
+                   double dt,
+                   int i, int j) {
+
+    double h = 1e-3;
+
+    if (j == 1)
+        return (model(r1 + h, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 2)
+        return (model(r1, r2 + h, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 3)
+        return (model(r1, r2, r3 + h, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 4)
+        return (model(r1, r2, r3, q1 + h, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 5)
+        return (model(r1, r2, r3, q1, q2 + h, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 6)
+        return (model(r1, r2, r3, q1, q2, q3 + h, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 7)
+        return (model(r1, r2, r3, q1, q2, q3, q4 + h, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 8)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1 + h, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 9)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2 + h, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 10)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3 + h, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 11)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1 + h, w2, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 12)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2 + h, w3, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 13)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3 + h, V1, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 14)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1 + h, V2, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 15)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2 + h, V3, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 16)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3 + h, W1, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 17)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1 + h, W2, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 18)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2 + h, W3, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    if (j == 19)
+        return (model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3 + h, dt, i) -
+                model(r1, r2, r3, q1, q2, q3, q4, v1, v2, v3, w1, w2, w3, V1, V2, V3, W1, W2, W3, dt, i)) / h;
+
+    return -1;
 }

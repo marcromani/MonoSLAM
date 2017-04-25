@@ -184,6 +184,35 @@ private:
     void computePredictionMatrices(double dt, cv::Mat& F, cv::Mat& W);
 
     void computeMeasurementMatrix(cv::Mat& H);
+
+    double u(double r1, double r2, double r3,
+             double q1, double q2, double q3, double q4,
+             double x1, double x2, double x3);
+
+    double v(double r1, double r2, double r3,
+             double q1, double q2, double q3, double q4,
+             double x1, double x2, double x3);
+
+    double du(int i, int j);
+    double dv(int i, int j);
+
+    double model(double r1, double r2, double r3,
+                 double q1, double q2, double q3, double q4,
+                 double v1, double v2, double v3,
+                 double w1, double w2, double w3,
+                 double V1, double V2, double V3,
+                 double W1, double W2, double W3,
+                 double dt,
+                 int i);
+
+    double dmodel(double r1, double r2, double r3,
+                  double q1, double q2, double q3, double q4,
+                  double v1, double v2, double v3,
+                  double w1, double w2, double w3,
+                  double V1, double V2, double V3,
+                  double W1, double W2, double W3,
+                  double dt,
+                  int i, int j);
 };
 
 #endif
