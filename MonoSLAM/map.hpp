@@ -193,7 +193,7 @@ private:
     cv::Mat computeProcessNoiseMatrix(double dt, const cv::Mat& F);
 
     /*
-     * Returns the Jacobian matrix of the feature measurement function with respect
+     * Returns the Jacobian matrix of the features measurement function with respect
      * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
      * the predicted (a priori) state estimate, therefore it should only be called
      * after applyMotionModel since the latter updates the current estimate x.

@@ -76,8 +76,7 @@ int main(int argc, char *argv[]) {
                        });
 
     // Initialize video feed device
-    VideoCapture cap("http://192.168.1.35:8080/video?video.mjpeg");
-    //VideoCapture cap("http://10.111.145.48:8080/video?video.mjpeg");
+    VideoCapture cap(0);
 
     if (!cap.isOpened())
         return -1;

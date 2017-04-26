@@ -211,7 +211,22 @@ void Map::predict(double dt) {
 
     Mat H = computeMeasurementMatrix();
 
-    cout << H * P * H.t() << endl;
+    Mat S = H * P * H.t();
+
+    cout << S << endl;
+
+    for (int i = 0; i < S.rows / 2; i++) {
+
+        Mat Si = S(Rect(2*i, 2*i, 2, 2));
+
+        Mat eigenval, eigenvec;
+
+        eigen(Si, eigenval, eigenvec);
+
+        cv::sqrt(eigenval, eigenval);
+
+        cout << 6 * eigenval.t() << endl;
+    }
 
     exit(0);
 }
@@ -597,7 +612,7 @@ Mat Map::computeProcessNoiseMatrix(double dt, const Mat& F) {
 }
 
 /*
- * Returns the Jacobian matrix of the feature measurement function with respect
+ * Returns the Jacobian matrix of the features measurement function with respect
  * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
  * the predicted (a priori) state estimate, therefore it should only be called
  * after applyMotionModel since the latter updates the current estimate x.

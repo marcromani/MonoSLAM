@@ -59,9 +59,9 @@ Mat getRotationMatrix(const Mat& q) {
     double c = q.at<double>(2, 0);
     double d = q.at<double>(3, 0);
 
-    double m[] = {a*a+b*b-c*c-d*d, 2*b*c-2*a*d, 2*b*d+2*a*c,
-                  2*b*c+2*a*d, a*a-b*b+c*c-d*d, 2*c*d-2*a*b,
-                  2*b*d-2*a*c, 2*c*d+2*a*b, a*a-b*b-c*c+d*d
+    double m[] = {a*a+b*b-c*c-d*d, 2*b*c-2*a*d,     2*b*d+2*a*c,
+                  2*b*c+2*a*d,     a*a-b*b+c*c-d*d, 2*c*d-2*a*b,
+                  2*b*d-2*a*c,     2*c*d+2*a*b,     a*a-b*b-c*c+d*d
                  };
 
     return Mat(3, 3, CV_64FC1, m).clone();
@@ -74,7 +74,7 @@ Mat quaternionInv(const Mat& q) {
 
     Mat inv = Mat(4, 1, CV_64FC1);
 
-    inv.at<double>(0, 0) = q.at<double>(0, 0);
+    inv.at<double>(0, 0) =  q.at<double>(0, 0);
     inv.at<double>(1, 0) = -q.at<double>(1, 0);
     inv.at<double>(2, 0) = -q.at<double>(2, 0);
     inv.at<double>(3, 0) = -q.at<double>(3, 0);

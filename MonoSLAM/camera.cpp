@@ -111,15 +111,15 @@ void Camera::projectPoints(const Mat& R, const Mat& t, const vector<Point3d>& po
         Mat pCam = R * (Mat(points3D[i]) - t);
 
         // TODO: Check the z component, it might be zero!
-        double u = pCam.at<double>(0, 0) / pCam.at<double>(2, 0);
-        double v = pCam.at<double>(1, 0) / pCam.at<double>(2, 0);
+        double xn = pCam.at<double>(0, 0) / pCam.at<double>(2, 0);
+        double yn = pCam.at<double>(1, 0) / pCam.at<double>(2, 0);
 
-        double r2 = u*u + v*v;
+        double r2 = xn*xn + yn*yn;
         double r4 = r2 * r2;
         double r6 = r4 * r2;
 
-        u = u * (1 + k1*r2 + k2*r4 + k3*r6) + 2*p1*u*v + p2*(r2 + 2*u*u);
-        v = v * (1 + k1*r2 + k2*r4 + k3*r6) + 2*p2*u*v + p1*(r2 + 2*v*v);
+        double u = xn * (1 + k1*r2 + k2*r4 + k3*r6) + 2*p1*xn*yn + p2*(r2 + 2*xn*xn);
+        double v = yn * (1 + k1*r2 + k2*r4 + k3*r6) + 2*p2*xn*yn + p1*(r2 + 2*yn*yn);
 
         u = fx*u + cx;
         v = fy*v + cy;
