@@ -31,7 +31,7 @@ public:
     cv::Mat P;                          // Map state covariance matrix
 
     cv::Mat A;                          // Linear and angular accelerations noise covariance matrix
-    cv::Mat R;                          // Measurement noise covariance matrix
+    cv::Mat R;                          // Measurement noise variances, in pixels
 
     /*
      * Constructor for a lens distortion camera model.
@@ -43,8 +43,8 @@ public:
         int minFeatureDensity_,
         int maxFeatureDensity_,
         double failTolerance_,
-        const std::vector<double>& accVariances,
-        const cv::Mat& R_) :
+        const cv::Mat& accelerationVariances,
+        const cv::Mat& measurementNoiseVariances) :
         camera(K, distCoeffs, frameSize),
         patchSize(patchSize_),
         minFeatureDensity(minFeatureDensity_),
@@ -52,7 +52,11 @@ public:
         failTolerance(failTolerance_),
         numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {A = cv::Mat::diag(cv::Mat(accVariances)); R_.copyTo(R);}
+        P(13, 13, CV_64FC1, cv::Scalar(0)) {
+
+        A = cv::Mat::diag(accelerationVariances);
+        measurementNoiseVariances.copyTo(R);
+    }
 
     /*
      * Constructor for a pinhole camera model.
@@ -63,8 +67,8 @@ public:
         int minFeatureDensity_,
         int maxFeatureDensity_,
         double failTolerance_,
-        const std::vector<double>& accVariances,
-        const cv::Mat& R_) :
+        const cv::Mat& accelerationVariances,
+        const cv::Mat& measurementNoiseVariances) :
         camera(K, frameSize),
         patchSize(patchSize_),
         minFeatureDensity(minFeatureDensity_),
@@ -72,7 +76,11 @@ public:
         failTolerance(failTolerance_),
         numVisibleFeatures(0),
         x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {A = cv::Mat::diag(cv::Mat(accVariances)); R_.copyTo(R);}
+        P(13, 13, CV_64FC1, cv::Scalar(0)) {
+
+        A = cv::Mat::diag(accelerationVariances);
+        measurementNoiseVariances.copyTo(R);
+    }
 
     /*
      * Initializes the map by detecting a known chessboard pattern. It provides an
@@ -126,6 +134,8 @@ public:
      * dt    Time interval between the current and past frames
      */
     void predict(double dt);
+
+    void update(const cv::Mat& frame, double dt);
 
 private:
 
@@ -199,35 +209,6 @@ private:
      * after applyMotionModel since the latter updates the current estimate x.
      */
     cv::Mat computeMeasurementMatrix();
-
-    double u(double r1, double r2, double r3,
-             double q1, double q2, double q3, double q4,
-             double x1, double x2, double x3);
-
-    double v(double r1, double r2, double r3,
-             double q1, double q2, double q3, double q4,
-             double x1, double x2, double x3);
-
-    double du(int i, int j);
-    double dv(int i, int j);
-
-    double model(double r1, double r2, double r3,
-                 double q1, double q2, double q3, double q4,
-                 double v1, double v2, double v3,
-                 double w1, double w2, double w3,
-                 double V1, double V2, double V3,
-                 double W1, double W2, double W3,
-                 double dt,
-                 int i);
-
-    double dmodel(double r1, double r2, double r3,
-                  double q1, double q2, double q3, double q4,
-                  double v1, double v2, double v3,
-                  double w1, double w2, double w3,
-                  double V1, double V2, double V3,
-                  double W1, double W2, double W3,
-                  double dt,
-                  int i, int j);
 };
 
 #endif

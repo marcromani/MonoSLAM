@@ -1,6 +1,11 @@
+#include <cmath>
+
+#include "opencv2/imgproc/imgproc.hpp"
+
 #include "util.hpp"
 
 using namespace cv;
+using namespace std;
 
 /*
  * Computes the homography matrix H between two pinhole camera views of a plane.
@@ -120,4 +125,88 @@ Mat reduceMat(const Mat& mat, int idx) {
     }
 
     return reduced;
+}
+
+vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) {
+
+    vector<RotatedRect> ellipses;
+
+    for (int i = 0; i < means.size(); i++) {
+
+        Mat Si = S(Rect(2*i, 2*i, 2, 2));
+
+        // Compute the eigenvalues and eigenvectors
+        Mat eigenval, eigenvec;
+        eigen(Si, eigenval, eigenvec);
+
+        // Compute the angle between the largest eigenvector and the x axis
+        double angle = atan2(eigenvec.at<double>(0, 1), eigenvec.at<double>(0, 0));
+
+        // Shift the angle from [-pi, pi] to [0, 2pi]
+        if (angle < 0)
+            angle += PI_DOUBLE;
+
+        // Convert to degrees
+        angle *= RAD_TO_DEG;
+
+        // Compute the size of the major and minor axes
+        double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
+        double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
+
+        ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
+    }
+
+    return ellipses;
+}
+
+Rect getBoundingBox(const RotatedRect& ellipse) {
+
+    double x = ellipse.center.x;
+    double y = ellipse.center.y;
+    double a = 0.5 * ellipse.size.width;
+    double b = 0.5 * ellipse.size.height;
+
+    double xmax, ymax;
+
+    if (a == b) {
+
+        xmax = a;
+        ymax = b;
+
+    } else {
+
+        double a2inv = 1 / (a*a);
+        double b2inv = 1 / (b*b);
+
+        double angle = ellipse.angle * DEG_TO_RAD;
+
+        double c = cos(angle);
+        double s = sin(angle);
+        double c2 = c*c;
+        double s2 = s*s;
+
+        double A = c2 * a2inv + s2 * b2inv;
+        double B = c2 * b2inv + s2 * a2inv;
+        double C = 2 * c * s * (b2inv - a2inv);
+
+        double r = (4 * A * B / (C * C) - 1);
+        double x0 = 1 / sqrt(A * r);
+        double y0 = 1 / sqrt(B * r);
+
+        if (C < 0) {
+
+            x0 = - x0;
+            y0 = - y0;
+        }
+
+        xmax = 2 * B * y0 / C;
+        ymax = 2 * A * x0 / C;
+    }
+
+    return Rect(x - xmax, y - ymax, 2 * xmax, 2 * ymax);
+}
+
+void drawEllipse(Mat& image, const RotatedRect& e) {
+
+    ellipse(image, e, Scalar(0, 0, 255), 1, LINE_AA);
 }

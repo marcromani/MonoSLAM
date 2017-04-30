@@ -58,21 +58,21 @@ int main(int argc, char *argv[]) {
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    vector<double> accVariances({1, 1, 1, 0.2 * PI, 0.2 * PI, 0.2 * PI});
-    Mat measurementNoiseCov = 4 * Mat::eye(2, 2, CV_64FC1);
+    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.1, 0.1, 0.1);
+    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 4, 4);
 
     // Build new map
     Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance,
-            accVariances, measurementNoiseCov);
+            accelerationVariances, measurementNoiseVariances);
 
     // Chessboard size
     Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
-    vector<double> var({0.0025, 0.0025, 0.0025,
+    vector<double> var({0.0002, 0.0002, 0.0002,
                         0., 0., 0., 0.,
                         0.0001, 0.0001, 0.0001,
-                        0.0004, 0.0004, 0.0004,
+                        0.07, 0.07, 0.07,
                        });
 
     // Initialize video feed device
@@ -126,15 +126,16 @@ int main(int argc, char *argv[]) {
         cvtColor(frame, gray, CV_BGR2GRAY);
 
         map.predict(dt);
+        map.update(frame, dt);
 
-        // TODO: measure + update
-
-        map.drawInViewFeatures(frame);
+        //map.drawInViewFeatures(frame);
 
         imshow(window, frame);
 
         if (waitKey(1) == 27)
             break;
+
+        waitKey();
     }
 }
 

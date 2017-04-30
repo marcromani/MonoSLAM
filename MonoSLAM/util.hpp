@@ -3,7 +3,10 @@
 
 #include "opencv2/core/core.hpp"
 
-constexpr double PI = 3.1415926535897932385;
+constexpr double PI         = 3.1415926535897932385;
+constexpr double PI_DOUBLE  = 6.2831853071795864769;
+constexpr double RAD_TO_DEG = 57.2957795130823208768;
+constexpr double DEG_TO_RAD = 0.0174532925199432957;
 
 /*
  * Computes the homography matrix H between two pinhole camera views of a plane.
@@ -50,5 +53,9 @@ cv::Rect buildSquare(const cv::Point2i& center, int size);
  * idx      Row and column to be deleted
  */
 cv::Mat reduceMat(const cv::Mat& mat, int idx);
+
+std::vector<cv::RotatedRect> computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat& S);
+cv::Rect getBoundingBox(const cv::RotatedRect& ellipse);
+void drawEllipse(Mat& image, const cv::RotatedRect& ellipse);
 
 #endif
