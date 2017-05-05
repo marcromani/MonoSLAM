@@ -29,18 +29,29 @@ public:
      * Constructor for a fully initialized feature. It is a convenient method used only
      * during the map initialization step, when manually initialized features are added
      * with zero position uncertainty.
+     *
+     * image    Camera frame at the time the feature is initialized
+     * roi      Feature patch
+     * normal   Patch normal vector
+     * R        Camera rotation (world to camera) at feature initialization
+     * t        Camera position, in world coordinates, at feature initialization
      */
-    Feature(const cv::Mat& image_, const cv::Rect& roi_, const cv::Mat& normal_,
-            const cv::Mat& R_, const cv::Mat& t_);
+    Feature(const cv::Mat& image, const cv::Rect& roi, const cv::Mat& normal,
+            const cv::Mat& R, const cv::Mat& t);
 
     /*
-     * Constructor for a pre-initialized feature.
+     * Constructor for a pre-initialized (candidate) feature.
      *
+     * image            Camera frame at the time the feature is initialized
+     * roi              Feature patch
+     * R                Camera rotation (world to camera) at feature initialization
+     * t                Camera position, in world coordinates, at feature initialization
+     * dir              Feature line unit direction vector, in world coordinates
      * depthInterval    Interval which contains the depth hypotheses
      * depthSamples     Number of depth hypotheses
      */
-    Feature(const cv::Mat& image_, const cv::Rect& roi_, const cv::Mat& R_, const cv::Mat& t_,
-            const cv::Mat& dir_, const cv::Point2d& depthInterval, int depthSamples);
+    Feature(const cv::Mat& image, const cv::Rect& roi, const cv::Mat& R, const cv::Mat& t,
+            const cv::Mat& dir, const cv::Point2d& depthInterval, int depthSamples);
 };
 
 #endif

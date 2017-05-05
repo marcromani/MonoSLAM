@@ -1,7 +1,6 @@
 #include "opencv2/imgproc/imgproc.hpp"
 
 #include "camera.hpp"
-#include "quaternion.hpp"
 #include "util.hpp"
 
 using namespace cv;
@@ -15,45 +14,27 @@ Camera::Camera(const Mat& K_, const Mat& distCoeffs_, const Size& frameSize_) {
     K_.copyTo(K);
     frameSize = frameSize_;
 
-    if (!distCoeffs_.empty()) {
-
-        distCoeffs_.copyTo(distCoeffs);
-        distortionMap = buildDistortionMap(frameSize, K, distCoeffs);
-    }
+    distCoeffs_.copyTo(distCoeffs);
 }
 
 /*
- * Constructor for a pinhole camera model (distCoeffs is left empty by default).
+ * Constructor for a pinhole camera model (distCoeffs is filled with zeros).
  */
 Camera::Camera(const Mat& K_, const Size& frameSize_) {
 
     K_.copyTo(K);
     frameSize = frameSize_;
-}
 
-/*
- * Returns the distorted version of a camera image, for which no lens distortion
- * is applied yet (only the pinhole model). It is the inverse operation of undistort.
- */
-Mat Camera::distort(const Mat& image) {
-
-    if (distCoeffs.empty())
-        return image.clone();
-
-    Mat distorted, empty;
-    remap(image, distorted, distortionMap, empty, INTER_LINEAR, BORDER_CONSTANT, Scalar(0));
-
-    return distorted;
+    distCoeffs = Mat::zeros(1, 5, CV_64FC1);
 }
 
 /*
  * Warps a rectangular patch (presumed to be the projection of a certain region of a plane in space)
  * from one camera view to another. In particular, a map M is computed such that s2 = M * s1, where
  * s1 is the patch in the first view and s2 is the appearance of the same patch as would be seen from
- * the second view. Pixels which do not belong to the patch are set to 0. Note that, given the way
- * the image is undistorted and distorted back, some portions of the warped patch might not be
- * recoverable and appear black (especially around the corners), if the warped undistorted patch
- * exceeds the image boundary. This will not occur with a pinhole camera model.
+ * the second view. A pinhole camera model is assumed (i.e. zero distortion coefficients) so that the
+ * computed map be a planar homography. This is always a good approximation provided that the planar
+ * patch is small or that the lens distortion is modest.
  *
  * p            Point in the plane, in world coordinates
  * n            Plane normal, in world coordinates
@@ -63,36 +44,12 @@ Mat Camera::distort(const Mat& image) {
  * t1           First pose translation, in world coordinates
  * R2           Second pose rotation (world to camera)
  * t2           Second pose translation, in world coordinates
+ * u            First pixel coordinate of the projection of the original patch center
+ * v            Second pixel coordinate of the projection of the original patch center
  */
 Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& patch1,
-                      const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2) {
-
-    // Black background
-    Mat black(view1.rows, view1.cols, view1.type(), Scalar(0));
-
-    // Copy the original patch into the black background
-    view1(patch1).copyTo(black(patch1));
-
-    // Undistort the original patch
-    Mat undistorted1;
-    undistort(black, undistorted1, K, distCoeffs);
-
-    // Compute the homography matrix between the first and second views
-    Mat H = computeHomography(p, n, K, R1, t1, R2, t2);
-
-    // Apply the homography
-    Mat warped;
-    warpPerspective(undistorted1, warped, H, Size(view1.cols, view1.rows));
-
-    // Distort back the warped image
-    Mat distorted2 = distort(warped);
-
-    return distorted2;
-}
-
-Mat Camera::warpPatch2(const Mat& p, const Mat& n, const Mat& view1, const Rect& patch1,
-                       const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2,
-                       int& u, int& v) {
+                      const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2,
+                      int& u, int& v) {
 
     // Black background
     Mat black(view1.rows, view1.cols, view1.type(), Scalar(0));
@@ -129,6 +86,14 @@ Mat Camera::warpPatch2(const Mat& p, const Mat& n, const Mat& view1, const Rect&
     return warped(patchBox);
 }
 
+/*
+ * Projects 3D points onto the camera frame.
+ *
+ * R            Rotation matrix (world to camera)
+ * t            Camera position, in world coordinates
+ * points3D     Points to be projected, in world coordinates
+ * points2D     Points projections, in pixels
+ */
 void Camera::projectPoints(const Mat& R, const Mat& t, const vector<Point3d>& points3D,
                            vector<Point2d>& points2D) {
 
@@ -149,7 +114,6 @@ void Camera::projectPoints(const Mat& R, const Mat& t, const vector<Point3d>& po
 
         Mat pCam = R * (Mat(points3D[i]) - t);
 
-        // TODO: Check the z component, it might be zero!
         double xn = pCam.at<double>(0, 0) / pCam.at<double>(2, 0);
         double yn = pCam.at<double>(1, 0) / pCam.at<double>(2, 0);
 

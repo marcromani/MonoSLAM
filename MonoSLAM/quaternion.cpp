@@ -82,6 +82,12 @@ Mat quaternionInv(const Mat& q) {
     return inv;
 }
 
+/*
+ * Computes the matrices of the derivatives of R(q)^t with respect to the quaternion
+ * components. That is, the entries of Ri are the derivatives of the entries of the
+ * transpose of the matrix returned by getRotationMatrix(q) with respect to the ith
+ * quaternion component.
+ */
 void getRotationMatrixDerivatives(const Mat& q, Mat& R1, Mat& R2, Mat& R3, Mat& R4) {
 
     double a = q.at<double>(0, 0);

@@ -197,6 +197,15 @@ void Map::predict(double dt) {
     applyMotionModel(dt);
 }
 
+/*
+ * Applies the update step of the Extended Kalman Filter. In particular, given the
+ * predicted (a priori) state estimate x_k+1|k and the associated covariance matrix
+ * P_k+1|k, it computes the corrected (a posteriori) estimate x_k+1|k+1 and its
+ * covariance P_k+1|k+1 by measuring known, currently visible map features.
+ *
+ * gray     Grayscale frame, used for feature matching
+ * frame    Color frame, used as a canvas to draw features on
+ */
 void Map::update(const Mat& gray, Mat& frame) {
 
     vector<int> inviewIndices;
@@ -254,7 +263,7 @@ void Map::update(const Mat& gray, Mat& frame) {
 
         // Compute its appearance from the current camera pose
         int u, v;
-        Mat templ = camera.warpPatch2(p, n, view1, patch1, R1, t1, R2, t2, u, v);
+        Mat templ = camera.warpPatch(p, n, view1, patch1, R1, t1, R2, t2, u, v);
 
         // If the template size is zero the feature is far away and not visible
         if (templ.empty()) {
@@ -288,7 +297,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
 
-            if (maxVal > 0.9) {
+            if (maxVal > 0.85) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;

@@ -128,6 +128,15 @@ public:
      */
     void predict(double dt);
 
+    /*
+     * Applies the update step of the Extended Kalman Filter. In particular, given the
+     * predicted (a priori) state estimate x_k+1|k and the associated covariance matrix
+     * P_k+1|k, it computes the corrected (a posteriori) estimate x_k+1|k+1 and its
+     * covariance P_k+1|k+1 by measuring known, currently visible map features.
+     *
+     * gray     Grayscale frame, used for feature matching
+     * frame    Color frame, used as a canvas to draw features on
+     */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
 private:
