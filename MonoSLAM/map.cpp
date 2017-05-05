@@ -1,7 +1,5 @@
 #include <algorithm>
-#include <functional>
 #include <iostream>
-#include <iomanip>
 
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -182,17 +180,6 @@ bool Map::trackNewCandidates(const Mat& frame) {
 }
 
 /*
- * Draws features that are (theoretically) in view.
- *
- * frame    Camera frame
- */
-void Map::drawInViewFeatures(const Mat& frame) {
-
-    for (unsigned int i = 0; i < inview.size(); i++)
-        circle(frame, inview[i], 5, Scalar(0, 0, 255), 1, CV_AA, 0);
-}
-
-/*
  * Applies the first step of the Extended Kalman Filter. In particular, given the
  * current state estimate x_k|k and the current state covariance matrix P_k|k, it
  * computes the next a priori state estimate x_k+1|k (via the camera motion model)
@@ -210,46 +197,177 @@ void Map::predict(double dt) {
     applyMotionModel(dt);
 }
 
-void Map::update(const Mat& frame, double dt) {
+void Map::update(const Mat& gray, Mat& frame) {
 
-    Mat H = computeMeasurementMatrix();
+    vector<int> inviewIndices;
+
+    Mat H = computeMeasurementMatrix(inviewIndices);
+
+    // If there are no predicted in sight features skip the update step
+    if (inviewIndices.empty()) {
+
+        // TODO: Add a counter of the number of times the system
+        //       is left with no features to match, to assess when
+        //       the tracking is lost?
+        numVisibleFeatures = 0;
+        return;
+    }
 
     Mat N(H.rows, H.rows, CV_64FC1, Scalar(0));
 
     for (int i = 0; i < N.rows / 2; i++) {
 
         N.at<double>(2*i, 2*i) = R.at<double>(0, 0);
-        N.at<double>(2*i+1, 2*i+1) = R.at<double>(1, 0);
+        N.at<double>(2*i + 1, 2*i + 1) = R.at<double>(1, 0);
     }
 
     // Compute the innovation covariance matrix
     Mat S = H * P * H.t() + N;
 
-    for (int i = 0; i < S.rows / 2; i++) {
+    // Compute the error ellipses of the predicted in sight features pixel positions
+    vector<RotatedRect> ellipses = computeEllipses(inviewPos, S);
 
-        Mat Si = S(Rect(2*i, 2*i, 2, 2));
+    vector<int> matchedIndices;
+    vector<int> failedIndices;
 
-        RotatedRect ellipse = getEllipse(0.095, inview[i], Si);
-        cout << ellipse.size << endl;
+    vector<Point2d> residuals;
 
-        Mat tmp = frame;
-        drawEllipse(tmp, ellipse);
+    Feature *featuresPtr = features.data();
+
+    // For each predicted in sight feature
+    for (unsigned int i = 0; i < ellipses.size(); i++) {
+
+        int idx = inviewIndices[i];
+
+        Feature *feature = &featuresPtr[idx];
+
+        feature->matchingAttempts++;
+
+        Mat p = x(Rect(0, 13 + 3*idx, 1, 3));
+        Mat n = feature->normal;
+        Mat view1 = feature->image;
+        Rect patch1 = feature->roi;
+        Mat R1 = feature->R;
+        Mat t1 = feature->t;
+        Mat R2 = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
+        Mat t2 = x(Rect(0, 0, 1, 3));
+
+        // Compute its appearance from the current camera pose
+        int u, v;
+        Mat templ = camera.warpPatch2(p, n, view1, patch1, R1, t1, R2, t2, u, v);
+
+        // If the template size is zero the feature is far away and not visible
+        if (templ.empty()) {
+
+            feature->matchingFails++;
+            failedIndices.push_back(i);
+
+        } else {
+
+            // Compute the rectangular region to match this template
+            Rect roi = getBoundingBox(ellipses[i], gray.size());
+
+            int x0 = max(roi.x - u, 0);
+            int y0 = max(roi.y - v, 0);
+            int x1 = min(roi.x + roi.width + templ.cols - u, gray.cols - 1);
+            int y1 = min(roi.y + roi.height + templ.rows - v, gray.rows - 1);
+
+            roi.x = x0;
+            roi.y = y0;
+            roi.width = x1 - x0 + 1;
+            roi.height = y1 - y0 + 1;
+
+            Mat image = gray(roi);
+
+            // Match the template
+            Mat ccorr;
+            matchTemplate(image, templ, ccorr, CV_TM_CCORR_NORMED);
+
+            // Get the observation value
+            double maxVal;
+            Point2i maxLoc;
+            minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
+
+            if (maxVal > 0.9) {
+
+                int px = maxLoc.x + roi.x + u;
+                int py = maxLoc.y + roi.y + v;
+
+                residuals.push_back(Point2d(px - inviewPos[i].x, py - inviewPos[i].y));
+
+                matchedIndices.push_back(i);
+
+            } else {
+
+                feature->matchingFails++;
+                failedIndices.push_back(i);
+            }
+        }
     }
+
+    // Update the number of visible features
+    numVisibleFeatures = matchedIndices.size();
+
+    if (numVisibleFeatures == 0)
+        return;
+
+    // Compute measurement residual
+    Mat y = Mat(residuals).t();
+    y = y.reshape(1).t();
+
+    if (!failedIndices.empty()) {
+
+        // Reshape measurement matrix H and innovation covariance S
+        H = removeRows(H, failedIndices, 2);
+        S = removeRowsCols(S, failedIndices, 2);
+    }
+
+    // Compute Kalman gain
+    Mat K = P * H.t() * S.inv();
+
+    // Update the map state and the map state covariance matrix
+    x += K * y;
+    P -= K * H * P;
+
+    /*
+    TODO:
+
+    (1) Draw current visible features w/ or w/o ellipses (in
+        case the ellipses are drawn, choose different colors
+        to indicate whether there was a match inside or not.
+        This should be done before removing bad features,
+        otherwise features indices may broke.
+
+    (2) Delete features that failed too much. Those features
+        should be removed from P rows and columns and from the
+        state vector x. Also, they should be removed from the
+        features vector and from the inviewPos vector.
+    */
+
+    for (unsigned int i = 0; i < matchedIndices.size(); i++) {
+
+        int idx = inviewIndices[matchedIndices[i]];
+
+        drawPoint(frame, inviewPos[idx], Scalar(0, 0, 255));
+    }
+
+    for (unsigned int i = 0; i < inviewIndices.size(); i++)
+        drawEllipse(frame, ellipses[i], Scalar(0, 255, 0));
 }
 
 /*
- * Adds an initial feature to the map. Its position is known with zero uncertainty
- * hence the associated covariance matrix is the zero matrix. Moreover, since the
- * feature patch lies on the chessboard pattern its normal vector is taken to be
- * the z axis unit vector. The feature is also set as visible. If the feature patch
- * exceeds the frame boundaries the feature is not initialized and false is returned.
- *
- * frame    Grayscale frame
- * pos2D    Feature position in the image, in pixels
- * pos3D    Feature position, in world coordinates
- * R        Camera rotation (from world to camera)
- * t        Camera position, in world coordinates
- */
+* Adds an initial feature to the map. Its position is known with zero uncertainty
+* hence the associated covariance matrix is the zero matrix. Moreover, since the
+* feature patch lies on the chessboard pattern its normal vector is taken to be
+* the z axis unit vector. The feature is also set as visible. If the feature patch
+* exceeds the frame boundaries the feature is not initialized and false is returned.
+*
+* frame    Grayscale frame
+* pos2D    Feature position in the image, in pixels
+* pos3D    Feature position, in world coordinates
+* R        Camera rotation (from world to camera)
+* t        Camera position, in world coordinates
+*/
 bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
                             const Mat& R, const Mat& t) {
 
@@ -283,7 +401,7 @@ bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3
     features.push_back(Feature(frame, roi, normal, R, t));
 
     // Add its image position to the list of in view features
-    inview.push_back(pos2D);
+    inviewPos.push_back(pos2D);
 
     numVisibleFeatures++;
 
@@ -297,7 +415,7 @@ void Map::reset() {
 
     features.clear();
     candidates.clear();
-    inview.clear();
+    inviewPos.clear();
 
     numVisibleFeatures = 0;
 
@@ -330,9 +448,9 @@ Mat Map::findCorners(const Mat& frame) {
     int pad = 30;
     mask(Rect(pad, pad, mask.cols - 2 * pad, mask.rows - 2 * pad)).setTo(Scalar(255));
 
-    for (unsigned int i = 0; i < inview.size(); i++) {
+    for (unsigned int i = 0; i < inviewPos.size(); i++) {
 
-        Rect roi = buildSquare(inview[i], 2 * minDistance);
+        Rect roi = buildSquare(inviewPos[i], 2 * minDistance);
 
         roi.x = max(0, roi.x);
         roi.y = max(0, roi.y);
@@ -568,9 +686,13 @@ Mat Map::computeProcessNoiseMatrix(double dt, const Mat& F) {
  * Returns the Jacobian matrix of the features measurement function with respect
  * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
  * the predicted (a priori) state estimate, therefore it should only be called
- * after applyMotionModel since the latter updates the current estimate x.
+ * after applyMotionModel since the latter updates the current estimate x. Also,
+ * it updates the vector of predicted insight features pixel positions, inviewPos,
+ * and populates a vector with the predicted in sight features indices.
  */
-Mat Map::computeMeasurementMatrix() {
+Mat Map::computeMeasurementMatrix(vector<int>& inviewIndices) {
+
+    inviewPos.clear();
 
     // Get the predicted camera rotation (from world basis to camera basis)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
@@ -589,12 +711,7 @@ Mat Map::computeMeasurementMatrix() {
     // Project all the features positions to the current view
     camera.projectPoints(R, t, points3D_, points2D_);
 
-    // Features predicted to be in the current view
-    vector<reference_wrapper<Feature>> inview;
-
-    // 2D and 3D coordinates of these features
     vector<Point3d> points3D;
-    vector<Point2d> points2D;
 
     Rect box(Point2i(0, 0), camera.frameSize);
 
@@ -602,13 +719,14 @@ Mat Map::computeMeasurementMatrix() {
 
         if (box.contains(points2D_[i])) {
 
-            inview.push_back(ref(features[i]));
+            inviewIndices.push_back(i);
+            inviewPos.push_back(points2D_[i]);
+
             points3D.push_back(points3D_[i]);
-            points2D.push_back(points2D_[i]);
         }
     }
 
-    Mat H(2 * inview.size(), x.rows, CV_64FC1, Scalar(0));
+    Mat H(2 * inviewIndices.size(), x.rows, CV_64FC1, Scalar(0));
 
     Mat R1, R2, R3, R4;
 

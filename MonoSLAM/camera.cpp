@@ -90,6 +90,45 @@ Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& 
     return distorted2;
 }
 
+Mat Camera::warpPatch2(const Mat& p, const Mat& n, const Mat& view1, const Rect& patch1,
+                       const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2,
+                       int& u, int& v) {
+
+    // Black background
+    Mat black(view1.rows, view1.cols, view1.type(), Scalar(0));
+
+    // Copy the original patch into the black background
+    view1(patch1).copyTo(black(patch1));
+
+    // Compute the homography matrix between the first and second views
+    Mat H = computeHomography(p, n, K, R1, t1, R2, t2);
+
+    // Apply the homography
+    Mat warped;
+    warpPerspective(black, warped, H, view1.size());
+
+    // Set every non-black pixel of the warped image to white
+    Mat binary;
+    threshold(warped, binary, 0, 255, THRESH_BINARY);
+
+    // Use the binary mask to crop the warped image so that it only contains the patch
+    Mat points;
+    findNonZero(binary, points);
+    Rect patchBox = boundingRect(points);
+
+    // Compute the projection of the center of the patch
+    int x = patch1.x + patch1.width / 2;
+    int y = patch1.y + patch1.height / 2;
+
+    Mat centerProj = H * (Mat_<double>(3, 1) << x, y, 1);
+    centerProj /= centerProj.at<double>(2, 0);
+
+    u = centerProj.at<double>(0, 0) - patchBox.x;
+    v = centerProj.at<double>(1, 0) - patchBox.y;
+
+    return warped(patchBox);
+}
+
 void Camera::projectPoints(const Mat& R, const Mat& t, const vector<Point3d>& points3D,
                            vector<Point2d>& points2D) {
 

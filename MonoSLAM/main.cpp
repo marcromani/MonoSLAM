@@ -58,8 +58,8 @@ int main(int argc, char *argv[]) {
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.1, 0.1, 0.1);
-    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 4, 4);
+    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.01, 0.01, 0.01);
+    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 1, 1);
 
     // Build new map
     Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance,
@@ -69,10 +69,10 @@ int main(int argc, char *argv[]) {
     Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
-    vector<double> var({0.0002, 0.0002, 0.0002,
+    vector<double> var({0.00000625, 0.00000625, 0.00000625,
                         0., 0., 0., 0.,
                         0.0001, 0.0001, 0.0001,
-                        0.07, 0.07, 0.07,
+                        0.008, 0.008, 0.008,
                        });
 
     // Initialize video feed device
@@ -124,18 +124,15 @@ int main(int argc, char *argv[]) {
         t0 = t1;
 
         cvtColor(frame, gray, CV_BGR2GRAY);
+        cvtColor(gray, frame, CV_GRAY2RGB);
 
         map.predict(dt);
-        map.update(frame, dt);
-
-        //map.drawInViewFeatures(frame);
+        map.update(gray, frame);
 
         imshow(window, frame);
 
         if (waitKey(1) == 27)
             break;
-
-        waitKey();
     }
 }
 

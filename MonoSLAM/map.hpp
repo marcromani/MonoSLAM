@@ -12,26 +12,26 @@ class Map {
 
 public:
 
-    Camera camera;                      // Camera
+    Camera camera;                          // Camera
 
-    std::vector<Feature> features;      // Initialized map features (used for tracking)
-    std::vector<Feature> candidates;    // Pre-initialized features (updated by particle filter)
+    std::vector<Feature> features;          // Initialized map features (used for tracking)
+    std::vector<Feature> candidates;        // Pre-initialized features (updated by particle filter)
 
-    int patchSize;                      // Size of the feature planar patch, in pixels
+    int patchSize;                          // Size of the feature planar patch, in pixels
 
-    int minFeatureDensity;              // Minimum number of features per frame
-    int maxFeatureDensity;              // Maximum number of features per frame
+    int minFeatureDensity;                  // Minimum number of features per frame
+    int maxFeatureDensity;                  // Maximum number of features per frame
 
-    double failTolerance;               // Maximum ratio of matching failures before feature rejection
+    double failTolerance;                   // Maximum ratio of matching failures before feature rejection
 
-    int numVisibleFeatures;             // Number of currently visible features (a subset of those in sight)
-    std::vector<cv::Point2i> inview;    // Image positions of currently in sight features
+    int numVisibleFeatures;                 // Number of currently visible features (a subset of those in sight)
+    std::vector<cv::Point2d> inviewPos;     // Image positions of currently (predicted) in sight features
 
-    cv::Mat x;                          // Map state (camera and features states)
-    cv::Mat P;                          // Map state covariance matrix
+    cv::Mat x;                              // Map state (camera and features states)
+    cv::Mat P;                              // Map state covariance matrix
 
-    cv::Mat A;                          // Linear and angular accelerations noise covariance matrix
-    cv::Mat R;                          // Measurement noise variances, in pixels
+    cv::Mat A;                              // Linear and angular accelerations noise covariance matrix
+    cv::Mat R;                              // Measurement noise variances, in pixels
 
     /*
      * Constructor for a lens distortion camera model.
@@ -119,13 +119,6 @@ public:
     bool trackNewCandidates(const cv::Mat& frame);
 
     /*
-     * Draws features that are (theoretically) in view.
-     *
-     * frame    Camera frame
-     */
-    void drawInViewFeatures(const cv::Mat& frame);
-
-    /*
      * Applies the first step of the Extended Kalman Filter. In particular, given the
      * current state estimate x_k|k and the current state covariance matrix P_k|k, it
      * computes the next a priori state estimate x_k+1|k (via the camera motion model)
@@ -135,7 +128,7 @@ public:
      */
     void predict(double dt);
 
-    void update(const cv::Mat& frame, double dt);
+    void update(const cv::Mat& gray, cv::Mat& frame);
 
 private:
 
@@ -206,9 +199,11 @@ private:
      * Returns the Jacobian matrix of the features measurement function with respect
      * to the complete state (r, q, v, w, f1, ..., fn). This matrix is evaluated at
      * the predicted (a priori) state estimate, therefore it should only be called
-     * after applyMotionModel since the latter updates the current estimate x.
+     * after applyMotionModel since the latter updates the current estimate x. Also,
+     * it updates the vector of predicted insight features pixel positions, inviewPos,
+     * and populates a vector with the predicted in sight features indices.
      */
-    cv::Mat computeMeasurementMatrix();
+    cv::Mat computeMeasurementMatrix(std::vector<int>& inviewIndices);
 };
 
 #endif

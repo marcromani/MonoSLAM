@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "opencv2/imgproc/imgproc.hpp"
@@ -89,6 +90,9 @@ Mat buildDistortionMap(const Size& size, const Mat& K, const Mat& distCoeffs) {
  * Returns a square region of interest given its center pixel coordinates and size.
  * Note that only if size is an odd number will the square be truly centered at the
  * desired position.
+ *
+ * center       Center of the square
+ * size         Size of the square
  */
 Rect buildSquare(const Point2i& center, int size) {
 
@@ -99,13 +103,13 @@ Rect buildSquare(const Point2i& center, int size) {
 }
 
 /*
- * Removes the nth row and column of a square matrix. The matrix is not reduced in-place,
- * but a deep copy is returned.
+ * Removes the nth row and column of a square matrix. The matrix is not reduced
+ * in-place, but a deep copy is returned.
  *
  * mat      Matrix to be reduced
  * idx      Row and column to be deleted
  */
-Mat reduceMat(const Mat& mat, int idx) {
+Mat removeRowCol(const Mat& mat, int idx) {
 
     int n = mat.rows;
 
@@ -127,11 +131,100 @@ Mat reduceMat(const Mat& mat, int idx) {
     return reduced;
 }
 
+/*
+ * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place, but
+ * a deep copy is returned. For efficiency purposes the vector of indices is sorted in-place, so
+ * a deep copy should be made in order to preserve its original ordering. The stride indicates how
+ * the matrix rows and columns are grouped together and referenced by the indices. For example,
+ * given indices 0, 3, 7 and stride 2 the deleted rows and columns are 0, 1, 6, 7, 14, 15.
+ *
+ * mat          Matrix to be reduced
+ * indices      Rows and columns to be deleted
+ * stride       Row and column stride
+ */
+Mat removeRowsCols(const Mat& mat, vector<int>& indices, int stride) {
+
+    Mat result = mat.clone();
+
+    sort(indices.begin(), indices.end());
+
+    for (unsigned int i = 0; i < indices.size(); i++) {
+
+        int idx = stride * (indices[i] - i);
+
+        for (int j = 0; j < stride; j++)
+            result = removeRowCol(result, idx);
+    }
+
+    return result;
+}
+
+/*
+ * Removes the nth row of a matrix. The matrix is not reduced in-place, but a deep
+ * copy is returned.
+ *
+ * mat      Matrix to be reduced
+ * idx      Row to be deleted
+ */
+Mat removeRow(const Mat& mat, int idx) {
+
+    Mat result;
+
+    int n = mat.rows;
+
+    if (idx == 0)
+        result = mat.rowRange(1, n).clone();
+
+    else if (idx == n - 1)
+        result = mat.rowRange(0, n - 1).clone();
+
+    else
+        vconcat(mat.rowRange(0, idx), mat.rowRange(idx + 1, n), result);
+
+    return result;
+}
+
+/*
+ * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
+ * copy is returned. For efficiency purposes the vector of indices is sorted in-place,
+ * so a deep copy should be made in order to preserve its original ordering. The stride
+ * indicates how the matrix rows are grouped together and referenced by the indices. For
+ * example, given indices 0, 3, 7 and stride 2 the deleted rows are 0, 1, 6, 7, 14, 15.
+ *
+ * mat          Matrix to be reduced
+ * indices      Rows to be deleted
+ * stride       Row stride
+ */
+Mat removeRows(const Mat& mat, vector<int>& indices, int stride) {
+
+    Mat result = mat.clone();
+
+    sort(indices.begin(), indices.end());
+
+    for (unsigned int i = 0; i < indices.size(); i++) {
+
+        int idx = stride * (indices[i] - i);
+
+        for (int j = 0; j < stride; j++)
+            result = removeRow(result, idx);
+    }
+
+    return result;
+}
+
+/*
+ * Returns the ellipses where the predicted in sight features should be found with
+ * high probability. In particular, the ellipses are constructed so that they are
+ * confidence regions at level 0.99.
+ *
+ * means    Predicted in sight features pixel locations
+ * S        Innovation covariance matrix of the predicted in sight features
+ */
 vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) {
 
     vector<RotatedRect> ellipses;
 
-    for (int i = 0; i < means.size(); i++) {
+    for (unsigned int i = 0; i < means.size(); i++) {
 
         Mat Si = S(Rect(2*i, 2*i, 2, 2));
 
@@ -159,8 +252,16 @@ vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) 
     return ellipses;
 }
 
-Rect getBoundingBox(const RotatedRect& ellipse) {
+/*
+ * Returns the smallest straight rectangle which contains the given ellipse. The computed
+ * rectangle is cropped if it exceeds the given image boundary so that it fits inside it.
+ *
+ * ellipse      Ellipse to be bounded
+ * imageSize    Size of the image
+ */
+Rect getBoundingBox(const RotatedRect& ellipse, const Size& imageSize) {
 
+    double angle = ellipse.angle * DEG_TO_RAD;
     double x = ellipse.center.x;
     double y = ellipse.center.y;
     double a = 0.5 * ellipse.size.width;
@@ -168,7 +269,7 @@ Rect getBoundingBox(const RotatedRect& ellipse) {
 
     double xmax, ymax;
 
-    if (a == b) {
+    if (angle == 0 || a == b) {
 
         xmax = a;
         ymax = b;
@@ -177,8 +278,6 @@ Rect getBoundingBox(const RotatedRect& ellipse) {
 
         double a2inv = 1 / (a*a);
         double b2inv = 1 / (b*b);
-
-        double angle = ellipse.angle * DEG_TO_RAD;
 
         double c = cos(angle);
         double s = sin(angle);
@@ -203,10 +302,54 @@ Rect getBoundingBox(const RotatedRect& ellipse) {
         ymax = 2 * A * x0 / C;
     }
 
-    return Rect(x - xmax, y - ymax, 2 * xmax, 2 * ymax);
+    double x0 = x - xmax;
+    double y0 = y - ymax;
+    double w = 2 * xmax + 1;
+    double h = 2 * ymax + 1;
+
+    if (x0 + w > imageSize.width)
+        w = imageSize.width - x0;
+    if (y0 + h > imageSize.height)
+        h = imageSize.height - y0;
+
+    return Rect(max(x - xmax, 0.), max(y - ymax, 0.), w, h);
 }
 
-void drawEllipse(Mat& image, const RotatedRect& e) {
+/*
+ * Draws an ellipse on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * e            Ellipse
+ * color        Color of the ellipse
+ */
+void drawEllipse(Mat& image, const RotatedRect& e, const Scalar& color) {
 
-    ellipse(image, e, Scalar(0, 0, 255), 1, LINE_AA);
+    ellipse(image, e, color, 1, LINE_AA);
+}
+
+/*
+ * Draws a rectangle on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * r            Rectangle
+ * color        Color of the rectangle
+ */
+void drawRectangle(Mat& image, const Rect& r, const Scalar& color) {
+
+    rectangle(image, r, color, 1, LINE_AA);
+}
+
+/*
+ * Draws a point on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * point        Point
+ * color        Color of the point
+ */
+void drawPoint(Mat& image, const Point2i& point, const Scalar& color) {
+
+    circle(image, point, 4, color, 1, LINE_AA);
 }
