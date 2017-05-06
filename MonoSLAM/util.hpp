@@ -99,16 +99,6 @@ std::vector<cv::RotatedRect> computeEllipses(const std::vector<cv::Point2d>& mea
 cv::Rect getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize);
 
 /*
- * Draws an ellipse on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * ellipse      Ellipse
- * color        Color of the ellipse
- */
-void drawEllipse(cv::Mat& image, const cv::RotatedRect& ellipse, const cv::Scalar& color);
-
-/*
  * Draws a rectangle on the given image. The image is modified by the function so a deep
  * copy should be made in order to preserve the original.
  *
@@ -119,13 +109,35 @@ void drawEllipse(cv::Mat& image, const cv::RotatedRect& ellipse, const cv::Scala
 void drawRectangle(cv::Mat& image, const cv::Rect& rectangle, const cv::Scalar& color);
 
 /*
- * Draws a point on the given image. The image is modified by the function so a deep
+ * Draws a square on the given image. The image is modified by the function so a deep
  * copy should be made in order to preserve the original.
  *
  * image        Grayscale or color image to draw on
- * point        Point
- * color        Color of the point
+ * center       Center of the square
+ * width        Width of the square
+ * color        Color of the square
  */
-void drawPoint(cv::Mat& image, const cv::Point2i& point, const cv::Scalar& color);
+void drawSquare(cv::Mat& image, const cv::Point2i& center, int width, const cv::Scalar& color);
+
+/*
+ * Draws an ellipse on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * ellipse      Ellipse
+ * color        Color of the ellipse
+ */
+void drawEllipse(cv::Mat& image, const cv::RotatedRect& ellipse, const cv::Scalar& color);
+
+/*
+ * Draws a circle on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * center       Center of the circle
+ * radius       Radius of the circle
+ * color        Color of the circle
+ */
+void drawCircle(cv::Mat& image, const cv::Point2i& center, int radius, const cv::Scalar& color);
 
 #endif

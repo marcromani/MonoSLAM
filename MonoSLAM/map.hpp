@@ -213,6 +213,20 @@ private:
      * and populates a vector with the predicted in sight features indices.
      */
     cv::Mat computeMeasurementMatrix(std::vector<int>& inviewIndices);
+
+    void drawFeatures(cv::Mat& frame, const std::vector<int>& inviewIndices,
+                      const std::vector<int>& matchedInviewIndices, const std::vector<int>& failedInviewIndices,
+                      const std::vector<cv::RotatedRect>& ellipses, bool drawEllipses = true);
+
+    void removeBadFeatures(const std::vector<int>& failedInviewIndices, const std::vector<int>& failedIndices);
+
+    /*
+     * Normalizes the system state orientation quaternion and updates the covariance
+     * matrix accordingly by first-order error propagation. It is mandatory that the
+     * function be called after the EKF update step since the corrected (a posteriori)
+     * orientation quaternion might not be a unit quaternion.
+     */
+    void renormalizeQuaternion();
 };
 
 #endif

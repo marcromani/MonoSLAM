@@ -261,19 +261,6 @@ Rect getBoundingBox(const RotatedRect& ellipse, const Size& imageSize) {
 }
 
 /*
- * Draws an ellipse on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * e            Ellipse
- * color        Color of the ellipse
- */
-void drawEllipse(Mat& image, const RotatedRect& e, const Scalar& color) {
-
-    ellipse(image, e, color, 1, LINE_AA);
-}
-
-/*
  * Draws a rectangle on the given image. The image is modified by the function so a deep
  * copy should be made in order to preserve the original.
  *
@@ -287,14 +274,42 @@ void drawRectangle(Mat& image, const Rect& r, const Scalar& color) {
 }
 
 /*
- * Draws a point on the given image. The image is modified by the function so a deep
+ * Draws a square on the given image. The image is modified by the function so a deep
  * copy should be made in order to preserve the original.
  *
  * image        Grayscale or color image to draw on
- * point        Point
- * color        Color of the point
+ * center       Center of the square
+ * width        Width of the square
+ * color        Color of the square
  */
-void drawPoint(Mat& image, const Point2i& point, const Scalar& color) {
+void drawSquare(Mat& image, const Point2i& center, int width, const Scalar& color) {
 
-    circle(image, point, 4, color, 1, LINE_AA);
+    rectangle(image, buildSquare(center, width), color, 1, LINE_AA);
+}
+
+/*
+ * Draws an ellipse on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * e            Ellipse
+ * color        Color of the ellipse
+ */
+void drawEllipse(Mat& image, const RotatedRect& e, const Scalar& color) {
+
+    ellipse(image, e, color, 1, LINE_AA);
+}
+
+/*
+ * Draws a circle on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * center       Center of the circle
+ * radius       Radius of the circle
+ * color        Color of the circle
+ */
+void drawCircle(Mat& image, const Point2i& center, int radius, const Scalar& color) {
+
+    circle(image, center, radius, color, 1, LINE_AA);
 }

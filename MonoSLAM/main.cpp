@@ -54,12 +54,12 @@ int main(int argc, char *argv[]) {
 
     fs.release();
 
-    int patchSize = 11;
+    int patchSize = 50;
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.01, 0.01, 0.01);
-    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 1, 1);
+    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.5, 0.5, 0.5, 0.8, 0.8, 0.8);
+    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 2, 2);
 
     // Build new map
     Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance,
@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
     Size patternSize(patternCols - 1, patternRows - 1);
 
     // Camera initial state variances
-    vector<double> var({0.00000625, 0.00000625, 0.00000625,
+    vector<double> var({0.0001, 0.0001, 0.0001,
                         0., 0., 0., 0.,
                         0.0001, 0.0001, 0.0001,
                         0.008, 0.008, 0.008,

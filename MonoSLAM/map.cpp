@@ -236,8 +236,10 @@ void Map::update(const Mat& gray, Mat& frame) {
     // Compute the error ellipses of the predicted in sight features pixel positions
     vector<RotatedRect> ellipses = computeEllipses(inviewPos, S);
 
-    vector<int> matchedIndices;
-    vector<int> failedIndices;
+    vector<int> matchedInviewIndices;   // Positions of inviewIndices that contain matched features indices
+    vector<int> failedInviewIndices;    // Positions of inviewIndices that contain failed features indices
+
+    vector<int> failedIndices;          // Subset of inviewIndices: not matched features indices
 
     vector<Point2d> residuals;
 
@@ -269,7 +271,8 @@ void Map::update(const Mat& gray, Mat& frame) {
         if (templ.empty()) {
 
             feature->matchingFails++;
-            failedIndices.push_back(i);
+            failedInviewIndices.push_back(i);
+            failedIndices.push_back(idx);
 
         } else {
 
@@ -297,28 +300,33 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
 
-            if (maxVal > 0.85) {
+            if (maxVal > 0.75) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
 
                 residuals.push_back(Point2d(px - inviewPos[i].x, py - inviewPos[i].y));
 
-                matchedIndices.push_back(i);
+                matchedInviewIndices.push_back(i);
 
             } else {
 
                 feature->matchingFails++;
-                failedIndices.push_back(i);
+                failedInviewIndices.push_back(i);
+                failedIndices.push_back(idx);
             }
         }
     }
 
     // Update the number of visible features
-    numVisibleFeatures = matchedIndices.size();
+    numVisibleFeatures = matchedInviewIndices.size();
 
-    if (numVisibleFeatures == 0)
+    if (numVisibleFeatures == 0) {
+
+        drawFeatures(frame, inviewIndices, matchedInviewIndices, failedInviewIndices, ellipses);
+        removeBadFeatures(failedInviewIndices, failedIndices);
         return;
+    }
 
     // Compute measurement residual
     Mat y = Mat(residuals).t();
@@ -327,8 +335,8 @@ void Map::update(const Mat& gray, Mat& frame) {
     if (!failedIndices.empty()) {
 
         // Reshape measurement matrix H and innovation covariance S
-        H = removeRows(H, failedIndices, 2);
-        S = removeRowsCols(S, failedIndices, 2);
+        H = removeRows(H, failedInviewIndices, 2);
+        S = removeRowsCols(S, failedInviewIndices, 2);
     }
 
     // Compute Kalman gain
@@ -338,30 +346,9 @@ void Map::update(const Mat& gray, Mat& frame) {
     x += K * y;
     P -= K * H * P;
 
-    /*
-    TODO:
-
-    (1) Draw current visible features w/ or w/o ellipses (in
-        case the ellipses are drawn, choose different colors
-        to indicate whether there was a match inside or not.
-        This should be done before removing bad features,
-        otherwise features indices may broke.
-
-    (2) Delete features that failed too much. Those features
-        should be removed from P rows and columns and from the
-        state vector x. Also, they should be removed from the
-        features vector and from the inviewPos vector.
-    */
-
-    for (unsigned int i = 0; i < matchedIndices.size(); i++) {
-
-        int idx = inviewIndices[matchedIndices[i]];
-
-        drawPoint(frame, inviewPos[idx], Scalar(0, 0, 255));
-    }
-
-    for (unsigned int i = 0; i < inviewIndices.size(); i++)
-        drawEllipse(frame, ellipses[i], Scalar(0, 255, 0));
+    drawFeatures(frame, inviewIndices, matchedInviewIndices, failedInviewIndices, ellipses);
+    removeBadFeatures(failedInviewIndices, failedIndices);
+    renormalizeQuaternion();
 }
 
 /*
@@ -877,4 +864,129 @@ Mat Map::computeMeasurementMatrix(vector<int>& inviewIndices) {
     }
 
     return H;
+}
+
+void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
+                       const vector<int>& matchedInviewIndices, const vector<int>& failedInviewIndices,
+                       const vector<RotatedRect>& ellipses, bool drawEllipses) {
+
+    if (drawEllipses) {
+
+        // Draw matched features ellipses (red)
+        for (unsigned int i = 0; i < matchedInviewIndices.size(); i++) {
+
+            int idx = inviewIndices[matchedInviewIndices[i]];
+
+            drawEllipse(frame, ellipses[idx], Scalar(0, 0, 255));
+        }
+
+        // Draw failed features ellipses (blue)
+        for (unsigned int i = 0; i < failedInviewIndices.size(); i++) {
+
+            int idx = inviewIndices[failedInviewIndices[i]];
+
+            drawEllipse(frame, ellipses[idx], Scalar(255, 0, 0));
+        }
+
+    } else {
+
+        // Draw matched features (red)
+        for (unsigned int i = 0; i < matchedInviewIndices.size(); i++) {
+
+            int idx = inviewIndices[matchedInviewIndices[i]];
+
+            drawSquare(frame, inviewPos[idx], 11, Scalar(0, 0, 255));
+        }
+    }
+}
+
+void Map::removeBadFeatures(const vector<int>& failedInviewIndices, const vector<int>& failedIndices) {
+
+    // Delete features that failed too much. Those features
+    // should be removed from P rows and columns and from the
+    // state vector x. Also, they should be removed from the
+    // features vector and from the inviewPos vector.
+
+    vector<int> badFeaturesIndices;
+
+    Feature *featuresPtr = features.data();
+
+    for (int i = 0; i < failedIndices.size(); i++) {
+
+        int idx = failedIndices[i];
+
+        Feature *feature = &featuresPtr[idx];
+
+        if (double(feature->matchingFails) / feature->matchingAttempts > failTolerance)
+            badFeaturesIndices.push_back(idx);
+    }
+
+    removeRowsCols(P, badFeaturesIndices);
+
+    // TODO: remove from x, remove from inviewPos
+}
+
+/*
+ * Normalizes the system state orientation quaternion and updates the covariance
+ * matrix accordingly by first-order error propagation. It is mandatory that the
+ * function be called after the EKF update step since the corrected (a posteriori)
+ * orientation quaternion might not be a unit quaternion.
+ */
+void Map::renormalizeQuaternion() {
+
+    Mat q = x(Rect(0, 3, 1, 4));
+
+    double q1 = q.at<double>(0, 0);
+    double q2 = q.at<double>(1, 0);
+    double q3 = q.at<double>(2, 0);
+    double q4 = q.at<double>(3, 0);
+
+    double q11 = q1 * q1;
+    double q22 = q2 * q2;
+    double q33 = q3 * q3;
+    double q44 = q4 * q4;
+
+    double j1 = q22 + q33 + q44;
+    double j2 = q11 + q33 + q44;
+    double j3 = q11 + q22 + q44;
+    double j4 = q11 + q22 + q33;
+
+    double j12 = - q1 * q2;
+    double j13 = - q1 * q3;
+    double j14 = - q1 * q4;
+    double j23 = - q2 * q3;
+    double j24 = - q2 * q4;
+    double j34 = - q3 * q4;
+
+    Mat J = Mat::eye(P.size(), P.type());
+
+    J.at<double>(3, 3) = j1;
+    J.at<double>(3, 4) = j12;
+    J.at<double>(3, 5) = j13;
+    J.at<double>(3, 6) = j14;
+
+    J.at<double>(4, 3) = j12;
+    J.at<double>(4, 4) = j2;
+    J.at<double>(4, 5) = j23;
+    J.at<double>(4, 6) = j24;
+
+    J.at<double>(5, 3) = j13;
+    J.at<double>(5, 4) = j23;
+    J.at<double>(5, 5) = j3;
+    J.at<double>(5, 6) = j34;
+
+    J.at<double>(6, 3) = j14;
+    J.at<double>(6, 4) = j24;
+    J.at<double>(6, 5) = j34;
+    J.at<double>(6, 6) = j4;
+
+    double qnorm = norm(q);
+
+    J(Rect(3, 3, 4, 4)) /= qnorm * qnorm * qnorm;
+
+    // Normalize quaternion
+    normalize(q, q);
+
+    // Update covariance matrix
+    P = J * P * J.t();
 }
