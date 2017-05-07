@@ -115,8 +115,8 @@ int main(int argc, char *argv[]) {
 
     for (;;) {
 
-        cout << "NUM FEATURES: " << map.features.size() << endl;
-        cout << "NUM VISIBLE: " << map.numVisibleFeatures << endl;
+        cout << "Visible features: "
+             << map.numVisibleFeatures << "/" << map.features.size() << endl;
 
         map.trackNewCandidates(gray);
 

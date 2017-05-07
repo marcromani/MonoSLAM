@@ -156,7 +156,7 @@ Mat removeRows(const Mat& mat, vector<int>& indices, int stride) {
 /*
  * Returns the ellipses where the predicted in sight features should be found with
  * high probability. In particular, the ellipses are constructed so that they are
- * confidence regions at level 0.99.
+ * confidence regions at level 0.86.
  *
  * means    Predicted in sight features pixel locations
  * S        Innovation covariance matrix of the predicted in sight features
@@ -184,9 +184,6 @@ vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) 
         angle *= RAD_TO_DEG;
 
         // Compute the size of the major and minor axes
-        //double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
-        //double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
-
         double majorAxis = 4 * sqrt(eigenval.at<double>(0));
         double minorAxis = 4 * sqrt(eigenval.at<double>(1));
 

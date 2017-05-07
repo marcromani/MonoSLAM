@@ -28,6 +28,9 @@ using namespace std;
 bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
                   const vector<double>& var) {
 
+    int w = patternSize.width;
+    int h = patternSize.height;
+
     vector<Point2f> imageCorners;
 
     bool patternFound = findChessboardCorners(frame, patternSize, imageCorners,
@@ -44,8 +47,8 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     vector<Point3f> worldCorners;
 
     // Set the world reference frame (y axis along pattern width)
-    for (int i = 0; i < patternSize.height; i++)
-        for (int j = 0; j < patternSize.width; j++)
+    for (int i = 0; i < h; i++)
+        for (int j = 0; j < w; j++)
             worldCorners.push_back(Point3d(squareSize * i, squareSize * j, 0));
 
     Mat rvec, tvec;
@@ -73,20 +76,23 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     // Update the map covariance matrix with the camera covariance matrix
     P = Mat::diag(Mat(var));
 
-    // Extract the chessboard outer corners and add the initial features
+    // Extract the chessboard outer and central corners and add the initial features
     int idx;
     bool init = true;
 
     idx = 0;
     init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
-    idx = patternSize.width - 1;
+    idx = w - 1;
     init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
-    idx = (patternSize.height - 1) * patternSize.width;
+    idx = (h - 1) * w;
     init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
-    idx = patternSize.width * patternSize.height - 1;
+    idx = w * h - 1;
+    init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
+
+    idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
     init = init && addInitialFeature(frame, imageCorners[idx], worldCorners[idx], R, t);
 
     if (!init) {
@@ -215,9 +221,6 @@ void Map::update(const Mat& gray, Mat& frame) {
     // If there are no predicted in sight features skip the update step
     if (inviewIndices.empty()) {
 
-        // TODO: Add a counter of the number of times the system
-        //       is left with no features to match, to assess when
-        //       the tracking is lost?
         numVisibleFeatures = 0;
         return;
     }
