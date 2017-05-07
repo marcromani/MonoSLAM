@@ -267,6 +267,11 @@ void Map::update(const Mat& gray, Mat& frame) {
         int u, v;
         Mat templ = camera.warpPatch(p, n, view1, patch1, R1, t1, R2, t2, u, v);
 
+        // Show the warped template at the predicted in sight feature position
+        Mat colorTempl;
+        cvtColor(templ, colorTempl, CV_GRAY2RGB);
+        drawTemplate(frame, colorTempl, inviewPos[i], u, v);
+
         // If the template size is zero the feature is far away and not visible
         if (templ.empty()) {
 
@@ -300,7 +305,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
 
-            if (maxVal > 0.75) {
+            if (maxVal > 0.5) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
@@ -323,7 +328,7 @@ void Map::update(const Mat& gray, Mat& frame) {
 
     if (numVisibleFeatures == 0) {
 
-        drawFeatures(frame, inviewIndices, matchedInviewIndices, failedInviewIndices, ellipses);
+        drawFeatures(frame, matchedInviewIndices, failedInviewIndices, ellipses);
         removeBadFeatures(failedInviewIndices, failedIndices);
         return;
     }
@@ -332,7 +337,7 @@ void Map::update(const Mat& gray, Mat& frame) {
     Mat y = Mat(residuals).t();
     y = y.reshape(1).t();
 
-    if (!failedIndices.empty()) {
+    if (!failedInviewIndices.empty()) {
 
         // Reshape measurement matrix H and innovation covariance S
         H = removeRows(H, failedInviewIndices, 2);
@@ -346,7 +351,7 @@ void Map::update(const Mat& gray, Mat& frame) {
     x += K * y;
     P -= K * H * P;
 
-    drawFeatures(frame, inviewIndices, matchedInviewIndices, failedInviewIndices, ellipses);
+    drawFeatures(frame, matchedInviewIndices, failedInviewIndices, ellipses);
     removeBadFeatures(failedInviewIndices, failedIndices);
     renormalizeQuaternion();
 }
@@ -866,7 +871,7 @@ Mat Map::computeMeasurementMatrix(vector<int>& inviewIndices) {
     return H;
 }
 
-void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
+void Map::drawFeatures(Mat& frame,
                        const vector<int>& matchedInviewIndices, const vector<int>& failedInviewIndices,
                        const vector<RotatedRect>& ellipses, bool drawEllipses) {
 
@@ -875,7 +880,7 @@ void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
         // Draw matched features ellipses (red)
         for (unsigned int i = 0; i < matchedInviewIndices.size(); i++) {
 
-            int idx = inviewIndices[matchedInviewIndices[i]];
+            int idx = matchedInviewIndices[i];
 
             drawEllipse(frame, ellipses[idx], Scalar(0, 0, 255));
         }
@@ -883,7 +888,7 @@ void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
         // Draw failed features ellipses (blue)
         for (unsigned int i = 0; i < failedInviewIndices.size(); i++) {
 
-            int idx = inviewIndices[failedInviewIndices[i]];
+            int idx = failedInviewIndices[i];
 
             drawEllipse(frame, ellipses[idx], Scalar(255, 0, 0));
         }
@@ -893,7 +898,7 @@ void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
         // Draw matched features (red)
         for (unsigned int i = 0; i < matchedInviewIndices.size(); i++) {
 
-            int idx = inviewIndices[matchedInviewIndices[i]];
+            int idx = matchedInviewIndices[i];
 
             drawSquare(frame, inviewPos[idx], 11, Scalar(0, 0, 255));
         }
@@ -902,28 +907,32 @@ void Map::drawFeatures(Mat& frame, const vector<int>& inviewIndices,
 
 void Map::removeBadFeatures(const vector<int>& failedInviewIndices, const vector<int>& failedIndices) {
 
-    // Delete features that failed too much. Those features
-    // should be removed from P rows and columns and from the
-    // state vector x. Also, they should be removed from the
-    // features vector and from the inviewPos vector.
+    vector<int> badFeaturesVecIndices;  // Indices to remove from features, x and P
+    vector<int> badFeaturesPosIndices;  // Indices to remove from inviewPos
 
-    vector<int> badFeaturesIndices;
-
-    Feature *featuresPtr = features.data();
-
-    for (int i = 0; i < failedIndices.size(); i++) {
+    for (unsigned int i = 0; i < failedIndices.size(); i++) {
 
         int idx = failedIndices[i];
+        int j = failedInviewIndices[i];
 
-        Feature *feature = &featuresPtr[idx];
+        double numFails = features[idx].matchingFails;
+        double numAttemps = features[idx].matchingAttempts;
 
-        if (double(feature->matchingFails) / feature->matchingAttempts > failTolerance)
-            badFeaturesIndices.push_back(idx);
+        if (numFails / numAttemps > failTolerance) {
+
+            badFeaturesVecIndices.push_back(idx);
+            badFeaturesPosIndices.push_back(j);
+        }
     }
 
-    removeRowsCols(P, badFeaturesIndices);
+    removeIndices(features, badFeaturesVecIndices);
+    removeIndices(inviewPos, badFeaturesPosIndices);
 
-    // TODO: remove from x, remove from inviewPos
+    Mat x_Features = x(Rect(0, 13, 1, x.rows - 13));
+    Mat P_Features = P(Rect(13, 13, x.rows - 13, x.rows - 13));
+
+    x_Features = removeRows(x_Features, badFeaturesVecIndices, 3);
+    P_Features = removeRowsCols(P_Features, badFeaturesVecIndices, 3);
 }
 
 /*

@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
 
     if (!fs.isOpened()) {
 
-        cout << "Could not open \"" << cameraFile << "\": camera settings not loaded" << endl;
+        cerr << "Could not open \"" << cameraFile << "\": camera settings not loaded" << endl;
         return -1;
     }
 
@@ -54,12 +54,12 @@ int main(int argc, char *argv[]) {
 
     fs.release();
 
-    int patchSize = 50;
+    int patchSize = 22;
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.5, 0.5, 0.5, 0.8, 0.8, 0.8);
-    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 2, 2);
+    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.6, 0.6, 0.6);
+    Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 9, 9);
 
     // Build new map
     Map map(K, distCoeffs, frameSize, patchSize, minDensity, maxDensity, failTolerance,
@@ -114,6 +114,9 @@ int main(int argc, char *argv[]) {
     chrono::time_point<clock_> t1;
 
     for (;;) {
+
+        cout << "NUM FEATURES: " << map.features.size() << endl;
+        cout << "NUM VISIBLE: " << map.numVisibleFeatures << endl;
 
         map.trackNewCandidates(gray);
 

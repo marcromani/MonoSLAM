@@ -214,7 +214,7 @@ private:
      */
     cv::Mat computeMeasurementMatrix(std::vector<int>& inviewIndices);
 
-    void drawFeatures(cv::Mat& frame, const std::vector<int>& inviewIndices,
+    void drawFeatures(cv::Mat& frame,
                       const std::vector<int>& matchedInviewIndices, const std::vector<int>& failedInviewIndices,
                       const std::vector<cv::RotatedRect>& ellipses, bool drawEllipses = true);
 

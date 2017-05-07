@@ -77,21 +77,19 @@ Mat removeRowCol(const Mat& mat, int idx) {
 }
 
 /*
- * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place, but
- * a deep copy is returned. For efficiency purposes the vector of indices is sorted in-place, so
- * a deep copy should be made in order to preserve its original ordering. The stride indicates how
- * the matrix rows and columns are grouped together and referenced by the indices. For example,
- * given indices 0, 3, 7 and stride 2 the deleted rows and columns are 0, 1, 6, 7, 14, 15.
+ * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
+ * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
+ * The stride indicates how the matrix rows and columns are grouped together and referenced by
+ * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
+ * are 0, 1, 6, 7, 14, 15.
  *
  * mat          Matrix to be reduced
- * indices      Rows and columns to be deleted
+ * indices      Sorted rows and columns to be deleted
  * stride       Row and column stride
  */
 Mat removeRowsCols(const Mat& mat, vector<int>& indices, int stride) {
 
     Mat result = mat.clone();
-
-    sort(indices.begin(), indices.end());
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
@@ -131,20 +129,18 @@ Mat removeRow(const Mat& mat, int idx) {
 
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
- * copy is returned. For efficiency purposes the vector of indices is sorted in-place,
- * so a deep copy should be made in order to preserve its original ordering. The stride
- * indicates how the matrix rows are grouped together and referenced by the indices. For
- * example, given indices 0, 3, 7 and stride 2 the deleted rows are 0, 1, 6, 7, 14, 15.
+ * copy is returned. The indices to be removed should be sorted in ascending order.
+ * The stride indicates how the matrix rows are grouped together and referenced by the
+ * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
+ * 0, 1, 6, 7, 14, 15.
  *
  * mat          Matrix to be reduced
- * indices      Rows to be deleted
+ * indices      Sorted rows to be deleted
  * stride       Row stride
  */
 Mat removeRows(const Mat& mat, vector<int>& indices, int stride) {
 
     Mat result = mat.clone();
-
-    sort(indices.begin(), indices.end());
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
@@ -188,8 +184,11 @@ vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) 
         angle *= RAD_TO_DEG;
 
         // Compute the size of the major and minor axes
-        double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
-        double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
+        //double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
+        //double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
+
+        double majorAxis = 4 * sqrt(eigenval.at<double>(0));
+        double minorAxis = 4 * sqrt(eigenval.at<double>(1));
 
         ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
     }
@@ -312,4 +311,49 @@ void drawEllipse(Mat& image, const RotatedRect& e, const Scalar& color) {
 void drawCircle(Mat& image, const Point2i& center, int radius, const Scalar& color) {
 
     circle(image, center, radius, color, 1, LINE_AA);
+}
+
+void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx, int cy) {
+
+    int templ_x = 0;
+    int image_x = position.x - cx;
+
+    if (image_x > image.cols - 1)
+        return;
+
+    if (image_x < 0) {
+
+        templ_x = - image_x;
+        image_x = 0;
+    }
+
+    int templ_y = 0;
+    int image_y = position.y - cy;
+
+    if (image_y > image.rows - 1)
+        return;
+
+    if (image_y < 0) {
+
+        templ_y = - image_y;
+        image_y = 0;
+    }
+
+    int w = templ.cols - templ_x;
+
+    if (w <= 0)
+        return;
+
+    if (image_x + w > image.cols)
+        w = image.cols - image_x;
+
+    int h = templ.rows - templ_y;
+
+    if (h <= 0)
+        return;
+
+    if (image_y + h > image.rows)
+        h = image.rows - image_y;
+
+    templ(Rect(templ_x, templ_y, w, h)).copyTo(image(Rect(image_x, image_y, w, h)));
 }

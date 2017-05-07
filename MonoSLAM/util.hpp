@@ -45,14 +45,14 @@ cv::Rect buildSquare(const cv::Point2i& center, int size);
 cv::Mat removeRowCol(const cv::Mat& mat, int idx);
 
 /*
- * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place, but
- * a deep copy is returned. For efficiency purposes the vector of indices is sorted in-place, so
- * a deep copy should be made in order to preserve its original ordering. The stride indicates how
- * the matrix rows and columns are grouped together and referenced by the indices. For example,
- * given indices 0, 3, 7 and stride 2 the deleted rows and columns are 0, 1, 6, 7, 14, 15.
+ * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
+ * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
+ * The stride indicates how the matrix rows and columns are grouped together and referenced by
+ * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
+ * are 0, 1, 6, 7, 14, 15.
  *
  * mat          Matrix to be reduced
- * indices      Rows and columns to be deleted
+ * indices      Sorted rows and columns to be deleted
  * stride       Row and column stride
  */
 cv::Mat removeRowsCols(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
@@ -68,16 +68,30 @@ cv::Mat removeRow(const cv::Mat& mat, int idx);
 
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
- * copy is returned. For efficiency purposes the vector of indices is sorted in-place,
- * so a deep copy should be made in order to preserve its original ordering. The stride
- * indicates how the matrix rows are grouped together and referenced by the indices. For
- * example, given indices 0, 3, 7 and stride 2 the deleted rows are 0, 1, 6, 7, 14, 15.
+ * copy is returned. The indices to be removed should be sorted in ascending order.
+ * The stride indicates how the matrix rows are grouped together and referenced by the
+ * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
+ * 0, 1, 6, 7, 14, 15.
  *
  * mat          Matrix to be reduced
- * indices      Rows to be deleted
+ * indices      Sorted rows to be deleted
  * stride       Row stride
  */
 cv::Mat removeRows(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
+
+/*
+ * Removes specific elements of a vector. The vector is reduced in-place. The indices of the
+ * elements to be removed should be sorted in ascending order.
+ *
+ * vec          Vector to be reduced
+ * indices      Sorted indices of elements to be deleted
+ */
+template <class T>
+void removeIndices(std::vector<T>& vec, const std::vector<int>& indices) {
+
+    for (int i = indices.size() - 1; i >= 0; i--)
+        vec.erase(vec.begin() + indices[i]);
+}
 
 /*
  * Returns the ellipses where the predicted in sight features should be found with
@@ -139,5 +153,7 @@ void drawEllipse(cv::Mat& image, const cv::RotatedRect& ellipse, const cv::Scala
  * color        Color of the circle
  */
 void drawCircle(cv::Mat& image, const cv::Point2i& center, int radius, const cv::Scalar& color);
+
+void drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, int cx, int cy);
 
 #endif
