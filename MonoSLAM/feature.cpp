@@ -7,7 +7,7 @@ using namespace cv;
  * during the map initialization step, when manually initialized features are added
  * with zero position uncertainty.
  *
- * image_    Camera frame at the time the feature is initialized
+ * image_    Grayscale camera frame at the time the feature is initialized
  * roi_      Feature patch
  * normal_   Patch normal vector
  * R_        Camera rotation (world to camera) at feature initialization
@@ -29,7 +29,7 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
 /*
  * Constructor for a pre-initialized (candidate) feature.
  *
- * image_            Camera frame at the time the feature is initialized
+ * image_            Grayscale camera frame at the time the feature is initialized
  * roi_              Feature patch
  * R_                Camera rotation (world to camera) at feature initialization
  * t_                Camera position, in world coordinates, at feature initialization

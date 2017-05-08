@@ -9,7 +9,7 @@ class Feature {
 
 public:
 
-    cv::Mat image;                  // Original frame
+    cv::Mat image;                  // Original grayscale frame
     cv::Rect roi;                   // Patch region in the original frame
     cv::Mat pos;                    // Patch center, in world coordinates
     cv::Mat normal;                 // Patch normal vector, in world coordinates
@@ -30,7 +30,7 @@ public:
      * during the map initialization step, when manually initialized features are added
      * with zero position uncertainty.
      *
-     * image    Camera frame at the time the feature is initialized
+     * image    Grayscale camera frame at the time the feature is initialized
      * roi      Feature patch
      * normal   Patch normal vector
      * R        Camera rotation (world to camera) at feature initialization
@@ -42,7 +42,7 @@ public:
     /*
      * Constructor for a pre-initialized (candidate) feature.
      *
-     * image            Camera frame at the time the feature is initialized
+     * image            Grayscale camera frame at the time the feature is initialized
      * roi              Feature patch
      * R                Camera rotation (world to camera) at feature initialization
      * t                Camera position, in world coordinates, at feature initialization

@@ -139,6 +139,8 @@ public:
      */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
+    void updateCandidates(const cv::Mat& gray);
+
 private:
 
     /*

@@ -153,7 +153,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     if (corners.empty())
         return false;
 
-    // Undistort and normalize the pixels
+    // Undistort pixels and compute their depth-normalized (z = 1) camera coordinates
     Mat undistorted;
     undistortPoints(corners, undistorted, camera.K, camera.distCoeffs);
 
@@ -357,6 +357,11 @@ void Map::update(const Mat& gray, Mat& frame) {
     drawFeatures(frame, matchedInviewIndices, failedInviewIndices, ellipses);
     removeBadFeatures(failedInviewIndices, failedIndices);
     renormalizeQuaternion();
+}
+
+void Map::updateCandidates(const Mat& gray) {
+
+    
 }
 
 /*

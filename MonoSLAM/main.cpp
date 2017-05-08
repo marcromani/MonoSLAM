@@ -132,6 +132,8 @@ int main(int argc, char *argv[]) {
         map.predict(dt);
         map.update(gray, frame);
 
+        map.updateCandidates(gray);
+
         imshow(window, frame);
 
         if (waitKey(1) == 27)
