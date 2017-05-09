@@ -79,21 +79,23 @@ Mat removeRowCol(const Mat& mat, int idx) {
 /*
  * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
  * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows and columns are grouped together and referenced by
- * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
- * are 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how the matrix
+ * rows and columns are grouped together and referenced by the indices. For example, given
+ * indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows and columns are 5, 6,
+ * 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows and columns to be deleted
+ * offset       Indices offset
  * stride       Row and column stride
  */
-Mat removeRowsCols(const Mat& mat, vector<int>& indices, int stride) {
+Mat removeRowsCols(const Mat& mat, vector<int>& indices, int offset, int stride) {
 
     Mat result = mat.clone();
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
-        int idx = stride * (indices[i] - i);
+        int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; j++)
             result = removeRowCol(result, idx);
@@ -130,21 +132,23 @@ Mat removeRow(const Mat& mat, int idx) {
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
  * copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows are grouped together and referenced by the
- * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
- * 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how
+ * the matrix rows are grouped together and referenced by the indices. For example,
+ * given indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows are
+ * 5, 6, 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows to be deleted
+ * offset       Indices offset
  * stride       Row stride
  */
-Mat removeRows(const Mat& mat, vector<int>& indices, int stride) {
+Mat removeRows(const Mat& mat, vector<int>& indices, int offset, int stride) {
 
     Mat result = mat.clone();
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
-        int idx = stride * (indices[i] - i);
+        int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; j++)
             result = removeRow(result, idx);

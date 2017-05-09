@@ -47,15 +47,17 @@ cv::Mat removeRowCol(const cv::Mat& mat, int idx);
 /*
  * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
  * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows and columns are grouped together and referenced by
- * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
- * are 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how the matrix
+ * rows and columns are grouped together and referenced by the indices. For example, given
+ * indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows and columns are 5, 6,
+ * 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows and columns to be deleted
+ * offset       Indices offset
  * stride       Row and column stride
  */
-cv::Mat removeRowsCols(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
+cv::Mat removeRowsCols(const cv::Mat& mat, std::vector<int>& indices, int offset = 0, int stride = 1);
 
 /*
  * Removes the nth row of a matrix. The matrix is not reduced in-place, but a deep
@@ -69,15 +71,17 @@ cv::Mat removeRow(const cv::Mat& mat, int idx);
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
  * copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows are grouped together and referenced by the
- * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
- * 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how
+ * the matrix rows are grouped together and referenced by the indices. For example,
+ * given indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows are
+ * 5, 6, 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows to be deleted
+ * offset       Indices offset
  * stride       Row stride
  */
-cv::Mat removeRows(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
+cv::Mat removeRows(const cv::Mat& mat, std::vector<int>& indices, int offset = 0, int stride = 1);
 
 /*
  * Removes specific elements of a vector. The vector is reduced in-place. The indices of the

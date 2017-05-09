@@ -19,6 +19,8 @@ using namespace std;
 typedef chrono::duration<double, ratio<1, 1>> seconds_;
 typedef chrono::high_resolution_clock clock_;
 
+constexpr double FPS = 60;
+
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
                 double& squareSize);
 void printUsage(const char *execName);
@@ -76,10 +78,14 @@ int main(int argc, char *argv[]) {
                        });
 
     // Initialize video feed device
-    VideoCapture cap(0);
+    VideoCapture cap("/dev/video2");
 
     if (!cap.isOpened())
         return -1;
+
+    // Set capture size to 1024x768 (60 fps)
+    cap.set(CAP_PROP_FRAME_WIDTH, 1024);
+    cap.set(CAP_PROP_FRAME_HEIGHT, 768);
 
     // Create a window
     string window = "MonoSLAM";
@@ -94,15 +100,17 @@ int main(int argc, char *argv[]) {
     for (;;) {
 
         readFrame(cap, frame);
+        resize(frame, frame, Size(640, 480));
 
         t0 = clock_::now();
 
-        imshow(window, frame);
-
         cvtColor(frame, gray, CV_BGR2GRAY);
+        cvtColor(gray, frame, CV_GRAY2RGB);
 
         if ((init = map.initMap(gray, patternSize, squareSize, var)))
             break;
+
+        imshow(window, frame);
 
         if (waitKey(1) == 27)
             break;
@@ -121,6 +129,7 @@ int main(int argc, char *argv[]) {
         map.trackNewCandidates(gray);
 
         readFrame(cap, frame);
+        resize(frame, frame, Size(640, 480));
 
         t1 = clock_::now();
         double dt = chrono::duration_cast<seconds_>(t1 - t0).count();
@@ -177,7 +186,7 @@ void readFrame(VideoCapture& cap, Mat& frame) {
     chrono::time_point<clock_> t0;
     double elapsed;
 
-    double tol = 1 / double(30);
+    double tol = 1 / double(2 * FPS);
 
     do {
 

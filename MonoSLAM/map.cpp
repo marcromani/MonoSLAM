@@ -287,10 +287,39 @@ void Map::update(const Mat& gray, Mat& frame) {
             // Compute the rectangular region to match this template
             Rect roi = getBoundingBox(ellipses[i], gray.size());
 
-            int x0 = max(roi.x - u, 0);
-            int y0 = max(roi.y - v, 0);
-            int x1 = min(roi.x + roi.width + templ.cols - u, gray.cols - 1);
-            int y1 = min(roi.y + roi.height + templ.rows - v, gray.rows - 1);
+            int x0 = roi.x - u;
+            int y0 = roi.y - v;
+            int x1 = roi.x + roi.width + templ.cols - u - 2;
+            int y1 = roi.y + roi.height + templ.rows - v - 2;
+
+            int left    = 0;
+            int right   = 0;
+            int top     = 0;
+            int bottom  = 0;
+
+            if (x0 < 0) {
+
+                left = - x0;
+                x0 = 0;
+            }
+
+            if (x1 > gray.cols - 1) {
+
+                right = x1 - gray.cols + 1;
+                x1 = gray.cols - 1;
+            }
+
+            if (y0 < 0) {
+
+                top = - y0;
+                y0 = 0;
+            }
+
+            if (y1 > gray.rows - 1) {
+
+                bottom = y1 - gray.rows + 1;
+                y1 = gray.rows - 1;
+            }
 
             roi.x = x0;
             roi.y = y0;
@@ -298,6 +327,8 @@ void Map::update(const Mat& gray, Mat& frame) {
             roi.height = y1 - y0 + 1;
 
             Mat image = gray(roi);
+
+            copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar(0));
 
             // Match the template
             Mat ccorr;
@@ -308,7 +339,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
 
-            if (maxVal > 0.5) {
+            if (maxVal > 0.8) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
@@ -343,8 +374,8 @@ void Map::update(const Mat& gray, Mat& frame) {
     if (!failedInviewIndices.empty()) {
 
         // Reshape measurement matrix H and innovation covariance S
-        H = removeRows(H, failedInviewIndices, 2);
-        S = removeRowsCols(S, failedInviewIndices, 2);
+        H = removeRows(H, failedInviewIndices, 0, 2);
+        S = removeRowsCols(S, failedInviewIndices, 0, 2);
     }
 
     // Compute Kalman gain
@@ -361,22 +392,31 @@ void Map::update(const Mat& gray, Mat& frame) {
 
 void Map::updateCandidates(const Mat& gray) {
 
-    
+    /*
+    TODO: For each feature
+            For each hypothesis
+                compute predicted location, ellipse, and warpedPatch
+                match the patch against the ellipse
+                if correlation is too low
+                    pass
+                if correlation is large enough
+                    update the probabilities of all the hypotheses
+    */
 }
 
 /*
-* Adds an initial feature to the map. Its position is known with zero uncertainty
-* hence the associated covariance matrix is the zero matrix. Moreover, since the
-* feature patch lies on the chessboard pattern its normal vector is taken to be
-* the z axis unit vector. The feature is also set as visible. If the feature patch
-* exceeds the frame boundaries the feature is not initialized and false is returned.
-*
-* frame    Grayscale frame
-* pos2D    Feature position in the image, in pixels
-* pos3D    Feature position, in world coordinates
-* R        Camera rotation (from world to camera)
-* t        Camera position, in world coordinates
-*/
+ * Adds an initial feature to the map. Its position is known with zero uncertainty
+ * hence the associated covariance matrix is the zero matrix. Moreover, since the
+ * feature patch lies on the chessboard pattern its normal vector is taken to be
+ * the z axis unit vector. The feature is also set as visible. If the feature patch
+ * exceeds the frame boundaries the feature is not initialized and false is returned.
+ *
+ * frame    Grayscale frame
+ * pos2D    Feature position in the image, in pixels
+ * pos3D    Feature position, in world coordinates
+ * R        Camera rotation (from world to camera)
+ * t        Camera position, in world coordinates
+ */
 bool Map::addInitialFeature(const Mat& frame, const Point2f& pos2D, const Point3f& pos3D,
                             const Mat& R, const Mat& t) {
 
@@ -933,14 +973,14 @@ void Map::removeBadFeatures(const vector<int>& failedInviewIndices, const vector
         }
     }
 
+    if (badFeaturesVecIndices.empty())
+        return;
+
     removeIndices(features, badFeaturesVecIndices);
     removeIndices(inviewPos, badFeaturesPosIndices);
 
-    Mat x_Features = x(Rect(0, 13, 1, x.rows - 13));
-    Mat P_Features = P(Rect(13, 13, x.rows - 13, x.rows - 13));
-
-    x_Features = removeRows(x_Features, badFeaturesVecIndices, 3);
-    P_Features = removeRowsCols(P_Features, badFeaturesVecIndices, 3);
+    x = removeRows(x, badFeaturesVecIndices, 13, 3);
+    P = removeRowsCols(P, badFeaturesVecIndices, 13, 3);
 }
 
 /*
