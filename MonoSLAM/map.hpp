@@ -216,6 +216,16 @@ private:
      */
     cv::Mat computeMeasurementMatrix(std::vector<int>& inviewIndices);
 
+    /*
+     * Returns the ellipses where the predicted in sight features should be found with
+     * high probability. In particular, the ellipses are constructed so that they are
+     * confidence regions at level 0.99.
+     *
+     * means    Predicted in sight features pixel locations
+     * S        Innovation covariance matrix of the predicted in sight features
+     */
+    std::vector<cv::RotatedRect> computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat& S);
+
     void drawFeatures(cv::Mat& frame,
                       const std::vector<int>& matchedInviewIndices, const std::vector<int>& failedInviewIndices,
                       const std::vector<cv::RotatedRect>& ellipses, bool drawEllipses = true);

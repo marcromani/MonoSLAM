@@ -158,46 +158,6 @@ Mat removeRows(const Mat& mat, vector<int>& indices, int offset, int stride) {
 }
 
 /*
- * Returns the ellipses where the predicted in sight features should be found with
- * high probability. In particular, the ellipses are constructed so that they are
- * confidence regions at level 0.86.
- *
- * means    Predicted in sight features pixel locations
- * S        Innovation covariance matrix of the predicted in sight features
- */
-vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) {
-
-    vector<RotatedRect> ellipses;
-
-    for (unsigned int i = 0; i < means.size(); i++) {
-
-        Mat Si = S(Rect(2*i, 2*i, 2, 2));
-
-        // Compute the eigenvalues and eigenvectors
-        Mat eigenval, eigenvec;
-        eigen(Si, eigenval, eigenvec);
-
-        // Compute the angle between the largest eigenvector and the x axis
-        double angle = atan2(eigenvec.at<double>(0, 1), eigenvec.at<double>(0, 0));
-
-        // Shift the angle from [-pi, pi] to [0, 2pi]
-        if (angle < 0)
-            angle += PI_DOUBLE;
-
-        // Convert to degrees
-        angle *= RAD_TO_DEG;
-
-        // Compute the size of the major and minor axes
-        double majorAxis = 4 * sqrt(eigenval.at<double>(0));
-        double minorAxis = 4 * sqrt(eigenval.at<double>(1));
-
-        ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
-    }
-
-    return ellipses;
-}
-
-/*
  * Returns the smallest straight rectangle which contains the given ellipse. The computed
  * rectangle is cropped if it exceeds the given image boundary so that it fits inside it.
  *
@@ -314,6 +274,16 @@ void drawCircle(Mat& image, const Point2i& center, int radius, const Scalar& col
     circle(image, center, radius, color, 1, LINE_AA);
 }
 
+/*
+ * Draws the template on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * templ        Grayscale or color template to be drawn
+ * position     Image position of the template origin
+ * cx           First pixel coordinate of the template origin
+ * cy           Second pixel coordinate of the template origin
+ */
 void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx, int cy) {
 
     int templ_x = 0;
@@ -357,4 +327,79 @@ void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx,
         h = image.rows - image_y;
 
     templ(Rect(templ_x, templ_y, w, h)).copyTo(image(Rect(image_x, image_y, w, h)));
+}
+
+/*
+ * Computes the image corresponding to a given region of interest of a frame such that
+ * the template pixel coordinates u, v are superimposed over all of the image pixels of
+ * frame(roi) when matchTemplate is called for this image and the template. The provided
+ * region of interest is modified conveniently. This function addresses several issues:
+ * (1) The default computed image, frame(roi), may be smaller than the template, hence
+ * matchTemplate can not be used. (2) Even if the image is at least as large as the template,
+ * it might be necessary to test the template against all the pixel positions of the image,
+ * the former being centered at a specific pixel location. This is not how matchTemplate
+ * operates (it shifts the template around the image but keeps it always inside it) so
+ * the image must be correctly resized to achieve this behavior.
+ *
+ * frame    Grayscale or color base image
+ * templ    Grayscale or color template to match
+ * u        First pixel coordinate of the patch matching center
+ * v        Second pixel coordinate of the patch matching center
+ * roi      Original region of interest
+ */
+Mat computeMatchingImage(const Mat& frame, const Mat& templ, int u, int v, Rect& roi) {
+
+    // Compute the limits of the extended roi
+    int x0 = roi.x - u;
+    int y0 = roi.y - v;
+    int x1 = roi.x + roi.width + templ.cols - u - 2;
+    int y1 = roi.y + roi.height + templ.rows - v - 2;
+
+    /*
+     * Ensure that the roi coordinates are inside the frame boundaries
+     * and compute how the image should be extended along its borders.
+     */
+
+    int left    = 0;
+    int right   = 0;
+    int top     = 0;
+    int bottom  = 0;
+
+    if (x0 < 0) {
+
+        left = - x0;
+        x0 = 0;
+    }
+
+    if (x1 > frame.cols - 1) {
+
+        right = x1 - frame.cols + 1;
+        x1 = frame.cols - 1;
+    }
+
+    if (y0 < 0) {
+
+        top = - y0;
+        y0 = 0;
+    }
+
+    if (y1 > frame.rows - 1) {
+
+        bottom = y1 - frame.rows + 1;
+        y1 = frame.rows - 1;
+    }
+
+    // Update the region of interest
+    roi.x = x0;
+    roi.y = y0;
+    roi.width = x1 - x0 + 1;
+    roi.height = y1 - y0 + 1;
+
+    // Get the image
+    Mat image = frame(roi);
+
+    // Extend the image with black borders
+    copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar::all(0));
+
+    return image;
 }

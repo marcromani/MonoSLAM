@@ -287,48 +287,8 @@ void Map::update(const Mat& gray, Mat& frame) {
             // Compute the rectangular region to match this template
             Rect roi = getBoundingBox(ellipses[i], gray.size());
 
-            int x0 = roi.x - u;
-            int y0 = roi.y - v;
-            int x1 = roi.x + roi.width + templ.cols - u - 2;
-            int y1 = roi.y + roi.height + templ.rows - v - 2;
-
-            int left    = 0;
-            int right   = 0;
-            int top     = 0;
-            int bottom  = 0;
-
-            if (x0 < 0) {
-
-                left = - x0;
-                x0 = 0;
-            }
-
-            if (x1 > gray.cols - 1) {
-
-                right = x1 - gray.cols + 1;
-                x1 = gray.cols - 1;
-            }
-
-            if (y0 < 0) {
-
-                top = - y0;
-                y0 = 0;
-            }
-
-            if (y1 > gray.rows - 1) {
-
-                bottom = y1 - gray.rows + 1;
-                y1 = gray.rows - 1;
-            }
-
-            roi.x = x0;
-            roi.y = y0;
-            roi.width = x1 - x0 + 1;
-            roi.height = y1 - y0 + 1;
-
-            Mat image = gray(roi);
-
-            copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar(0));
+            // Get the corresponding image
+            Mat image = computeMatchingImage(gray, templ, u, v, roi);
 
             // Match the template
             Mat ccorr;
@@ -339,7 +299,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, NULL, &maxVal, NULL, &maxLoc);
 
-            if (maxVal > 0.8) {
+            if (maxVal > 0.7) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
@@ -917,6 +877,46 @@ Mat Map::computeMeasurementMatrix(vector<int>& inviewIndices) {
     }
 
     return H;
+}
+
+/*
+ * Returns the ellipses where the predicted in sight features should be found with
+ * high probability. In particular, the ellipses are constructed so that they are
+ * confidence regions at level 0.99.
+ *
+ * means    Predicted in sight features pixel locations
+ * S        Innovation covariance matrix of the predicted in sight features
+ */
+vector<RotatedRect> Map::computeEllipses(const vector<Point2d>& means, const Mat& S) {
+
+    vector<RotatedRect> ellipses;
+
+    for (unsigned int i = 0; i < means.size(); i++) {
+
+        Mat Si = S(Rect(2*i, 2*i, 2, 2));
+
+        // Compute the eigenvalues and eigenvectors
+        Mat eigenval, eigenvec;
+        eigen(Si, eigenval, eigenvec);
+
+        // Compute the angle between the largest eigenvector and the x axis
+        double angle = atan2(eigenvec.at<double>(0, 1), eigenvec.at<double>(0, 0));
+
+        // Shift the angle from [-pi, pi] to [0, 2pi]
+        if (angle < 0)
+            angle += PI_DOUBLE;
+
+        // Convert to degrees
+        angle *= RAD_TO_DEG;
+
+        // Compute the size of the major and minor axes
+        double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
+        double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
+
+        ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
+    }
+
+    return ellipses;
 }
 
 void Map::drawFeatures(Mat& frame,

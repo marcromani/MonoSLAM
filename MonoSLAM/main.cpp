@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     int minDensity = 8;
     int maxDensity = 18;
     double failTolerance = 0.5;
-    Mat accelerationVariances = (Mat_<double>(6, 1) << 0.025, 0.025, 0.025, 0.6, 0.6, 0.6);
+    Mat accelerationVariances = (Mat_<double>(6, 1) << 1, 1, 1, 2.46, 2.46, 2.46);
     Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 9, 9);
 
     // Build new map
