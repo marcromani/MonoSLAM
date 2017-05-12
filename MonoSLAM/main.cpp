@@ -57,8 +57,8 @@ int main(int argc, char *argv[]) {
     fs.release();
 
     int patchSize = 22;
-    int minDensity = 8;
-    int maxDensity = 18;
+    int minDensity = 10;
+    int maxDensity = 12;
     double failTolerance = 0.5;
     Mat accelerationVariances = (Mat_<double>(6, 1) << 1, 1, 1, 2.46, 2.46, 2.46);
     Mat measurementNoiseVariances = (Mat_<double>(2, 1) << 9, 9);
@@ -126,6 +126,8 @@ int main(int argc, char *argv[]) {
         cout << "Visible features: "
              << map.numVisibleFeatures << "/" << map.features.size() << endl;
 
+        //cout << map.x.at<double>(0, 0) << " " << map.x.at<double>(1, 0) << " " << map.x.at<double>(2, 0) << endl;
+
         map.trackNewCandidates(gray);
 
         readFrame(cap, frame);
@@ -141,7 +143,7 @@ int main(int argc, char *argv[]) {
         map.predict(dt);
         map.update(gray, frame);
 
-        map.updateCandidates(gray);
+        map.updateCandidates(gray, frame);
 
         imshow(window, frame);
 

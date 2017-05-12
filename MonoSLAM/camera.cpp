@@ -46,10 +46,11 @@ Camera::Camera(const Mat& K_, const Size& frameSize_) {
  * t2           Second pose translation, in world coordinates
  * u            First pixel coordinate of the projection of the original patch center
  * v            Second pixel coordinate of the projection of the original patch center
+ * mask         Warped template mask, it specifies the pixels that belong to the original patch
  */
 Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& patch1,
                       const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2,
-                      int& u, int& v) {
+                      int& u, int& v, Mat& mask) {
 
     // Black background
     Mat black(view1.rows, view1.cols, view1.type(), Scalar::all(0));
@@ -65,12 +66,11 @@ Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& 
     warpPerspective(black, warped, H, view1.size());
 
     // Set every non-black pixel of the warped image to white
-    Mat binary;
-    threshold(warped, binary, 0, 255, THRESH_BINARY);
+    threshold(warped, mask, 0, 255, THRESH_BINARY);
 
     // Use the binary mask to crop the warped image so that it only contains the patch
     Mat points;
-    findNonZero(binary, points);
+    findNonZero(mask, points);
     Rect patchBox = boundingRect(points);
 
     // Compute the projection of the center of the patch
@@ -82,6 +82,8 @@ Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& 
 
     u = centerProj.at<double>(0, 0) - patchBox.x;
     v = centerProj.at<double>(1, 0) - patchBox.y;
+
+    mask = mask(patchBox);
 
     return warped(patchBox);
 }
