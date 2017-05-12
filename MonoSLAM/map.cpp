@@ -170,7 +170,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     Mat directions = R * undistorted;
 
     Point2d depthInterval(0.2, 3);
-    int depthSamples = 40;
+    int depthSamples = 50;
 
     // Normalize the direction vectors and add new pre-initialized features
     for (int i = 0; i < directions.cols; i++) {
@@ -364,6 +364,9 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
                     update the probabilities of all the hypotheses
     */
 
+    if (candidates.empty())
+        return;
+
     // Get the current (a posteriori) camera rotation (world to camera) and position (in world coordinates)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
     Mat t = x(Rect(0, 0, 1, 3));
@@ -403,37 +406,40 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
         // Project all the positions hypotheses to the current view
         camera.projectPoints(R, t, points3D_, points2D_);
 
-        vector<int> inviewHypothesesIndices;
-
-        vector<Point2d> inviewHypothesesPos2D;
-        vector<Point3d> inviewHypothesesPos3D;
+        vector<int> inviewHypothesesIndices(points2D_.size());
+        vector<Point2d> inviewHypothesesPos2D(points2D_.size());
+        vector<Point3d> inviewHypothesesPos3D(points2D_.size());
 
         Rect box(Point2i(0, 0), camera.frameSize);
+
+        int k = 0;
 
         for (unsigned int j = 0; j < points2D_.size(); j++) {
 
             if (box.contains(points2D_[j])) {
 
-                inviewHypothesesIndices.push_back(j);
+                inviewHypothesesIndices[k] = j;
+                inviewHypothesesPos2D[k] = points2D_[j];
+                inviewHypothesesPos3D[k] = points3D_[j];
 
-                inviewHypothesesPos2D.push_back(points2D_[j]);
-                inviewHypothesesPos3D.push_back(points3D_[j]);
-
-                drawSquare(frame, points2D_[j], 10, Scalar(0, 255, 255));
+                k++;
             }
         }
 
-        /*
+        inviewHypothesesIndices.resize(k);
+        inviewHypothesesPos2D.resize(k);
+        inviewHypothesesPos3D.resize(k);
+
         // Derivative of the observation u, v with respect to the camera state (without v and w)
         Mat DuvDx(2, 7, CV_64FC1);
 
-        // Derivative of the observation u, v with respect to the hypothesis y
+        // Derivative of the observation u, v with respect to the hypothesis
         Mat DuvDy(2, 3, CV_64FC1);
 
         // Compute the error ellipses of the hypotheses in view
         for (unsigned int j = 0; j < inviewHypothesesPos3D.size(); j++) {
 
-            Mat pt = Mat(inviewHypothesesPos3D[i]) - t;
+            Mat pt = Mat(inviewHypothesesPos3D[j]) - t;
 
             Mat pCam = R * pt;
 
@@ -562,12 +568,8 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
 
             Mat S = DuvDx * Pxx * DuvDx.t() + DuvDy * Pyy * DuvDy.t() + 9 * Mat::eye(2, 2, CV_64FC1);
 
-            vector<Point2d> means = {inviewHypothesesPos2D[j]};
-
-            vector<RotatedRect> ellipses = computeEllipses(means, S);
-
-            drawEllipse(frame, ellipses[0], Scalar(0, 255, 255));
-        }*/
+            RotatedRect ellipse = computeEllipses({inviewHypothesesPos2D[j]}, S)[0];
+        }
     }
 }
 
