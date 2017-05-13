@@ -23,7 +23,7 @@ public:
 
     cv::Mat dir;                    // Feature line unit direction vector, in world coordinates
     std::vector<double> depths;     // Feature depth hypotheses
-    std::vector<double> probs;      // Hypotheses probabilities
+    cv::Mat probs;                  // Hypotheses probabilities
 
     /*
      * Constructor for a fully initialized feature. It is a convenient method used only

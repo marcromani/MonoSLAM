@@ -422,7 +422,7 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         failedIndices.resize(points2D_.size() - k);
 
         removeIndices(candidate->depths, failedIndices);
-        removeIndices(candidate->probs, failedIndices);
+        candidate->probs = removeRows(candidate->probs, failedIndices);
 
         Mat S(2*k, 2*k, CV_64FC1);
 
@@ -600,23 +600,38 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
         Mat x = (Mat_<double>(2, 1) << px, py);
 
-        double sum = 0;
-
         for (unsigned int j = 0; j < k; j++) {
 
             Mat mean = Mat(inviewHypothesesPos2D[j]);
-
-            candidate->probs[j] *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
-            sum += candidate->probs[j];
+            candidate->probs.at<double>(j, 0) *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
         }
 
-        for (unsigned int j = 0; j < k; j++)
-            candidate->probs[j] /= sum;
+        candidate->probs /= sum(candidate->probs)[0];
     }
 
-    for (unsigned int j = 0; j < candidates[0].depths.size(); j++)
-        cout << candidates[0].depths[j] << " " << candidates[0].probs[j] << endl;
-    cout << endl;
+    for (int i = candidates.size() - 1; i >= 0; i--) {
+
+        Mat depths = Mat(candidates[i].depths);
+        Mat probs = candidates[i].probs;
+
+        cout << depths.size() << " " << probs.size() << endl;
+
+        double mean = depths.dot(probs);
+
+        Mat diff = depths - Mat(depths.rows, 1, CV_64FC1, Scalar::all(mean));
+        Mat diff2 = diff.mul(diff);
+
+        double stdDev = sqrt(diff2.dot(probs));
+
+        if (stdDev / mean < 0.3) {
+
+            /*for (int j = 0; j < depths.rows; j++)
+                cout << depths.at<double>(j, 0) << " " << probs.at<double>(j, 0) << endl;
+            cout << endl;*/
+
+            candidates.erase(candidates.begin() + i);
+        }
+    }
 
     threadCompleted.store(true);
 }

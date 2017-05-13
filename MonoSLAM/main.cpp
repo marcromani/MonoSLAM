@@ -131,7 +131,8 @@ int main(int argc, char *argv[]) {
     for (;;) {
 
         cout << "Visible features: "
-             << map.numVisibleFeatures << "/" << map.features.size() << endl;
+             << map.numVisibleFeatures << "/" << map.features.size() << endl
+             << "Candidates: " << map.candidates.size() << endl;
 
         //cout << map.x.at<double>(0, 0) << " " << map.x.at<double>(1, 0) << " " << map.x.at<double>(2, 0) << endl;
 
@@ -164,6 +165,9 @@ int main(int argc, char *argv[]) {
         if (waitKey(1) == 27)
             break;
     }
+
+    if (candidatesThread.joinable())
+        candidatesThread.join();
 }
 
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
