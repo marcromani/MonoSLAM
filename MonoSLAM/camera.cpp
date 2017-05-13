@@ -53,7 +53,7 @@ Mat Camera::warpPatch(const Mat& p, const Mat& n, const Mat& view1, const Rect& 
                       int& u, int& v, Mat& mask) {
 
     // Black background
-    Mat black(view1.rows, view1.cols, view1.type(), Scalar::all(0));
+    Mat black(view1.size(), view1.type(), Scalar::all(0));
 
     // Copy the original patch into the black background
     view1(patch1).copyTo(black(patch1));

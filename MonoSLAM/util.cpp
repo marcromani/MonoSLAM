@@ -209,15 +209,19 @@ Rect getBoundingBox(const RotatedRect& ellipse, const Size& imageSize) {
 
     double x0 = x - xmax;
     double y0 = y - ymax;
-    double w = 2 * xmax + 1;
-    double h = 2 * ymax + 1;
+    double x1 = x + xmax;
+    double y1 = y + ymax;
 
-    if (x0 + w > imageSize.width)
-        w = imageSize.width - x0;
-    if (y0 + h > imageSize.height)
-        h = imageSize.height - y0;
+    if (x0 < 0)
+        x0 = 0;
+    if (y0 < 0)
+        y0 = 0;
+    if (x1 > imageSize.width)
+        x1 = imageSize.width - 1;
+    if (y1 > imageSize.height)
+        y1 = imageSize.height - 1;
 
-    return Rect(max(x - xmax, 0.), max(y - ymax, 0.), w, h);
+    return Rect(max(x0, 0.), max(y0, 0.), x1 - x0 + 1, y1 - y0 + 1);
 }
 
 /*
@@ -402,4 +406,13 @@ Mat computeMatchingImage(const Mat& frame, const Mat& templ, int u, int v, Rect&
     copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar::all(0));
 
     return image;
+}
+
+double gaussian2Dpdf(const Mat& x, const Mat& mean, const Mat& cov) {
+
+    Mat diff = x - mean;
+    Mat covInv = cov.inv();
+    Mat exponent = - 0.5 * diff.t() * covInv * diff;
+
+    return sqrt(determinant(covInv)) * exp(exponent.at<double>(0, 0)) / PI_DOUBLE;
 }

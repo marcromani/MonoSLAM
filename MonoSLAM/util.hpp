@@ -180,4 +180,6 @@ void drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& posit
  */
 cv::Mat computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi);
 
+double gaussian2Dpdf(const cv::Mat& x, const cv::Mat& mean, const cv::Mat& cov);
+
 #endif
