@@ -170,7 +170,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     Mat directions = R * undistorted;
 
     Point2d depthInterval(0.2, 3);
-    int depthSamples = 50;
+    int depthSamples = 100;
 
     // Normalize the direction vectors and add new pre-initialized features
     for (int i = 0; i < directions.cols; i++) {
@@ -351,21 +351,9 @@ void Map::update(const Mat& gray, Mat& frame) {
     renormalizeQuaternion();
 }
 
-void Map::updateCandidates(const Mat& gray, Mat& frame) {
+void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadCompleted) {
 
-    /*
-    TODO: For each feature
-            For each hypothesis
-                compute predicted location, ellipse, and warpedPatch
-                match the patch against the ellipse
-                if correlation is too low
-                    pass
-                if correlation is large enough
-                    update the probabilities of all the hypotheses
-    */
-
-    if (candidates.empty())
-        return;
+    threadCompleted.store(false);
 
     // Get the current (a posteriori) camera rotation (world to camera) and position (in world coordinates)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
@@ -406,29 +394,37 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
         // Project all the positions hypotheses to the current view
         camera.projectPoints(R, t, points3D_, points2D_);
 
-        vector<int> inviewHypothesesIndices(points2D_.size());
         vector<Point2d> inviewHypothesesPos2D(points2D_.size());
         vector<Point3d> inviewHypothesesPos3D(points2D_.size());
+        vector<int> failedIndices(points2D_.size());
 
         Rect box(Point2i(0, 0), camera.frameSize);
 
-        int k = 0;
+        unsigned int k = 0;
 
         for (unsigned int j = 0; j < points2D_.size(); j++) {
 
             if (box.contains(points2D_[j])) {
 
-                inviewHypothesesIndices[k] = j;
                 inviewHypothesesPos2D[k] = points2D_[j];
                 inviewHypothesesPos3D[k] = points3D_[j];
 
                 k++;
+
+            } else {
+
+                failedIndices[j - k] = j;
             }
         }
 
-        inviewHypothesesIndices.resize(k);
         inviewHypothesesPos2D.resize(k);
         inviewHypothesesPos3D.resize(k);
+        failedIndices.resize(points2D_.size() - k);
+
+        removeIndices(candidate->depths, failedIndices);
+        removeIndices(candidate->probs, failedIndices);
+
+        Mat S(2*k, 2*k, CV_64FC1);
 
         // Derivative of the observation u, v with respect to the camera state (without v and w)
         Mat DuvDx(2, 7, CV_64FC1);
@@ -436,8 +432,11 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
         // Derivative of the observation u, v with respect to the hypothesis
         Mat DuvDy(2, 3, CV_64FC1);
 
-        // Compute the error ellipses of the hypotheses in view
-        for (unsigned int j = 0; j < inviewHypothesesPos3D.size(); j++) {
+        Mat Pxx = P(Rect(0, 0, 7, 7));
+        Mat Pyy = P(Rect(0, 0, 3, 3));
+
+        // Compute the covariance matrices of the projections of the hypotheses in view
+        for (unsigned int j = 0; j < k; j++) {
 
             Mat pt = Mat(inviewHypothesesPos3D[j]) - t;
 
@@ -562,15 +561,64 @@ void Map::updateCandidates(const Mat& gray, Mat& frame) {
             DuvDy.at<double>(1, 1) = dvdx2;
             DuvDy.at<double>(1, 2) = dvdx3;
 
-            // Compute the covariance matrix of the hypothesis projection
-            Mat Pxx = P(Rect(0, 0, 7, 7));
-            Mat Pyy = P(Rect(0, 0, 3, 3));
-
-            Mat S = DuvDx * Pxx * DuvDx.t() + DuvDy * Pyy * DuvDy.t() + 9 * Mat::eye(2, 2, CV_64FC1);
-
-            RotatedRect ellipse = computeEllipses({inviewHypothesesPos2D[j]}, S)[0];
+            S(Rect(2*j, 2*j, 2, 2)) = DuvDx * Pxx * DuvDx.t() +
+                                      DuvDy * Pyy * DuvDy.t() + 9 * Mat::eye(2, 2, CV_64FC1);
         }
+
+        vector<RotatedRect> ellipses = computeEllipses(inviewHypothesesPos2D, S);
+
+        // Black background
+        Mat black(gray.size(), gray.type(), Scalar::all(0));
+
+        // Copy the search region of each ellipse to the black background
+        for (unsigned int j = 0; j < k; j++) {
+
+            Rect roi = getBoundingBox(ellipses[j], gray.size());
+            gray(roi).copyTo(black(roi));
+        }
+
+        // Get the candidate template
+        Mat templ = candidate->image(candidate->roi);
+
+        // Get the image to match the template to
+        int u = candidate->roi.width / 2;
+        int v = candidate->roi.height / 2;
+        Rect roi(Point2i(0, 0), black.size());
+        Mat image = computeMatchingImage(black, templ, u, v, roi);
+
+        // Match the template
+        Mat ccorr;
+        matchTemplate(image, templ, ccorr, TM_CCORR_NORMED);
+
+        // Get the observation value
+        double maxVal;
+        Point2i maxLoc;
+        minMaxLoc(ccorr, 0, &maxVal, 0, &maxLoc);
+
+        int px = maxLoc.x + roi.x + u;
+        int py = maxLoc.y + roi.y + v;
+
+        Mat x = (Mat_<double>(2, 1) << px, py);
+
+        double sum = 0;
+
+        for (unsigned int j = 0; j < k; j++) {
+
+            Mat mean = Mat(inviewHypothesesPos2D[j]);
+
+            candidate->probs[j] *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
+            sum += candidate->probs[j];
+        }
+
+        for (unsigned int j = 0; j < k; j++)
+            candidate->probs[j] /= sum;
     }
+
+    for (unsigned int j = 0; j < candidates[0].depths.size(); j++)
+        cout << candidates[0].depths[j] << " " << candidates[0].probs[j] << endl;
+    cout << endl;
+
+    threadCompleted.store(true);
 }
 
 /*

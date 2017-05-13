@@ -8,10 +8,10 @@ FILES_C = camera.cpp feature.cpp main.cpp map.cpp quaternion.cpp util.cpp
 TARGET = main
 
 # Compilation options
-CFLAGS = -Wall -g -std=c++14 -march=native -O3 -funroll-loops `pkg-config --cflags opencv`
+CFLAGS = -Wall -g -std=c++14 -march=native -O3 -funroll-loops -pthread `pkg-config --cflags opencv`
 
 # Linker options
-LFLAGS = `pkg-config --libs opencv`
+LFLAGS = -pthread `pkg-config --libs opencv`
 
 FILES_O = $(subst .cpp,.o,$(FILES_C))
 

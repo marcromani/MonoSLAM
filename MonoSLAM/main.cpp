@@ -1,6 +1,8 @@
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "opencv2/calib3d/calib3d.hpp"
@@ -121,6 +123,11 @@ int main(int argc, char *argv[]) {
 
     chrono::time_point<clock_> t1;
 
+    thread candidatesThread;
+    atomic<bool> threadCompleted;
+
+    threadCompleted.store(true);
+
     for (;;) {
 
         cout << "Visible features: "
@@ -128,7 +135,8 @@ int main(int argc, char *argv[]) {
 
         //cout << map.x.at<double>(0, 0) << " " << map.x.at<double>(1, 0) << " " << map.x.at<double>(2, 0) << endl;
 
-        map.trackNewCandidates(gray);
+        if (threadCompleted.load())
+            map.trackNewCandidates(gray);
 
         readFrame(cap, frame);
         resize(frame, frame, Size(640, 480));
@@ -143,7 +151,13 @@ int main(int argc, char *argv[]) {
         map.predict(dt);
         map.update(gray, frame);
 
-        map.updateCandidates(gray, frame);
+        if (!map.candidates.empty() && threadCompleted.load()) {
+
+            if (candidatesThread.joinable())
+                candidatesThread.join();
+
+            candidatesThread = thread(&Map::updateCandidates, &map, ref(gray), ref(frame), ref(threadCompleted));
+        }
 
         imshow(window, frame);
 

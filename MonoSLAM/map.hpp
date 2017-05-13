@@ -1,6 +1,7 @@
 #ifndef MAP_H
 #define MAP_H
 
+#include <atomic>
 #include <vector>
 
 #include "opencv2/core/core.hpp"
@@ -139,7 +140,7 @@ public:
      */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
-    void updateCandidates(const cv::Mat& gray, cv::Mat& frame);
+    void updateCandidates(const cv::Mat& gray, cv::Mat& frame, std::atomic<bool>& threadCompleted);
 
 private:
 
