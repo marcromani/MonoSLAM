@@ -6,6 +6,7 @@
 
 #include "opencv2/core/core.hpp"
 
+#include "buffer.hpp"
 #include "camera.hpp"
 #include "feature.hpp"
 
@@ -140,7 +141,8 @@ public:
      */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
-    void updateCandidates(const cv::Mat& gray, cv::Mat& frame, std::atomic<bool>& threadCompleted);
+    void updateCandidates(const cv::Mat& gray,
+                          Buffer<Feature>& goodCandidates, std::atomic<bool>& threadCompleted);
 
 private:
 

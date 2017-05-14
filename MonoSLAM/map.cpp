@@ -300,7 +300,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, 0, &maxVal, 0, &maxLoc);
 
-            if (maxVal > 0.94) {
+            if (maxVal > 0.9) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
@@ -351,9 +351,7 @@ void Map::update(const Mat& gray, Mat& frame) {
     renormalizeQuaternion();
 }
 
-void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadCompleted) {
-
-    threadCompleted.store(false);
+void Map::updateCandidates(const Mat& gray, Buffer<Feature>& goodCandidates, atomic<bool>& threadCompleted) {
 
     // Get the current (a posteriori) camera rotation (world to camera) and position (in world coordinates)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
@@ -371,7 +369,13 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
     double p2 = camera.distCoeffs.at<double>(0, 3);
     double k3 = camera.distCoeffs.at<double>(0, 4);
 
+    Mat Pxx = P(Rect(0, 0, 7, 7));
+    Mat Pyy = P(Rect(0, 0, 3, 3));
+
     Feature *candidatesPtr = candidates.data();
+
+    // Indices of candidates for which no depths hypotheses correspond to in view points
+    vector<int> failedCandidates;
 
     // For each feature candidate
     for (unsigned int i = 0; i < candidates.size(); i++) {
@@ -424,6 +428,12 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         removeIndices(candidate->depths, failedIndices);
         candidate->probs = removeRows(candidate->probs, failedIndices);
 
+        if (candidate->depths.empty()) {
+
+            failedCandidates.push_back(i);
+            continue;
+        }
+
         Mat S(2*k, 2*k, CV_64FC1);
 
         // Derivative of the observation u, v with respect to the camera state (without v and w)
@@ -431,9 +441,6 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
         // Derivative of the observation u, v with respect to the hypothesis
         Mat DuvDy(2, 3, CV_64FC1);
-
-        Mat Pxx = P(Rect(0, 0, 7, 7));
-        Mat Pyy = P(Rect(0, 0, 3, 3));
 
         // Compute the covariance matrices of the projections of the hypotheses in view
         for (unsigned int j = 0; j < k; j++) {
@@ -609,12 +616,14 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         candidate->probs /= sum(candidate->probs)[0];
     }
 
+    removeIndices(candidates, failedCandidates);
+
     for (int i = candidates.size() - 1; i >= 0; i--) {
 
-        Mat depths = Mat(candidates[i].depths);
-        Mat probs = candidates[i].probs;
+        Feature *candidate = &candidatesPtr[i];
 
-        cout << depths.size() << " " << probs.size() << endl;
+        Mat depths = Mat(candidate->depths);
+        Mat probs = candidate->probs;
 
         double mean = depths.dot(probs);
 
@@ -625,15 +634,19 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
         if (stdDev / mean < 0.3) {
 
-            /*for (int j = 0; j < depths.rows; j++)
-                cout << depths.at<double>(j, 0) << " " << probs.at<double>(j, 0) << endl;
-            cout << endl;*/
+            candidate->pos = candidate->t + mean * candidate->dir;
+            candidate->normal = - candidate->dir;
+            candidate->matchingFails = 0;
+            candidate->matchingAttempts = 0;
+            candidate->P = Pyy.clone();
+
+            goodCandidates.push(*candidate);
 
             candidates.erase(candidates.begin() + i);
         }
     }
 
-    threadCompleted.store(true);
+    threadCompleted = true;
 }
 
 /*

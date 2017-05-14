@@ -25,6 +25,8 @@ public:
     std::vector<double> depths;     // Feature depth hypotheses
     cv::Mat probs;                  // Hypotheses probabilities
 
+    Feature() {}
+
     /*
      * Constructor for a fully initialized feature. It is a convenient method used only
      * during the map initialization step, when manually initialized features are added

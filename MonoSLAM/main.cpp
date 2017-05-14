@@ -1,5 +1,3 @@
-#include <atomic>
-#include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -9,6 +7,7 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+#include "buffer.hpp"
 #include "camera.hpp"
 #include "feature.hpp"
 #include "map.hpp"
@@ -18,16 +17,11 @@
 using namespace cv;
 using namespace std;
 
-typedef chrono::duration<double, ratio<1, 1>> seconds_;
-typedef chrono::high_resolution_clock clock_;
-
-constexpr double FPS = 60;
+constexpr double dt = 1./30;
 
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
                 double& squareSize);
 void printUsage(const char *execName);
-
-void readFrame(VideoCapture& cap, Mat& frame);
 
 int main(int argc, char *argv[]) {
 
@@ -85,7 +79,8 @@ int main(int argc, char *argv[]) {
     if (!cap.isOpened())
         return -1;
 
-    // Set capture size to 1024x768 (60 fps)
+    // Set capture size to 1024x768 at 60 fps
+    // Default is 640x480 at 120 fps and images are darker due to low exposure
     cap.set(CAP_PROP_FRAME_WIDTH, 1024);
     cap.set(CAP_PROP_FRAME_HEIGHT, 768);
 
@@ -97,14 +92,14 @@ int main(int argc, char *argv[]) {
 
     bool init;
 
-    chrono::time_point<clock_> t0;
+    thread candidatesThread;
+    Buffer<Feature> goodCandidates(32);
+    atomic<bool> threadCompleted(true);
 
     for (;;) {
 
-        readFrame(cap, frame);
-        resize(frame, frame, Size(640, 480));
-
-        t0 = clock_::now();
+        cap.read(frame);
+        resize(frame, frame, frameSize);
 
         cvtColor(frame, gray, CV_BGR2GRAY);
         cvtColor(gray, frame, CV_GRAY2RGB);
@@ -121,30 +116,17 @@ int main(int argc, char *argv[]) {
     if (!init)
         return 0;
 
-    chrono::time_point<clock_> t1;
-
-    thread candidatesThread;
-    atomic<bool> threadCompleted;
-
-    threadCompleted.store(true);
-
     for (;;) {
 
         cout << "Visible features: "
              << map.numVisibleFeatures << "/" << map.features.size() << endl
              << "Candidates: " << map.candidates.size() << endl;
 
-        //cout << map.x.at<double>(0, 0) << " " << map.x.at<double>(1, 0) << " " << map.x.at<double>(2, 0) << endl;
-
-        if (threadCompleted.load())
+        if (threadCompleted)
             map.trackNewCandidates(gray);
 
-        readFrame(cap, frame);
-        resize(frame, frame, Size(640, 480));
-
-        t1 = clock_::now();
-        double dt = chrono::duration_cast<seconds_>(t1 - t0).count();
-        t0 = t1;
+        cap.read(frame);
+        resize(frame, frame, frameSize);
 
         cvtColor(frame, gray, CV_BGR2GRAY);
         cvtColor(gray, frame, CV_GRAY2RGB);
@@ -152,12 +134,15 @@ int main(int argc, char *argv[]) {
         map.predict(dt);
         map.update(gray, frame);
 
-        if (!map.candidates.empty() && threadCompleted.load()) {
+        if (!map.candidates.empty() && threadCompleted) {
 
             if (candidatesThread.joinable())
                 candidatesThread.join();
 
-            candidatesThread = thread(&Map::updateCandidates, &map, ref(gray), ref(frame), ref(threadCompleted));
+            threadCompleted = false;
+
+            candidatesThread = thread(&Map::updateCandidates, &map,
+                                      ref(gray), ref(goodCandidates), ref(threadCompleted));
         }
 
         imshow(window, frame);
@@ -166,8 +151,7 @@ int main(int argc, char *argv[]) {
             break;
     }
 
-    if (candidatesThread.joinable())
-        candidatesThread.join();
+    candidatesThread.join();
 }
 
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
@@ -199,22 +183,4 @@ bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, in
 void printUsage(const char *execName) {
 
     cerr << "Usage: " << execName << " cameraFile patternRows patternCols squareSize (-h for help)" << endl;
-}
-
-void readFrame(VideoCapture& cap, Mat& frame) {
-
-    chrono::time_point<clock_> t0;
-    double elapsed;
-
-    double tol = 1 / double(2 * FPS);
-
-    do {
-
-        t0 = clock_::now();
-        cap.grab();
-        elapsed = chrono::duration_cast<seconds_>(clock_::now() - t0).count();
-
-    } while (elapsed < tol);
-
-    cap.retrieve(frame);
 }
