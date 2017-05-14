@@ -6,6 +6,7 @@
 
 #include "opencv2/core/core.hpp"
 
+#include "buffer.hpp"
 #include "camera.hpp"
 #include "feature.hpp"
 
@@ -111,12 +112,12 @@ public:
     void broadcastData();
 
     /*
-     * Detects corners and initializes new feature candidates whenever there are not
-     * enough visible features and no candidates are being tracked. Returns a boolean
-     * indicating whether new candidates were detected or not.
-     *
-     * frame    Grayscale frame
-     */
+    * Detects corners and initializes new feature candidates whenever there are not
+    * enough visible features. Returns a boolean indicating whether new candidates
+    * were detected or not.
+    *
+    * frame    Grayscale frame
+    */
     bool trackNewCandidates(const cv::Mat& frame);
 
     /*
@@ -140,7 +141,8 @@ public:
      */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
-    void updateCandidates(const cv::Mat& gray, cv::Mat& frame, std::atomic<bool>& threadCompleted);
+    void updateCandidates(const cv::Mat& gray, const cv::Mat& x, const cv::Mat& P,
+                          Buffer<Feature>& goodCandidates);
 
 private:
 

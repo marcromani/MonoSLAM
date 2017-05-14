@@ -132,8 +132,8 @@ void Map::broadcastData() {
 
 /*
  * Detects corners and initializes new feature candidates whenever there are not
- * enough visible features and no candidates are being tracked. Returns a boolean
- * indicating whether new candidates were detected or not.
+ * enough visible features. Returns a boolean indicating whether new candidates
+ * were detected or not.
  *
  * frame    Grayscale frame
  */
@@ -141,10 +141,6 @@ bool Map::trackNewCandidates(const Mat& frame) {
 
     // If there are enough visible features there is no need to detect new ones
     if (numVisibleFeatures >= minFeatureDensity)
-        return false;
-
-    // The same applies if there are few features but candidates are already being tracked
-    if (!candidates.empty())
         return false;
 
     Mat corners = findCorners(frame);
@@ -169,7 +165,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     undistorted.convertTo(undistorted, CV_64FC1);
     Mat directions = R * undistorted;
 
-    Point2d depthInterval(0.2, 3);
+    Point2d depthInterval(0.05, 5);
     int depthSamples = 100;
 
     // Normalize the direction vectors and add new pre-initialized features
@@ -300,7 +296,7 @@ void Map::update(const Mat& gray, Mat& frame) {
             Point2i maxLoc;
             minMaxLoc(ccorr, 0, &maxVal, 0, &maxLoc);
 
-            if (maxVal > 0.94) {
+            if (maxVal > 0.9) {
 
                 int px = maxLoc.x + roi.x + u;
                 int py = maxLoc.y + roi.y + v;
@@ -351,9 +347,7 @@ void Map::update(const Mat& gray, Mat& frame) {
     renormalizeQuaternion();
 }
 
-void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadCompleted) {
-
-    threadCompleted.store(false);
+void Map::updateCandidates(const Mat& gray, const Mat& x, const Mat& P, Buffer<Feature>& goodCandidates) {
 
     // Get the current (a posteriori) camera rotation (world to camera) and position (in world coordinates)
     Mat R = getRotationMatrix(x(Rect(0, 3, 1, 4))).t();
@@ -373,6 +367,9 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
     Feature *candidatesPtr = candidates.data();
 
+    // Indices of candidates for which no depths hypotheses correspond to in view points
+    vector<int> failedCandidates;
+
     // For each feature candidate
     for (unsigned int i = 0; i < candidates.size(); i++) {
 
@@ -385,8 +382,8 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
             double d = candidate->depths[j];
 
-            Mat x = candidate->t + d * candidate->dir;
-            points3D_[j] = Point3d(x);
+            Mat xj = candidate->t + d * candidate->dir;
+            points3D_[j] = Point3d(xj);
         }
 
         vector<Point2d> points2D_;
@@ -424,6 +421,12 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         removeIndices(candidate->depths, failedIndices);
         candidate->probs = removeRows(candidate->probs, failedIndices);
 
+        if (candidate->depths.empty()) {
+
+            failedCandidates.push_back(i);
+            continue;
+        }
+
         Mat S(2*k, 2*k, CV_64FC1);
 
         // Derivative of the observation u, v with respect to the camera state (without v and w)
@@ -432,7 +435,7 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         // Derivative of the observation u, v with respect to the hypothesis
         Mat DuvDy(2, 3, CV_64FC1);
 
-        Mat Pxx = P(Rect(0, 0, 7, 7));
+        Mat Pxx = P;
         Mat Pyy = P(Rect(0, 0, 3, 3));
 
         // Compute the covariance matrices of the projections of the hypotheses in view
@@ -598,23 +601,25 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
         int px = maxLoc.x + roi.x + u;
         int py = maxLoc.y + roi.y + v;
 
-        Mat x = (Mat_<double>(2, 1) << px, py);
+        Mat pixel = (Mat_<double>(2, 1) << px, py);
 
         for (unsigned int j = 0; j < k; j++) {
 
             Mat mean = Mat(inviewHypothesesPos2D[j]);
-            candidate->probs.at<double>(j, 0) *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
+            candidate->probs.at<double>(j, 0) *= gaussian2Dpdf(pixel, mean, S(Rect(2*j, 2*j, 2, 2)));
         }
 
         candidate->probs /= sum(candidate->probs)[0];
     }
 
+    removeIndices(candidates, failedCandidates);
+
     for (int i = candidates.size() - 1; i >= 0; i--) {
 
-        Mat depths = Mat(candidates[i].depths);
-        Mat probs = candidates[i].probs;
+        Feature *candidate = &candidatesPtr[i];
 
-        cout << depths.size() << " " << probs.size() << endl;
+        Mat depths = Mat(candidate->depths);
+        Mat probs = candidate->probs;
 
         double mean = depths.dot(probs);
 
@@ -625,15 +630,17 @@ void Map::updateCandidates(const Mat& gray, Mat& frame, atomic<bool>& threadComp
 
         if (stdDev / mean < 0.3) {
 
-            /*for (int j = 0; j < depths.rows; j++)
-                cout << depths.at<double>(j, 0) << " " << probs.at<double>(j, 0) << endl;
-            cout << endl;*/
+            candidate->pos = candidate->t + mean * candidate->dir;
+            candidate->normal = - candidate->dir;
+            candidate->matchingFails = 0;
+            candidate->matchingAttempts = 0;
+            candidate->P = P(Rect(0, 0, 3, 3)).clone();
+
+            goodCandidates.push(*candidate);
 
             candidates.erase(candidates.begin() + i);
         }
     }
-
-    threadCompleted.store(true);
 }
 
 /*
