@@ -169,7 +169,7 @@ bool Map::trackNewCandidates(const Mat& frame) {
     undistorted.convertTo(undistorted, CV_64FC1);
     Mat directions = R * undistorted;
 
-    Point2d depthInterval(0.2, 3);
+    Point2d depthInterval(0.1, 5);
     int depthSamples = 100;
 
     // Normalize the direction vectors and add new pre-initialized features
@@ -574,46 +574,57 @@ void Map::updateCandidates(const Mat& gray, Buffer<Feature>& goodCandidates, ato
 
         vector<RotatedRect> ellipses = computeEllipses(inviewHypothesesPos2D, S);
 
-        // Black background
         Mat black(gray.size(), gray.type(), Scalar::all(0));
 
-        // Copy the search region of each ellipse to the black background
         for (unsigned int j = 0; j < k; j++) {
 
+            // Compute the rectangular region to match this template
             Rect roi = getBoundingBox(ellipses[j], gray.size());
+
+            // Copy the region to the black background
             gray(roi).copyTo(black(roi));
         }
 
-        // Get the candidate template
+        // Set every non-black pixel of the above image to white
+        Mat mask;
+        threshold(black, mask, 0, 255, THRESH_BINARY);
+
+        // Use the binary mask to crop the black image
+        Mat points;
+        findNonZero(mask, points);
+        Rect roi = boundingRect(points);
+
         Mat templ = candidate->image(candidate->roi);
 
-        // Get the image to match the template to
-        int u = candidate->roi.width / 2;
-        int v = candidate->roi.height / 2;
-        Rect roi(Point2i(0, 0), black.size());
-        Mat image = computeMatchingImage(black, templ, u, v, roi);
+        // Get the corresponding image
+        int u = templ.cols / 2;
+        int v = templ.rows / 2;
+        Mat image = computeMatchingImage(gray, templ, u, v, roi);
 
         // Match the template
         Mat ccorr;
-        matchTemplate(image, templ, ccorr, TM_CCORR_NORMED);
+        matchTemplate(image, templ, ccorr, TM_SQDIFF_NORMED);
 
         // Get the observation value
-        double maxVal;
-        Point2i maxLoc;
-        minMaxLoc(ccorr, 0, &maxVal, 0, &maxLoc);
+        double minVal;
+        Point2i minLoc;
+        minMaxLoc(ccorr, &minVal, 0, &minLoc, 0);
 
-        int px = maxLoc.x + roi.x + u;
-        int py = maxLoc.y + roi.y + v;
+        if (minVal < 0.01) {
 
-        Mat x = (Mat_<double>(2, 1) << px, py);
+            int px = minLoc.x + roi.x + u;
+            int py = minLoc.y + roi.y + v;
 
-        for (unsigned int j = 0; j < k; j++) {
+            Mat x = (Mat_<double>(2, 1) << px, py);
 
-            Mat mean = Mat(inviewHypothesesPos2D[j]);
-            candidate->probs.at<double>(j, 0) *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
+            for (unsigned int j = 0; j < k; j++) {
+
+                Mat mean = Mat(inviewHypothesesPos2D[j]);
+                candidate->probs.at<double>(j, 0) *= gaussian2Dpdf(x, mean, S(Rect(2*j, 2*j, 2, 2)));
+            }
+
+            candidate->probs /= sum(candidate->probs)[0];
         }
-
-        candidate->probs /= sum(candidate->probs)[0];
     }
 
     removeIndices(candidates, failedCandidates);

@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     string window = "MonoSLAM";
     namedWindow(window, CV_WINDOW_AUTOSIZE);
 
-    Mat frame, gray;
+    Mat frame, gray, grayThread;
 
     bool init;
 
@@ -118,9 +118,9 @@ int main(int argc, char *argv[]) {
 
     for (;;) {
 
-        cout << "Visible features: "
+        /*cout << "Visible features: "
              << map.numVisibleFeatures << "/" << map.features.size() << endl
-             << "Candidates: " << map.candidates.size() << endl;
+             << "Candidates: " << map.candidates.size() << endl;*/
 
         if (threadCompleted)
             map.trackNewCandidates(gray);
@@ -130,6 +130,21 @@ int main(int argc, char *argv[]) {
 
         cvtColor(frame, gray, CV_BGR2GRAY);
         cvtColor(gray, frame, CV_GRAY2RGB);
+
+        while (!goodCandidates.empty()) {
+
+            Feature feature = goodCandidates.pop();
+
+            map.features.push_back(feature);
+
+            map.x.resize(map.x.rows + 3);
+            feature.pos.copyTo(map.x(Rect(0, map.x.rows - 3, 1, 3)));
+
+            Mat tmp(map.P.rows + 3, map.P.cols + 3, CV_64FC1, Scalar(0));
+            map.P.copyTo(tmp(Rect(0, 0, map.P.cols, map.P.rows)));
+            feature.P.copyTo(tmp(Rect(map.P.cols, map.P.rows, 3, 3)));
+            map.P = tmp;
+        }
 
         map.predict(dt);
         map.update(gray, frame);
@@ -141,17 +156,26 @@ int main(int argc, char *argv[]) {
 
             threadCompleted = false;
 
+            gray.copyTo(grayThread);
+
             candidatesThread = thread(&Map::updateCandidates, &map,
-                                      ref(gray), ref(goodCandidates), ref(threadCompleted));
+                                      ref(grayThread), ref(goodCandidates), ref(threadCompleted));
         }
 
         imshow(window, frame);
 
-        if (waitKey(1) == 27)
+        int key = waitKey(1);
+
+        if (key == 32)
+            for (unsigned int j = 0; j < map.features.size(); j++)
+                cout << map.x(Rect(0, 13 + 3*j, 1, 3)).t() << endl;
+
+        else if (key == 27)
             break;
     }
 
-    candidatesThread.join();
+    if (candidatesThread.joinable())
+        candidatesThread.join();
 }
 
 bool getOptions(int argc, char *argv[], string& cameraFile, int& patternRows, int& patternCols,
