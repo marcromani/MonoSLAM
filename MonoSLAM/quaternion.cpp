@@ -1,109 +1,76 @@
-#include <cmath>
-
 #include "quaternion.hpp"
 
-using namespace cv;
+#include <cmath>
 
-/*
- * Builds a rotation quaternion from a (non-zero) rotation vector.
- */
-Mat computeQuaternion(const Mat& rotv) {
+cv::Matx41d
+computeQuaternion(const cv::Matx31d& rotv)
+{
+    const double x = rotv(0);
+    const double y = rotv(1);
+    const double z = rotv(2);
 
-    double x = rotv.at<double>(0, 0);
-    double y = rotv.at<double>(1, 0);
-    double z = rotv.at<double>(2, 0);
+    const double angle = std::sqrt(x * x + y * y + z * z);
 
-    double angle = sqrt(x*x + y*y + z*z);
+    const double c = cos(0.5 * angle);
+    const double s = sin(0.5 * angle);
 
-    double c = cos(0.5 * angle);
-    double s = sin(0.5 * angle);
-
-    double q[] = {c, s*x/angle, s*y/angle, s*z/angle};
-
-    return Mat(4, 1, CV_64FC1, q).clone();
+    return cv::Matx41d(c, s * x / angle, s * y / angle, s * z / angle);
 }
 
-/*
- * Computes the Hamilton product of two quaternions.
- */
-Mat quaternionMultiply(const Mat& q1, const Mat& q2) {
+cv::Matx41d
+quaternionMultiply(const cv::Matx41d& q1, const cv::Matx41d& q2)
+{
+    const double a1 = q1(0);
+    const double b1 = q1(1);
+    const double c1 = q1(2);
+    const double d1 = q1(3);
 
-    double a1 = q1.at<double>(0, 0);
-    double b1 = q1.at<double>(1, 0);
-    double c1 = q1.at<double>(2, 0);
-    double d1 = q1.at<double>(3, 0);
+    const double a2 = q2(0);
+    const double b2 = q2(1);
+    const double c2 = q2(2);
+    const double d2 = q2(3);
 
-    double a2 = q2.at<double>(0, 0);
-    double b2 = q2.at<double>(1, 0);
-    double c2 = q2.at<double>(2, 0);
-    double d2 = q2.at<double>(3, 0);
-
-    double q[] = {a1*a2 - b1*b2 - c1*c2 - d1*d2,
-                  a1*b2 + b1*a2 + c1*d2 - d1*c2,
-                  a1*c2 - b1*d2 + c1*a2 + d1*b2,
-                  a1*d2 + b1*c2 - c1*b2 + d1*a2
-                 };
-
-    return Mat(4, 1, CV_64FC1, q).clone();
+    return cv::Matx41d(a1 * a2 - b1 * b2 - c1 * c2 - d1 * d2,
+                       a1 * b2 + b1 * a2 + c1 * d2 - d1 * c2,
+                       a1 * c2 - b1 * d2 + c1 * a2 + d1 * b2,
+                       a1 * d2 + b1 * c2 - c1 * b2 + d1 * a2);
 }
 
-/*
- * Computes a rotation matrix from a rotation quaternion. In particular, if the
- * quaternion is an orientation quaternion, which rotates a reference frame A to
- * its final pose B, the matrix is a change of basis from B to A.
- */
-Mat getRotationMatrix(const Mat& q) {
+cv::Matx33d
+getRotationMatrix(const cv::Matx41d& q)
+{
+    const double a = q(0);
+    const double b = q(1);
+    const double c = q(2);
+    const double d = q(3);
 
-    double a = q.at<double>(0, 0);
-    double b = q.at<double>(1, 0);
-    double c = q.at<double>(2, 0);
-    double d = q.at<double>(3, 0);
-
-    double m[] = {a*a+b*b-c*c-d*d, 2*b*c-2*a*d,     2*b*d+2*a*c,
-                  2*b*c+2*a*d,     a*a-b*b+c*c-d*d, 2*c*d-2*a*b,
-                  2*b*d-2*a*c,     2*c*d+2*a*b,     a*a-b*b-c*c+d*d
-                 };
-
-    return Mat(3, 3, CV_64FC1, m).clone();
+    return cv::Matx33d(a * a + b * b - c * c - d * d,
+                       2.0 * b * c - 2.0 * a * d,
+                       2.0 * b * d + 2.0 * a * c,
+                       2.0 * b * c + 2.0 * a * d,
+                       a * a - b * b + c * c - d * d,
+                       2.0 * c * d - 2.0 * a * b,
+                       2.0 * b * d - 2.0 * a * c,
+                       2.0 * c * d + 2.0 * a * b,
+                       a * a - b * b - c * c + d * d);
 }
 
-/*
- * Computes the inverse quaternion.
- */
-Mat quaternionInv(const Mat& q) {
-
-    Mat inv = Mat(4, 1, CV_64FC1);
-
-    inv.at<double>(0, 0) =  q.at<double>(0, 0);
-    inv.at<double>(1, 0) = -q.at<double>(1, 0);
-    inv.at<double>(2, 0) = -q.at<double>(2, 0);
-    inv.at<double>(3, 0) = -q.at<double>(3, 0);
-
-    return inv;
+cv::Matx41d
+quaternionConjugate(const cv::Matx41d& q)
+{
+    return cv::Matx41d(q(0), -q(1), -q(2), -q(3));
 }
 
-/*
- * Computes the matrices of the derivatives of R(q)^t with respect to the quaternion
- * components. That is, the entries of Ri are the derivatives of the entries of the
- * transpose of the matrix returned by getRotationMatrix(q) with respect to the ith
- * quaternion component.
- */
-void getRotationMatrixDerivatives(const Mat& q, Mat& R1, Mat& R2, Mat& R3, Mat& R4) {
+void
+getRotationMatrixDerivatives(const cv::Matx41d& q, cv::Matx33d& R1, cv::Matx33d& R2, cv::Matx33d& R3, cv::Matx33d& R4)
+{
+    const double a = q(0);
+    const double b = q(1);
+    const double c = q(2);
+    const double d = q(3);
 
-    double a = q.at<double>(0, 0);
-    double b = q.at<double>(1, 0);
-    double c = q.at<double>(2, 0);
-    double d = q.at<double>(3, 0);
-
-    double R1_[] = {a, d, -c, -d, a, b, c, -b, a};
-    R1 = 2 * Mat(3, 3, CV_64FC1, R1_).clone();
-
-    double R2_[] = {b, c, d, c, -b, a, d, -a, -b};
-    R2 = 2 * Mat(3, 3, CV_64FC1, R2_).clone();
-
-    double R3_[] = {-c, b, -a, b, c, d, a, d, -c};
-    R3 = 2 * Mat(3, 3, CV_64FC1, R3_).clone();
-
-    double R4_[] = {-d, a, b, -a, -d, c, b, c, d};
-    R4 = 2 * Mat(3, 3, CV_64FC1, R4_).clone();
+    R1 = cv::Matx33d(a, d, -c, -d, a, b, c, -b, a);
+    R2 = cv::Matx33d(b, c, d, c, -b, a, d, -a, -b);
+    R3 = cv::Matx33d(-c, b, -a, b, c, d, a, d, -c);
+    R2 = cv::Matx33d(-d, a, b, -a, -d, c, b, c, d);
 }

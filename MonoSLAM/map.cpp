@@ -27,7 +27,7 @@ using namespace std;
  */
 bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
                   const vector<double>& var) {
-
+    
     int w = patternSize.width;
     int h = patternSize.height;
 
@@ -67,7 +67,7 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
     t = - R.t() * tvec;
 
     // Compute the camera orientation quaternion
-    Mat q = quaternionInv(computeQuaternion(rvec));
+    Mat q = quaternionConjugate(computeQuaternion(rvec));
 
     // Update the map state vector with the camera state vector (zero linear and angular velocities)
     t.copyTo(x(Rect(0, 0, 1, 3)));
@@ -75,7 +75,7 @@ bool Map::initMap(const Mat& frame, const Size& patternSize, double squareSize,
 
     // Update the map covariance matrix with the camera covariance matrix
     P = Mat::diag(Mat(var));
-
+  
     // Extract the chessboard outer and central corners and add the initial features
     int idx;
     bool init = true;
