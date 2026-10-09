@@ -1,394 +1,295 @@
+#include "util.hpp"
+
 #include <algorithm>
 #include <cmath>
 
-#include "opencv2/imgproc/imgproc.hpp"
+#include <opencv2/imgproc.hpp>
 
-#include "util.hpp"
-
-using namespace cv;
-using namespace std;
-
-/*
- * Computes the homography matrix H between two pinhole camera views of a plane.
- * In particular, p2 = H * p1, where p1 is the pixel in the first view which
- * corresponds to a point p in the plane, and p2 is the pixel which corresponds
- * to p in the second view.
- *
- * p    Point in the plane, in world coordinates
- * n    Plane normal, in world coordinates
- * K    Camera intrinsic matrix
- * R1   First pose rotation (world to camera)
- * t1   First pose translation, in world coordinates
- * R2   Second pose rotation (world to camera)
- * t2   Second pose translation, in world coordinates
- */
-Mat computeHomography(const Mat& p, const Mat& n, const Mat& K,
-                      const Mat& R1, const Mat& t1, const Mat& R2, const Mat& t2) {
-
-    Mat m = n.t() * (p - t1);
-    Mat H = K * R2 * (m.at<double>(0, 0) * Mat::eye(3, 3, CV_64FC1) + (t1 - t2) * n.t()) * R1.t() * K.inv();
+cv::Matx33d
+computeHomography(const cv::Matx31d& p,
+                  const cv::Matx31d& n,
+                  const cv::Matx33d& K,
+                  const cv::Matx33d& R1,
+                  const cv::Matx31d& t1,
+                  const cv::Matx33d& R2,
+                  const cv::Matx31d& t2)
+{
+    const cv::Matx<double, 1, 1> m = n.t() * (p - t1);
+    const cv::Matx33d H = K * R2 * (m(0, 0) * cv::Matx33d::eye() + (t1 - t2) * n.t()) * R1.t() * K.inv();
 
     return H;
 }
 
-/*
- * Returns a square region of interest given its center pixel coordinates and size.
- * Note that only if size is an odd number will the square be truly centered at the
- * desired position.
- *
- * center       Center of the square
- * size         Size of the square
- */
-Rect buildSquare(const Point2i& center, int size) {
+cv::Rect
+buildSquare(const cv::Point& center, int size)
+{
+    const int left = center.x - size / 2;
+    const int top = center.y - size / 2;
 
-    int left = center.x - size / 2;
-    int top = center.y - size / 2;
-
-    return Rect(left, top, size, size);
+    return cv::Rect(left, top, size, size);
 }
 
-/*
- * Removes the nth row and column of a square matrix. The matrix is not reduced
- * in-place, but a deep copy is returned.
- *
- * mat      Matrix to be reduced
- * idx      Row and column to be deleted
- */
-Mat removeRowCol(const Mat& mat, int idx) {
+cv::Mat
+removeRowCol(const cv::Mat& mat, int idx)
+{
+    CV_DbgAssert(mat.rows == mat.cols);
 
-    int n = mat.rows;
+    const int n = mat.rows;
 
-    Mat reduced(n - 1, n - 1, mat.type());
+    CV_DbgAssert(0 <= idx && idx < n);
 
-    if (idx == 0)
-        mat(Rect(1, 1, n - 1, n - 1)).copyTo(reduced(Rect(0, 0, n - 1, n - 1)));
+    if (n == 1) {
+        return cv::Mat(0, 0, mat.type());
+    }
 
-    else if (idx == n - 1)
-        mat(Rect(0, 0, n - 1, n - 1)).copyTo(reduced(Rect(0, 0, n - 1, n - 1)));
+    cv::Mat reduced(n - 1, n - 1, mat.type());
 
-    else {
-        mat(Rect(0, 0, idx, idx)).copyTo(reduced(Rect(0, 0, idx, idx)));
-        mat(Rect(idx+1, 0, n-idx-1, idx)).copyTo(reduced(Rect(idx, 0, n-idx-1, idx)));
-        mat(Rect(0, idx+1, idx, n-idx-1)).copyTo(reduced(Rect(0, idx, idx, n-idx-1)));
-        mat(Rect(idx+1, idx+1, n-idx-1, n-idx-1)).copyTo(reduced(Rect(idx, idx, n-idx-1, n-idx-1)));
+    if (idx == 0) {
+        mat(cv::Rect(1, 1, n - 1, n - 1)).copyTo(reduced);
+
+    } else if (idx == n - 1) {
+        mat(cv::Rect(0, 0, n - 1, n - 1)).copyTo(reduced);
+
+    } else {
+        mat(cv::Rect(0, 0, idx, idx)).copyTo(reduced(cv::Rect(0, 0, idx, idx)));
+        mat(cv::Rect(idx + 1, 0, n - idx - 1, idx)).copyTo(reduced(cv::Rect(idx, 0, n - idx - 1, idx)));
+        mat(cv::Rect(0, idx + 1, idx, n - idx - 1)).copyTo(reduced(cv::Rect(0, idx, idx, n - idx - 1)));
+        mat(cv::Rect(idx + 1, idx + 1, n - idx - 1, n - idx - 1))
+          .copyTo(reduced(cv::Rect(idx, idx, n - idx - 1, n - idx - 1)));
     }
 
     return reduced;
 }
 
-/*
- * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
- * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
- * The offset specifies the shift applied to the indices. The stride indicates how the matrix
- * rows and columns are grouped together and referenced by the indices. For example, given
- * indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows and columns are 5, 6,
- * 11, 12, 19, 20.
- *
- * mat          Matrix to be reduced
- * indices      Sorted rows and columns to be deleted
- * offset       Indices offset
- * stride       Row and column stride
- */
-Mat removeRowsCols(const Mat& mat, vector<int>& indices, int offset, int stride) {
+cv::Mat
+removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
+{
+    CV_DbgAssert(offset > 0 && stride > 0);
 
-    Mat result = mat.clone();
+    cv::Mat result = mat.clone();
 
-    for (unsigned int i = 0; i < indices.size(); i++) {
+    for (int i = 0; i < static_cast<int>(indices.size()); ++i) {
+        const int idx = offset + stride * (indices[i] - i);
 
-        int idx = offset + stride * (indices[i] - i);
-
-        for (int j = 0; j < stride; j++)
+        for (int j = 0; j < stride; ++j) {
             result = removeRowCol(result, idx);
+        }
     }
 
     return result;
 }
 
-/*
- * Removes the nth row of a matrix. The matrix is not reduced in-place, but a deep
- * copy is returned.
- *
- * mat      Matrix to be reduced
- * idx      Row to be deleted
- */
-Mat removeRow(const Mat& mat, int idx) {
+cv::Mat
+removeRow(const cv::Mat& mat, int idx)
+{
+    CV_DbgAssert(mat.rows == mat.cols);
 
-    Mat result;
+    const int n = mat.rows;
 
-    int n = mat.rows;
+    CV_DbgAssert(0 <= idx && idx < n);
 
-    if (idx == 0)
+    if (n == 1) {
+        return cv::Mat(0, 0, mat.type());
+    }
+
+    cv::Mat result;
+
+    if (idx == 0) {
         result = mat.rowRange(1, n).clone();
 
-    else if (idx == n - 1)
+    } else if (idx == n - 1) {
         result = mat.rowRange(0, n - 1).clone();
 
-    else
-        vconcat(mat.rowRange(0, idx), mat.rowRange(idx + 1, n), result);
-
-    return result;
-}
-
-/*
- * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
- * copy is returned. The indices to be removed should be sorted in ascending order.
- * The offset specifies the shift applied to the indices. The stride indicates how
- * the matrix rows are grouped together and referenced by the indices. For example,
- * given indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows are
- * 5, 6, 11, 12, 19, 20.
- *
- * mat          Matrix to be reduced
- * indices      Sorted rows to be deleted
- * offset       Indices offset
- * stride       Row stride
- */
-Mat removeRows(const Mat& mat, vector<int>& indices, int offset, int stride) {
-
-    Mat result = mat.clone();
-
-    for (unsigned int i = 0; i < indices.size(); i++) {
-
-        int idx = offset + stride * (indices[i] - i);
-
-        for (int j = 0; j < stride; j++)
-            result = removeRow(result, idx);
+    } else {
+        cv::vconcat(mat.rowRange(0, idx), mat.rowRange(idx + 1, n), result);
     }
 
     return result;
 }
 
-/*
- * Returns the smallest straight rectangle which contains the given ellipse. The computed
- * rectangle is cropped if it exceeds the given image boundary so that it fits inside it.
- *
- * ellipse      Ellipse to be bounded
- * imageSize    Size of the image
- */
-Rect getBoundingBox(const RotatedRect& ellipse, const Size& imageSize) {
+cv::Mat
+removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
+{
+    CV_DbgAssert(offset > 0 && stride > 0);
 
-    double angle = ellipse.angle * DEG_TO_RAD;
-    double x = ellipse.center.x;
-    double y = ellipse.center.y;
-    double a = 0.5 * ellipse.size.width;
-    double b = 0.5 * ellipse.size.height;
+    cv::Mat result = mat.clone();
 
-    double xmax, ymax;
+    for (unsigned int i = 0; i < static_cast<int>(indices.size()); ++i) {
+        const int idx = offset + stride * (indices[i] - i);
 
-    if (angle == 0 || a == b) {
+        for (int j = 0; j < stride; ++j) {
+            result = removeRow(result, idx);
+        }
+    }
 
-        xmax = a;
-        ymax = b;
+    return result;
+}
 
-    } else {
+std::vector<cv::RotatedRect>
+computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S)
+{
+    std::vector<cv::RotatedRect> ellipses;
 
-        double a2inv = 1 / (a*a);
-        double b2inv = 1 / (b*b);
+    for (int i = 0; i < static_cast<int>(means.size()); ++i) {
+        const cv::Matx22f Si =
+          static_cast<cv::Matx22f>(S(cv::Rect(2 * i, 2 * i, 2, 2)));  // Calls OpenCV's saturate_cast under the hood
 
-        double c = cos(angle);
-        double s = sin(angle);
-        double c2 = c*c;
-        double s2 = s*s;
+        // Compute the eigenvalues and eigenvectors
+        cv::Vec2f eigenvals;
+        cv::Matx22f eigenvecs;
+        cv::eigen(Si, eigenvals, eigenvecs);
 
-        double A = c2 * a2inv + s2 * b2inv;
-        double B = c2 * b2inv + s2 * a2inv;
-        double C = 2 * c * s * (b2inv - a2inv);
+        // Compute the angle between the largest eigenvector and the x axis
+        float angle = std::atan2(eigenvecs(0, 1), eigenvecs(0, 0));
 
-        double r = (4 * A * B / (C * C) - 1);
-        double x0 = 1 / sqrt(A * r);
-        double y0 = 1 / sqrt(B * r);
-
-        if (C < 0) {
-
-            x0 = - x0;
-            y0 = - y0;
+        // Shift the angle from [-pi, pi] to [0, 2pi]
+        if (angle < 0) {
+            angle += PI_DOUBLE_F;
         }
 
-        xmax = 2 * B * y0 / C;
-        ymax = 2 * A * x0 / C;
+        // Convert to degrees
+        angle *= RAD_TO_DEG_F;
+
+        // Compute the size of the major and minor axes
+        const float majorAxis = 4 * std::sqrt(eigenvals(0));
+        const float minorAxis = 4 * std::sqrt(eigenvals(1));
+
+        ellipses.push_back(
+          cv::RotatedRect(static_cast<cv::Point2f>(means[i]), cv::Size2f(majorAxis, minorAxis), -angle));
     }
 
-    double x0 = x - xmax;
-    double y0 = y - ymax;
-    double x1 = x + xmax;
-    double y1 = y + ymax;
-
-    if (x0 < 0)
-        x0 = 0;
-    if (y0 < 0)
-        y0 = 0;
-    if (x1 > imageSize.width)
-        x1 = imageSize.width - 1;
-    if (y1 > imageSize.height)
-        y1 = imageSize.height - 1;
-
-    return Rect(max(x0, 0.), max(y0, 0.), x1 - x0 + 1, y1 - y0 + 1);
+    return ellipses;
 }
 
-/*
- * Draws a rectangle on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * r            Rectangle
- * color        Color of the rectangle
- */
-void drawRectangle(Mat& image, const Rect& r, const Scalar& color) {
+cv::Rect
+getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
+{
+    const double angle = ellipse.angle * DEG_TO_RAD;
+    const double c = std::cos(angle);
+    const double s = std::sin(angle);
+    const double a = 0.5 * ellipse.size.width;
+    const double b = 0.5 * ellipse.size.height;
 
-    rectangle(image, r, color, 1, LINE_AA);
+    const double xmax = std::sqrt(a * a * c * c + b * b * s * s);
+    const double ymax = std::sqrt(a * a * s * s + b * b * c * c);
+
+    const Rect box(static_cast<int>(std::floor(ellipse.center.x - xmax)),
+                   static_cast<int>(std::floor(ellipse.center.y - ymax)),
+                   static_cast<int>(std::ceil(2 * xmax)),
+                   static_cast<int>(std::ceil(2 * ymax)));
+
+    // TODO: Could we use this anywhere else?
+    return box & Rect(0, 0, imageSize.width, imageSize.height);
 }
 
-/*
- * Draws a square on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * center       Center of the square
- * width        Width of the square
- * color        Color of the square
- */
-void drawSquare(Mat& image, const Point2i& center, int width, const Scalar& color) {
-
-    rectangle(image, buildSquare(center, width), color, 1, LINE_AA);
+void
+drawRectangle(cv::Mat& image, const cv::Rect& r, const cv::Scalar& color)
+{
+    cv::rectangle(image, r, color, 1, cv::LINE_AA);
 }
 
-/*
- * Draws an ellipse on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * e            Ellipse
- * color        Color of the ellipse
- */
-void drawEllipse(Mat& image, const RotatedRect& e, const Scalar& color) {
-
-    ellipse(image, e, color, 1, LINE_AA);
+void
+drawSquare(cv::Mat& image, const cv::Point& center, int width, const cv::Scalar& color)
+{
+    cv::rectangle(image, buildSquare(center, width), color, 1, cv::LINE_AA);
 }
 
-/*
- * Draws a circle on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * center       Center of the circle
- * radius       Radius of the circle
- * color        Color of the circle
- */
-void drawCircle(Mat& image, const Point2i& center, int radius, const Scalar& color) {
-
-    circle(image, center, radius, color, 1, LINE_AA);
+void
+drawEllipse(cv::Mat& image, const cv::RotatedRect& e, const cv::Scalar& color)
+{
+    cv::ellipse(image, e, color, 1, cv::LINE_AA);
 }
 
-/*
- * Draws the template on the given image. The image is modified by the function so a deep
- * copy should be made in order to preserve the original.
- *
- * image        Grayscale or color image to draw on
- * templ        Grayscale or color template to be drawn
- * position     Image position of the template origin
- * cx           First pixel coordinate of the template origin
- * cy           Second pixel coordinate of the template origin
- */
-void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx, int cy) {
+void
+drawCircle(cv::Mat& image, const cv::Point& center, int radius, const cv::Scalar& color)
+{
+    cv::circle(image, center, radius, color, 1, cv::LINE_AA);
+}
 
+void
+drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, int cx, int cy)
+{
+    // TODO: Can we use the cv::Rect intersection here?
     int templ_x = 0;
     int image_x = position.x - cx;
 
-    if (image_x > image.cols - 1)
+    if (image_x > image.cols - 1) {
         return;
+    }
 
     if (image_x < 0) {
-
-        templ_x = - image_x;
+        templ_x = -image_x;
         image_x = 0;
     }
 
     int templ_y = 0;
     int image_y = position.y - cy;
 
-    if (image_y > image.rows - 1)
+    if (image_y > image.rows - 1) {
         return;
+    }
 
     if (image_y < 0) {
-
-        templ_y = - image_y;
+        templ_y = -image_y;
         image_y = 0;
     }
 
     int w = templ.cols - templ_x;
 
-    if (w <= 0)
+    if (w <= 0) {
         return;
+    }
 
-    if (image_x + w > image.cols)
+    if (image_x + w > image.cols) {
         w = image.cols - image_x;
+    }
 
     int h = templ.rows - templ_y;
 
-    if (h <= 0)
+    if (h <= 0) {
         return;
+    }
 
-    if (image_y + h > image.rows)
+    if (image_y + h > image.rows) {
         h = image.rows - image_y;
+    }
 
-    templ(Rect(templ_x, templ_y, w, h)).copyTo(image(Rect(image_x, image_y, w, h)));
+    templ(cv::Rect(templ_x, templ_y, w, h)).copyTo(image(cv::Rect(image_x, image_y, w, h)));
 }
 
-/*
- * Computes the image corresponding to a given region of interest of a frame such that
- * the template pixel coordinates u, v are superimposed over all of the image pixels of
- * frame(roi) when matchTemplate is called for this image and the template. The provided
- * region of interest is modified conveniently. This function addresses several issues:
- * (1) The default computed image, frame(roi), may be smaller than the template, hence
- * matchTemplate can not be used. (2) Even if the image is at least as large as the template,
- * it might be necessary to test the template against all the pixel positions of the image,
- * the former being centered at a specific pixel location. This is not how matchTemplate
- * operates (it shifts the template around the image but keeps it always inside it) so
- * the image must be correctly resized to achieve this behavior.
- *
- * frame    Grayscale or color base image
- * templ    Grayscale or color template to match
- * u        First pixel coordinate of the patch matching center
- * v        Second pixel coordinate of the patch matching center
- * roi      Original region of interest
- */
-Mat computeMatchingImage(const Mat& frame, const Mat& templ, int u, int v, Rect& roi) {
-
-    // Compute the limits of the extended roi
+cv::Mat
+computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi)
+{
+    // Compute the (inclusive) limits of the extended roi
     int x0 = roi.x - u;
     int y0 = roi.y - v;
     int x1 = roi.x + roi.width + templ.cols - u - 2;
     int y1 = roi.y + roi.height + templ.rows - v - 2;
 
-    /*
-     * Ensure that the roi coordinates are inside the frame boundaries
-     * and compute how the image should be extended along its borders.
-     */
+    // Ensure that the roi coordinates are inside the frame boundaries
+    // and compute how the image should be extended along its borders
 
-    int left    = 0;
-    int right   = 0;
-    int top     = 0;
-    int bottom  = 0;
+    int left = 0;
+    int right = 0;
+    int top = 0;
+    int bottom = 0;
 
     if (x0 < 0) {
-
-        left = - x0;
+        left = -x0;
         x0 = 0;
     }
 
     if (x1 > frame.cols - 1) {
-
         right = x1 - frame.cols + 1;
         x1 = frame.cols - 1;
     }
 
     if (y0 < 0) {
-
-        top = - y0;
+        top = -y0;
         y0 = 0;
     }
 
     if (y1 > frame.rows - 1) {
-
         bottom = y1 - frame.rows + 1;
         y1 = frame.rows - 1;
     }
@@ -400,19 +301,34 @@ Mat computeMatchingImage(const Mat& frame, const Mat& templ, int u, int v, Rect&
     roi.height = y1 - y0 + 1;
 
     // Get the image
-    Mat image = frame(roi);
+    cv::Mat image = frame(roi);
 
     // Extend the image with black borders
-    copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar::all(0));
+    cv::copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, cv::Scalar::all(0.0));
 
     return image;
 }
 
-double gaussian2Dpdf(const Mat& x, const Mat& mean, const Mat& cov) {
+double
+gaussian2Dpdf(const cv::Matx21d& x, const cv::Matx21d& mean, const cv::Matx22d& cov)
+{
+    const double dx = x(0) - mean(0);
+    const double dy = x(1) - mean(1);
 
-    Mat diff = x - mean;
-    Mat covInv = cov.inv();
-    Mat exponent = - 0.5 * diff.t() * covInv * diff;
+    const double a = cov(0, 0);
+    const double b = cov(0, 1);
+    const double c = cov(1, 0);
+    const double d = cov(1, 1);
 
-    return sqrt(determinant(covInv)) * exp(exponent.at<double>(0, 0)) / PI_DOUBLE;
+    const double det = a * d - b * c;
+    CV_DbgAssert(det > 1e-12);  // TODO: Should have a global epsilon
+
+    const double inv00 = d / det;
+    const double inv01 = -b / det;
+    const double inv10 = -c / det;
+    const double inv11 = a / det;
+
+    const double mahalanobis2 = dx * (inv00 * dx + inv01 * dy) + dy * (inv10 * dx + inv11 * dy);
+
+    return std::exp(-0.5 * mahalanobis2) / (PI_DOUBLE * std::sqrt(det));
 }

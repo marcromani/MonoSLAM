@@ -13,9 +13,8 @@ using namespace cv;
  * R_        Camera rotation (world to camera) at feature initialization
  * t_        Camera position, in world coordinates, at feature initialization
  */
-Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
-                 const Mat& R_, const Mat& t_) {
-
+Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_, const Mat& R_, const Mat& t_)
+{
     image_.copyTo(image);
     roi = roi_;
     normal_.copyTo(normal);
@@ -37,9 +36,14 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& normal_,
  * depthInterval     Interval which contains the depth hypotheses
  * depthSamples      Number of depth hypotheses
  */
-Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& t_,
-                 const Mat& dir_, const Point2d& depthInterval, int depthSamples) {
-
+Feature::Feature(const Mat& image_,
+                 const Rect& roi_,
+                 const Mat& R_,
+                 const Mat& t_,
+                 const Mat& dir_,
+                 const Point2d& depthInterval,
+                 int depthSamples)
+{
     image_.copyTo(image);
     roi = roi_;
     R_.copyTo(R);
@@ -50,8 +54,9 @@ Feature::Feature(const Mat& image_, const Rect& roi_, const Mat& R_, const Mat& 
 
     double step = (depthInterval.y - depthInterval.x) / (depthSamples - 1);
 
-    for (int i = 0; i < depthSamples; i++)
+    for (int i = 0; i < depthSamples; i++) {
         depths[i] = depthInterval.x + step * i;
+    }
 
     probs = Mat(depthSamples, 1, CV_64FC1, Scalar::all(1.0 / depthSamples));
 }
