@@ -46,7 +46,7 @@ Camera::warpPatch(const cv::Matx31d& p,
     cv::warpPerspective(black, warped, H, view1.size());
 
     // Set every non-black pixel of the warped image to white
-    cv::threshold(warped, mask, 0, 255, cv::THRESH_BINARY);
+    cv::threshold(warped, mask, 0.0, 255.0, cv::THRESH_BINARY);
 
     // Use the binary mask to crop the warped image so that it only contains the patch
     cv::Mat_<cv::Vec2i> points;
@@ -58,10 +58,10 @@ Camera::warpPatch(const cv::Matx31d& p,
     const int y = patch1.y + 0.5 * patch1.height;
 
     cv::Matx31d centerProj = H * cv::Matx31d(x, y, 1);
-    centerProj /= centerProj(2, 0);
+    centerProj /= centerProj(2);
 
-    u = static_cast<int>(centerProj(0, 0) - patchBox.x);
-    v = static_cast<int>(centerProj(1, 0) - patchBox.y);
+    u = static_cast<int>(centerProj(0) - patchBox.x);
+    v = static_cast<int>(centerProj(1) - patchBox.y);
 
     mask = mask(patchBox);  // TODO: Should clone? Otherwise mask -> mask(patchBox) and dangling pointer?
 
@@ -90,9 +90,9 @@ Camera::projectPoints(const cv::Matx33d& R,
     std::transform(points3D.begin(), points3D.end(), points2D.begin(), [&](const cv::Point3d& pt) {
         const cv::Matx31d pCam = R * (cv::Matx31d(pt) - t);
 
-        const double zInv = 1.0 / pCam(2, 0);
-        const double xn = pCam(0, 0) * zInv;
-        const double yn = pCam(1, 0) * zInv;
+        const double zInv = 1.0 / pCam(2);
+        const double xn = pCam(0) * zInv;
+        const double yn = pCam(1) * zInv;
 
         const double r2 = xn * xn + yn * yn;
         const double r4 = r2 * r2;

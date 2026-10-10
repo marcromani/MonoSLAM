@@ -15,7 +15,7 @@ computeHomography(const cv::Matx31d& p,
                   const cv::Matx31d& t2)
 {
     const cv::Matx<double, 1, 1> m = n.t() * (p - t1);
-    const cv::Matx33d H = K * R2 * (m(0, 0) * cv::Matx33d::eye() + (t1 - t2) * n.t()) * R1.t() * K.inv();
+    const cv::Matx33d H = K * R2 * (m(0) * cv::Matx33d::eye() + (t1 - t2) * n.t()) * R1.t() * K.inv();
 
     return H;
 }
@@ -68,7 +68,7 @@ removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, 
 
     cv::Mat result = mat.clone();
 
-    for (int i = 0; i < static_cast<int>(indices.size()); ++i) {
+    for (size_t i = 0; i < indices.size(); ++i) {
         const int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; ++j) {
@@ -114,7 +114,7 @@ removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int 
 
     cv::Mat result = mat.clone();
 
-    for (unsigned int i = 0; i < static_cast<int>(indices.size()); ++i) {
+    for (size_t i = 0; i < indices.size(); ++i) {
         const int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; ++j) {
@@ -126,11 +126,14 @@ removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int 
 }
 
 std::vector<cv::RotatedRect>
-computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S)
+computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas)
 {
     std::vector<cv::RotatedRect> ellipses;
+    ellipses.reserve(means.size());
 
-    for (int i = 0; i < static_cast<int>(means.size()); ++i) {
+    const float diameterFactor = 2.0f * numSigmas;
+
+    for (size_t i = 0; i < means.size(); ++i) {
         const cv::Matx22f Si =
           static_cast<cv::Matx22f>(S(cv::Rect(2 * i, 2 * i, 2, 2)));  // Calls OpenCV's saturate_cast under the hood
 
@@ -143,7 +146,7 @@ computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S
         float angle = std::atan2(eigenvecs(0, 1), eigenvecs(0, 0));
 
         // Shift the angle from [-pi, pi] to [0, 2pi]
-        if (angle < 0) {
+        if (angle < 0.0f) {
             angle += PI_DOUBLE_F;
         }
 
@@ -151,8 +154,8 @@ computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S
         angle *= RAD_TO_DEG_F;
 
         // Compute the size of the major and minor axes
-        const float majorAxis = 4 * std::sqrt(eigenvals(0));
-        const float minorAxis = 4 * std::sqrt(eigenvals(1));
+        const float majorAxis = diameterFactor * std::sqrt(eigenvals(0));
+        const float minorAxis = diameterFactor * std::sqrt(eigenvals(1));
 
         ellipses.push_back(
           cv::RotatedRect(static_cast<cv::Point2f>(means[i]), cv::Size2f(majorAxis, minorAxis), -angle));
@@ -173,13 +176,13 @@ getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
     const double xmax = std::sqrt(a * a * c * c + b * b * s * s);
     const double ymax = std::sqrt(a * a * s * s + b * b * c * c);
 
-    const Rect box(static_cast<int>(std::floor(ellipse.center.x - xmax)),
-                   static_cast<int>(std::floor(ellipse.center.y - ymax)),
-                   static_cast<int>(std::ceil(2 * xmax)),
-                   static_cast<int>(std::ceil(2 * ymax)));
+    const cv::Rect box(static_cast<int>(std::floor(ellipse.center.x - xmax)),
+                       static_cast<int>(std::floor(ellipse.center.y - ymax)),
+                       static_cast<int>(std::ceil(2.0 * xmax)),
+                       static_cast<int>(std::ceil(2.0 * ymax)));
 
     // TODO: Could we use this anywhere else?
-    return box & Rect(0, 0, imageSize.width, imageSize.height);
+    return box & cv::Rect(0, 0, imageSize.width, imageSize.height);
 }
 
 void
@@ -304,7 +307,7 @@ computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, c
     cv::Mat image = frame(roi);
 
     // Extend the image with black borders
-    cv::copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, cv::Scalar::all(0.0));
+    cv::copyMakeBorder(image, image, top, bottom, left, right, cv::BORDER_CONSTANT, cv::Scalar::all(0.0));
 
     return image;
 }

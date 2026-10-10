@@ -99,7 +99,18 @@ removeRow(const cv::Mat& mat, int idx);
 cv::Mat
 removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset = 0, int stride = 1);
 
-// TODO: Here compute ellipses
+/*
+ * Returns the uncertainty ellipses where the predicted in-sight features should be found with
+ * high probability. In particular, the ellipses are constructed so that they are n-sigma
+ * confidence regions for a 2D Gaussian distribution. For instance, n = 2.146 corresponds to a
+ * 0.9 confidence level.
+ *
+ * means        Pixel locations of the predicted in-sight features
+ * S            Innovation covariance matrix of the predicted in-sight features
+ * numSigmas    Number of standard deviations for the confidence region boundary
+ */
+std::vector<cv::RotatedRect>
+computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas = 2.146f);
 
 /*
  * Returns the smallest straight rectangle which contains the given ellipse. The computed
