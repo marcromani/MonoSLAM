@@ -251,7 +251,7 @@ printUsage(const char* execName)
 {
     std::cerr << "Usage: " << execName << " rows cols square_size [tol] filename\n"
               << "  rows, cols: Number of squares of the calibration pattern\n"
-              << "  square_size: Size of the square, in cm"
+              << "  square_size: Size of the square, in cm\n"
               << "  tol: Per-view RMS rejection threshold (defaults to 1.5 pixels)\n"
               << "  filename: Output name, \".json\" is appended\n"
               << "  -h, --help: Show this message\n";
