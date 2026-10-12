@@ -223,7 +223,7 @@ gaussian2Dpdf(const cv::Matx21d& x, const cv::Matx21d& mean, const cv::Matx22d& 
  */
 template<class T>
 void
-removeIndices(std::vector<T>& vec, const std::vector<int>& indices)
+removeIndices(std::vector<T>& vec, const std::vector<int>& indices)  // TODO: Is this fragile?
 {
     std::size_t i = 0;  // Current position in vec
     std::size_t j = 0;  // Current position in indices

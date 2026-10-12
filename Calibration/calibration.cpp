@@ -1,244 +1,257 @@
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
-#include "opencv2/calib3d/calib3d.hpp"
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
+#include <opencv2/calib.hpp>  // TODO: Better to import calib3d?
+#include <opencv2/objdetect.hpp>
 
-using namespace cv;
-using namespace std;
+#include "opencv2/highgui.hpp"
+#include "opencv2/imgproc.hpp"
 
-typedef chrono::high_resolution_clock clock_;
-typedef chrono::duration<double, ratio<1>> second_;
+using Clock = std::chrono::steady_clock;
+using Seconds = std::chrono::duration<double>;
 
-bool getOptions(int argc, char *argv[], int& rows, int& cols, double& squareSize, double& tol,
-                string& filename);
-void printUsage(const char *execName);
+bool
+getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, double& tol, std::string& filename);
 
-vector<Point3f> computeObjPoints(Size patternSize, double squareSize);
-bool addCornerPoints(const Mat& image, int rows, int cols, double squareSize,
-                     vector<vector<Point2f>>& imagePoints,
-                     vector<vector<Point3f>>& objectPoints);
+void
+printUsage(const char* execName);
 
-int main(int argc, char *argv[]) {
+std::vector<cv::Point3d>
+build3DCoordinates(const cv::Size& patternSize, double squareSize);
 
+int
+main(int argc, char* argv[])
+{
     int rows, cols;
-    double squareSize, tol;
-    string filename;
+    double squareSize;
+    std::string filename;
 
-    tol = 1.5; // Default sample reprojection error tolerance
+    double tol = 1.5;  // Tolerance for the sample reprojection error, in pixels
 
     if (!getOptions(argc, argv, rows, cols, squareSize, tol, filename)) {
-
         printUsage(argv[0]);
-        return -1;
+        return EXIT_FAILURE;
     }
 
-    filename += string(".xml");
+    std::cout << "Calibrating with a " << cols << "x" << rows << " chessboard with a square size of " << 10 * squareSize
+              << " cm" << std::endl
+              << "Sample reprojection error tolerance is set to " << tol << " pixels" << std::endl;
 
-    cout << "Calibrating with a " << cols << "x" << rows
-         << " chessboard with a square size of " << squareSize << " meters" << endl
-         << "Sample reprojection error tolerance is set to " << tol << " pixels" << endl;
+    const cv::Size patternSize(cols - 1, rows - 1);
 
     // Initialize video feed device
-    VideoCapture cap("/dev/video2");
+    cv::VideoCapture device("/dev/video2");
 
-    if (!cap.isOpened())
-        return -1;
+    if (!device.isOpened()) {
+        return EXIT_FAILURE;
+    }
 
-    cap.set(CAP_PROP_FRAME_WIDTH, 1024);
-    cap.set(CAP_PROP_FRAME_HEIGHT, 768);
+    device.set(cv::CAP_PROP_FRAME_WIDTH, 1024);
+    device.set(cv::CAP_PROP_FRAME_HEIGHT, 768);
+
+    const cv::Size frameSize(640, 480);
 
     // Create a window
-    string window = "Camera Calibration";
-    namedWindow(window, CV_WINDOW_AUTOSIZE);
+    cv::namedWindow("Camera calibration", cv::WINDOW_AUTOSIZE);
 
-    Mat frame, patternFrame;
-    vector<vector<Point2f>> imagePoints;
-    vector<vector<Point3f>> objectPoints;
-
-    // Create the image to be shown
-    cap.read(frame);
-    resize(frame, frame, Size(640, 480));
-    Mat showFrame(frame.rows, 2 * frame.cols, frame.type());
+    std::vector<std::vector<cv::Point2d>> lists2D;
 
     int i = 0;
-    chrono::time_point<clock_> t0 = clock_::now();
+    std::chrono::time_point<Clock> t0 = Clock::now();
+
+    cv::Mat3b showFrame(480, 2 * 640, cv::Vec3b::zeros());
 
     while (true) {
+        cv::Mat3b frame;
+        device.read(frame);
+        cv::resize(frame, frame, frameSize);
 
-        cap.read(frame);
-        resize(frame, frame, Size(640, 480));
+        frame.copyTo(showFrame(cv::Rect(0, 0, frame.cols, frame.rows)));
 
-        frame.copyTo(showFrame(Rect(0, 0, frame.cols, frame.rows)));
-
-        double elapsed = chrono::duration_cast<second_>(clock_::now() - t0).count();
+        const double elapsed = (Clock::now() - t0).count();
 
         // Leave some seconds between each pattern capture
         if (elapsed > 2) {
+            std::vector<cv::Point2d> points2D;
 
-            frame.copyTo(patternFrame);
+            const bool patternFound =
+              cv::findChessboardCorners(frame,
+                                        patternSize,
+                                        points2D,
+                                        cv::CALIB_CB_ADAPTIVE_THRESH + cv::CALIB_CB_NORMALIZE_IMAGE +
+                                          cv::CALIB_CB_FILTER_QUADS + cv::CALIB_CB_FAST_CHECK);
 
-            if (addCornerPoints(patternFrame, rows, cols, squareSize, imagePoints, objectPoints)) {
+            if (patternFound) {
+                cv::Mat1b gray;
+                cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
-                patternFrame.copyTo(showFrame(Rect(frame.cols-1, 0, frame.cols, frame.rows)));
-                cout << "\r" << ++i << " samples captured" << flush;
-                t0 = clock_::now();
+                cv::cornerSubPix(gray, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(30, 0.1));
+
+                lists2D.push_back(points2D);
+
+                cv::drawChessboardCorners(
+                  showFrame(cv::Rect(frame.cols, 0, frame.cols, frame.rows)), patternSize, points2D, true);
+
+                std::cout << "\r" << ++i << " samples captured" << std::flush;
+                t0 = Clock::now();
+
+            } else {
+                showFrame(cv::Rect(frame.cols, 0, frame.cols, frame.rows)) = cv::Vec3b::zeros();
             }
         }
 
-        imshow(window, showFrame);
+        cv::imshow("Camera calibration", showFrame);
 
-        if (waitKey(1) == 27)
+        if (cv::waitKey(1) == 27) {
             break;
-    }
-
-    if (i == 0) {
-
-        cout << "Calibration canceled: no samples to work with" << endl;
-        return -1;
-    }
-
-    cout << endl;
-
-    Size imageSize = frame.size();
-    Mat cameraMat, distCoeffs, stdDevIntrinsics, stdDevExtrinsics, perViewErrors;
-    vector<Mat> rvecs, tvecs;
-
-    double rmse = calibrateCamera(objectPoints, imagePoints, imageSize, cameraMat, distCoeffs, rvecs, tvecs,
-                                  stdDevIntrinsics, stdDevExtrinsics, perViewErrors);
-
-    vector<vector<Point2f>> newImagePoints;
-    vector<vector<Point3f>> newObjectPoints;
-
-    // Remove samples with high reprojection error
-    for (int i = 0; i < perViewErrors.rows; i++) {
-
-        if (perViewErrors.at<double>(i, 0) < tol) {
-
-            newImagePoints.push_back(imagePoints[i]);
-            newObjectPoints.push_back(objectPoints[i]);
         }
     }
 
-    if (newImagePoints.empty()) {
-
-        cout << "Calibration canceled: no good samples to work with" << endl;
-        return -1;
+    if (i == 0) {
+        std::cout << "Calibration canceled: no samples to work with" << std::endl;
+        return EXIT_FAILURE;
     }
 
-    if (newImagePoints.size() < imagePoints.size()) {
+    std::cout << std::endl;
 
+    const std::vector<cv::Point3d> points3D = build3DCoordinates(patternSize, squareSize);
+
+    std::vector<std::vector<cv::Point3d>> lists3D;
+    lists3D.reserve(lists2D.size());
+
+    for (const std::vector<cv::Point2d>& points2D : lists2D) {
+        lists3D.push_back(points3D);
+    }
+
+    cv::Matx33d K;
+    cv::Vec<double, 5> distCoeffs;
+    std::vector<cv::Vec3d> rotationVecs;
+    std::vector<cv::Vec3d> translationVecs;
+    std::vector<double> stdDeviationIntrinsics, stdDeviationExtrinsics, perViewErrors;
+
+    double rmse = cv::calibrateCamera(lists3D,
+                                      lists2D,
+                                      frameSize,
+                                      K,
+                                      distCoeffs,
+                                      rotationVecs,
+                                      translationVecs,
+                                      stdDeviationIntrinsics,
+                                      stdDeviationExtrinsics,
+                                      perViewErrors);
+
+    // Remove samples with high reprojection error
+    std::size_t idx = 0;
+
+    for (std::size_t i = 0; i < perViewErrors.size(); ++i) {
+        if (perViewErrors[i] < tol) {
+            std::swap(lists2D[idx], lists2D[i]);
+            std::swap(lists3D[idx], lists3D[i]);
+            std::swap(perViewErrors[idx], perViewErrors[i]);
+
+            ++idx;
+        }
+    }
+
+    lists2D.resize(idx);
+    lists3D.resize(idx);
+
+    if (lists2D.empty()) {
+        std::cout << "Calibration canceled: no good samples to work with" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (lists2D.size() < perViewErrors.size()) {
         // Recalibrate with good samples
-        rmse = calibrateCamera(newObjectPoints, newImagePoints, imageSize, cameraMat, distCoeffs, rvecs, tvecs,
-                               stdDevIntrinsics, stdDevExtrinsics, perViewErrors);
+        rmse = cv::calibrateCamera(lists3D, lists2D, frameSize, K, distCoeffs, rotationVecs, translationVecs);
 
-        cout << "Camera calibrated using only " << newImagePoints.size() << " samples" << endl;
+        std::cout << "Camera was calibrated using " << lists2D.size() << " samples" << std::endl;
     }
 
-    cout << "Intrinsic matrix:" << endl
-         << cameraMat << endl
-         << "Distortion coeficients: " << distCoeffs << endl
-         << "RMS reprojection error (pixels): " << rmse << endl;
+    std::cout << "Intrinsic matrix:" << std::endl
+              << K << std::endl
+              << "Distortion coeficients: " << distCoeffs << std::endl
+              << "RMS reprojection error (pixels): " << rmse << std::endl;
 
-    FileStorage fs(filename, FileStorage::WRITE);
+    cv::FileStorage fs(filename, cv::FileStorage::WRITE);
 
     if (!fs.isOpened()) {
-
-        cout << "Could not open \"" << filename << "\": camera settings not saved" << endl;
-        return -1;
+        std::cout << "Could not open \"" << filename << "\": camera settings not saved" << std::endl;
+        return EXIT_FAILURE;
     }
 
-    fs << "Image_Size" << imageSize;
-    fs << "Intrinsic_Matrix" << cameraMat;
+    fs << "Image_Size" << frameSize;
+    fs << "Intrinsic_Matrix" << K;
     fs << "Distortion_Coefficients" << distCoeffs;
 
-    cout << "Camera settings saved to \"" << filename << "\"" << endl;
+    std::cout << "Camera settings saved to \"" << filename << "\"" << std::endl;
+
+    return EXIT_SUCCESS;
 }
 
-bool getOptions(int argc, char *argv[], int& rows, int& cols, double& squareSize, double& tol,
-                string& filename) {
-
+bool
+getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, double& tol, std::string& filename)
+{
     // Look for the help option
-    for (int i = 1; i < argc; i++)
-        if (string(argv[i]) == "-h" || string(argv[i]) == "--help")
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "-h" || std::string(argv[i]) == "--help") {
             return false;
+        }
+    }
 
     // Check the number of input options
-    if (argc != 5 && argc != 6)
+    if (argc != 5 && argc != 6) {
         return false;
+    }
 
-    rows = (int) strtol(argv[1], NULL, 10);
-    if (rows == 0 || errno == ERANGE) return false;
+    rows = static_cast<int>(strtol(argv[1], NULL, 10));
+    if (rows == 0 || errno == ERANGE) {
+        return false;
+    }
 
-    cols = (int) strtol(argv[2], NULL, 10);
-    if (cols == 0 || errno == ERANGE) return false;
+    cols = static_cast<int>(strtol(argv[2], NULL, 10));
+    if (cols == 0 || errno == ERANGE) {
+        return false;
+    }
 
-    squareSize = strtod(argv[3], NULL);
-    if (squareSize == 0 || errno == ERANGE) return false;
+    squareSize = 0.1 * strtod(argv[3], NULL);
+    if (squareSize == 0 || errno == ERANGE) {
+        return false;
+    }
 
     if (argc == 6) {
-
         tol = strtod(argv[4], NULL);
-        if (tol == 0 || errno == ERANGE) return false;
+        if (tol == 0 || errno == ERANGE) {
+            return false;
+        }
     }
 
     filename = (argc == 6) ? argv[5] : argv[4];
+    filename += std::string(".json");
 
     return true;
 }
 
-void printUsage(const char *execName) {
-
-    cerr << "Usage: " << execName << " rows cols square_size [tol] filename (-h, --help for help)" << endl;
+void
+printUsage(const char* execName)
+{
+    std::cerr << "Usage: " << execName << " rows cols square_size (cm) [tol] filename (-h, --help for help)"
+              << std::endl;
 }
 
-vector<Point3f> computeObjPoints(Size patternSize, double squareSize) {
+std::vector<cv::Point3d>
+build3DCoordinates(const cv::Size& patternSize, double squareSize)
+{
+    std::vector<cv::Point3d> points3D;
+    points3D.reserve(patternSize.width * patternSize.height);
 
-    vector<Point3f> objPoints;
-
-    for (int i = 0; i < patternSize.height; i++) {
-
-        for (int j = 0; j < patternSize.width; j++) {
-
-            objPoints.push_back(Point3f(squareSize * j, squareSize * i, 0));
+    for (int i = 0; i < patternSize.height; ++i) {
+        for (int j = 0; j < patternSize.width; ++j) {
+            points3D.emplace_back(squareSize * i, squareSize * j, 0.0);
         }
     }
 
-    return objPoints;
-}
-
-bool addCornerPoints(const Mat& image, int rows, int cols, double squareSize,
-                     vector<vector<Point2f>>& imagePoints,
-                     vector<vector<Point3f>>& objectPoints) {
-
-    int pointsPerRow = cols - 1;
-    int pointsPerCol = rows - 1;
-
-    Size patternSize(pointsPerRow, pointsPerCol);
-
-    vector<Point2f> imgPoints;
-
-    bool patternFound = findChessboardCorners(image, patternSize, imgPoints,
-                        CALIB_CB_ADAPTIVE_THRESH +
-                        CALIB_CB_NORMALIZE_IMAGE +
-                        CALIB_CB_FAST_CHECK);
-
-    if (patternFound) {
-
-        Mat gray;
-
-        cvtColor(image, gray, CV_BGR2GRAY);
-
-        cornerSubPix(gray, imgPoints, Size(11, 11), Size(-1, -1),
-                     TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 30, 0.1));
-
-        imagePoints.push_back(imgPoints);
-        objectPoints.push_back(computeObjPoints(patternSize, squareSize));
-
-        drawChessboardCorners(image, patternSize, imgPoints, patternFound);
-    }
-
-    return patternFound;
+    return points3D;
 }
