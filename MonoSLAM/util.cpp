@@ -300,7 +300,7 @@ monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ,
 }
 
 double
-monoslam::util::gaussian2Dpdf(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov)
+monoslam::util::gaussian2D(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov)
 {
     const cv::Vec2d diff = x - mean;
 

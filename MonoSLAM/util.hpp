@@ -181,7 +181,7 @@ computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, c
  * cov     Covariance
  */
 double
-gaussian2Dpdf(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov);
+gaussian2D(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov);
 
 /*
  * Removes specific elements of a vector. The vector is reduced in-place. The indices of the

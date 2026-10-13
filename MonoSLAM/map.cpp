@@ -281,7 +281,7 @@ Map::update(const Mat& gray, Mat& frame)
 
         // If the template size is zero the feature is far away and not visible
         if (templ.empty()) {
-            feature->matchingFails++;
+            feature->matchingFailures++;
             failedInviewIndices.push_back(i);
             failedIndices.push_back(idx);
 
@@ -310,7 +310,7 @@ Map::update(const Mat& gray, Mat& frame)
                 matchedInviewIndices.push_back(i);
 
             } else {
-                feature->matchingFails++;
+                feature->matchingFailures++;
                 failedInviewIndices.push_back(i);
                 failedIndices.push_back(idx);
             }
@@ -356,7 +356,7 @@ Map::updateCandidates(const Mat& gray, Buffer<Feature>& goodCandidates, atomic<b
     Mat t = x(Rect(0, 0, 1, 3));
 
     Mat R1, R2, R3, R4;
-    getRotationMatrixDerivatives(x(Rect(0, 3, 1, 4)), R1, R2, R3, R4);
+    toMatrixDerivatives(x(Rect(0, 3, 1, 4)), R1, R2, R3, R4);
 
     double fx = camera.K.at<double>(0, 0);
     double fy = camera.K.at<double>(1, 1);
@@ -633,7 +633,7 @@ Map::updateCandidates(const Mat& gray, Buffer<Feature>& goodCandidates, atomic<b
         if (stdDev / mean < 0.3) {
             candidate->pos = candidate->t + mean * candidate->dir;
             candidate->normal = -candidate->dir;
-            candidate->matchingFails = 0;
+            candidate->matchingFailures = 0;
             candidate->matchingAttempts = 0;
             candidate->P = Pyy.clone();
 
@@ -1023,7 +1023,7 @@ Map::computeMeasurementMatrix(vector<int>& inviewIndices)
 
     Mat R1, R2, R3, R4;
 
-    getRotationMatrixDerivatives(x(Rect(0, 3, 1, 4)), R1, R2, R3, R4);
+    toMatrixDerivatives(x(Rect(0, 3, 1, 4)), R1, R2, R3, R4);
 
     double fx = camera.K.at<double>(0, 0);
     double fy = camera.K.at<double>(1, 1);
@@ -1162,47 +1162,6 @@ Map::computeMeasurementMatrix(vector<int>& inviewIndices)
     return H;
 }
 
-/*
- * Returns the ellipses where the predicted in sight features should be found with
- * high probability. In particular, the ellipses are constructed so that they are
- * confidence regions at level 0.99.
- *
- * means    Predicted in sight features pixel locations
- * S        Innovation covariance matrix of the predicted in sight features
- */
-vector<RotatedRect>
-Map::computeEllipses(const vector<Point2d>& means, const Mat& S)
-{
-    vector<RotatedRect> ellipses;
-
-    for (unsigned int i = 0; i < means.size(); i++) {
-        Mat Si = S(Rect(2 * i, 2 * i, 2, 2));
-
-        // Compute the eigenvalues and eigenvectors
-        Mat eigenval, eigenvec;
-        eigen(Si, eigenval, eigenvec);
-
-        // Compute the angle between the largest eigenvector and the x axis
-        double angle = atan2(eigenvec.at<double>(0, 1), eigenvec.at<double>(0, 0));
-
-        // Shift the angle from [-pi, pi] to [0, 2pi]
-        if (angle < 0) {
-            angle += PI_DOUBLE;
-        }
-
-        // Convert to degrees
-        angle *= RAD_TO_DEG;
-
-        // Compute the size of the major and minor axes
-        double majorAxis = 6.06970851754 * sqrt(eigenval.at<double>(0));
-        double minorAxis = 6.06970851754 * sqrt(eigenval.at<double>(1));
-
-        ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
-    }
-
-    return ellipses;
-}
-
 void
 Map::drawFeatures(Mat& frame,
                   const vector<int>& matchedInviewIndices,
@@ -1245,7 +1204,7 @@ Map::removeBadFeatures(const vector<int>& failedInviewIndices, const vector<int>
         int idx = failedIndices[i];
         int j = failedInviewIndices[i];
 
-        double numFails = features[idx].matchingFails;
+        double numFails = features[idx].matchingFailures;
         double numAttemps = features[idx].matchingAttempts;
 
         if (numFails / numAttemps > failTolerance) {
