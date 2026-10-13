@@ -63,19 +63,16 @@ try {
 
     const cv::Size patternSize(cols - 1, rows - 1);
 
-    cv::VideoCapture device("/dev/video2");
+    cv::VideoCapture device("/dev/video4");
 
     if (!device.isOpened()) {
-        std::cerr << "Could not open /dev/video2\n";
+        std::cerr << "Could not open /dev/video4\n";
         return EXIT_FAILURE;
     }
 
-    device.set(cv::CAP_PROP_FRAME_WIDTH, 1024);
-    device.set(cv::CAP_PROP_FRAME_HEIGHT, 768);
-
     const cv::Size frameSize(640, 480);
 
-    cv::namedWindow("Camera calibration", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("Camera calibration", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
 
     cv::Mat3b showFrame(frameSize.height, 2 * frameSize.width, cv::Vec3b::zeros());
     cv::Mat3b left = showFrame(cv::Rect(0, 0, frameSize.width, frameSize.height));
@@ -182,9 +179,17 @@ try {
     }
 
     std::cout << "Camera was calibrated using " << kept << " of " << perViewErrors.size() << " samples\n"
-              << "Intrinsic matrix:\n"
-              << K << '\n'
-              << "Distortion coefficients: " << distCoeffs << '\n'
+              << "Pinhole parameters:\n"
+              << "fx = " << K(0, 0) << '\n'
+              << "fy = " << K(1, 1) << '\n'
+              << "cx = " << K(0, 2) << '\n'
+              << "cy = " << K(1, 2) << '\n'
+              << "Lens parameters:\n"
+              << "k1 = " << distCoeffs[0] << '\n'
+              << "k2 = " << distCoeffs[1] << '\n'
+              << "p1 = " << distCoeffs[2] << '\n'
+              << "p2 = " << distCoeffs[3] << '\n'
+              << "k3 = " << distCoeffs[4] << '\n'
               << "RMS reprojection error (pixels): " << rmse << '\n';
 
     cv::FileStorage fs(filename, cv::FileStorage::WRITE);
@@ -195,8 +200,18 @@ try {
     }
 
     fs << "Image size" << frameSize;
-    fs << "Intrinsic matrix" << K;
-    fs << "Distortion coefficients" << distCoeffs;
+
+    fs << "fx" << K(0, 0);
+    fs << "fy" << K(1, 1);
+    fs << "cx" << K(0, 2);
+    fs << "cy" << K(1, 2);
+
+    fs << "k1" << distCoeffs[0];
+    fs << "k2" << distCoeffs[1];
+    fs << "p1" << distCoeffs[2];
+    fs << "p2" << distCoeffs[3];
+    fs << "k3" << distCoeffs[4];
+
     fs.release();
 
     std::cout << "Camera settings saved to \"" << filename << "\"\n";

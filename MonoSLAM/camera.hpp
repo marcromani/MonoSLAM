@@ -15,7 +15,7 @@ class Camera
     cv::Vec3d v;  // Linear velocity, in world coordinates
     cv::Vec3d w;  // Angular velocity, in camera coordinates
 
-    cv::Mat1d P;  // Camera state (r, q, v, w) covariance matrix
+    cv::Matx<double, 13, 13> P;  // Camera state (r, q, v, w) covariance matrix
 
     cv::Matx33d R;                  // Rotation matrix (from camera basis to world basis)
     cv::Matx33d K;                  // Intrinsic matrix
