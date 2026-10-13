@@ -3,17 +3,25 @@
 
 #include <opencv2/core.hpp>
 
+namespace monoslam::quaternion {
+
 /*
  * Builds a rotation quaternion from a (non-zero) rotation vector.
  */
-cv::Matx41d
-computeQuaternion(const cv::Matx31d&);
+cv::Vec4d
+fromVector(const cv::Vec3d&);
+
+/*
+ * Computes the conjugate quaternion, which is also the inverse for unit quaternions.
+ */
+cv::Vec4d
+conjugate(const cv::Vec4d&);
 
 /*
  * Computes the Hamilton product of two quaternions, q1 x q2.
  */
-cv::Matx41d
-quaternionMultiply(const cv::Matx41d& q1, const cv::Matx41d& q2);
+cv::Vec4d
+multiply(const cv::Vec4d& q1, const cv::Vec4d& q2);
 
 /*
  * Computes a rotation matrix from a rotation quaternion. In particular, if the
@@ -21,13 +29,7 @@ quaternionMultiply(const cv::Matx41d& q1, const cv::Matx41d& q2);
  * its final pose B, the matrix is a change of basis from B to A.
  */
 cv::Matx33d
-getRotationMatrix(const cv::Matx41d&);
-
-/*
- * Computes the conjugate quaternion, which is also the inverse for unit quaternions.
- */
-cv::Matx41d
-quaternionConjugate(const cv::Matx41d&);
+toMatrix(const cv::Vec4d&);
 
 /*
  * Computes the matrices of the derivatives of R(q)^t with respect to the quaternion
@@ -36,6 +38,8 @@ quaternionConjugate(const cv::Matx41d&);
  * quaternion component.
  */
 void
-getRotationMatrixDerivatives(const cv::Matx41d& q, cv::Matx33d& R1, cv::Matx33d& R2, cv::Matx33d& R3, cv::Matx33d& R4);
+toMatrixDerivatives(const cv::Vec4d& q, cv::Matx33d& R1, cv::Matx33d& R2, cv::Matx33d& R3, cv::Matx33d& R4);
+
+}
 
 #endif

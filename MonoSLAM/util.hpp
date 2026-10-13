@@ -3,38 +3,7 @@
 
 #include <opencv2/core.hpp>
 
-constexpr double PI = 3.14159265358979323846;
-constexpr double PI_DOUBLE = 2.0 * PI;
-constexpr double RAD_TO_DEG = 180.0 / PI;
-constexpr double DEG_TO_RAD = PI / 180.0;
-
-constexpr float PI_F = static_cast<float>(PI);
-constexpr float PI_DOUBLE_F = static_cast<float>(PI_DOUBLE);
-constexpr float RAD_TO_DEG_F = static_cast<float>(RAD_TO_DEG);
-constexpr float DEG_TO_RAD_F = static_cast<float>(DEG_TO_RAD);
-
-/*
- * Computes the homography matrix H between two pinhole camera views of a plane.
- * In particular, p2 = H * p1, where p1 is the pixel in the first view which
- * corresponds to a point p in the plane, and p2 is the pixel which corresponds
- * to p in the second view.
- *
- * p     Point in the plane, in world coordinates
- * n     Plane normal, in world coordinates
- * K     Camera intrinsic matrix
- * R1    First pose rotation (world to camera)
- * t1    First pose translation, in world coordinates
- * R2    Second pose rotation (world to camera)
- * t2    Second pose translation, in world coordinates
- */
-cv::Matx33d
-computeHomography(const cv::Matx31d& p,
-                  const cv::Matx31d& n,
-                  const cv::Matx33d& K,
-                  const cv::Matx33d& R1,
-                  const cv::Matx31d& t1,
-                  const cv::Matx33d& R2,
-                  const cv::Matx31d& t2);
+namespace monoslam::util {
 
 /*
  * Returns a square region of interest given its center pixel coordinates and size.
@@ -212,7 +181,7 @@ computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, c
  * cov     Covariance
  */
 double
-gaussian2Dpdf(const cv::Matx21d& x, const cv::Matx21d& mean, const cv::Matx22d& cov);
+gaussian2Dpdf(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov);
 
 /*
  * Removes specific elements of a vector. The vector is reduced in-place. The indices of the
@@ -241,6 +210,8 @@ removeIndices(std::vector<T>& vec, const std::vector<int>& indices)  // TODO: Is
     });
 
     vec.erase(it, vec.end());
+}
+
 }
 
 #endif

@@ -5,23 +5,10 @@
 
 #include <opencv2/imgproc.hpp>
 
-cv::Matx33d
-computeHomography(const cv::Matx31d& p,
-                  const cv::Matx31d& n,
-                  const cv::Matx33d& K,
-                  const cv::Matx33d& R1,
-                  const cv::Matx31d& t1,
-                  const cv::Matx33d& R2,
-                  const cv::Matx31d& t2)
-{
-    const cv::Matx<double, 1, 1> m = n.t() * (p - t1);
-    const cv::Matx33d H = K * R2 * (m(0) * cv::Matx33d::eye() + (t1 - t2) * n.t()) * R1.t() * K.inv();
-
-    return H;
-}
+#include "numbers.hpp"
 
 cv::Rect
-buildSquare(const cv::Point& center, int size)
+monoslam::util::buildSquare(const cv::Point& center, int size)
 {
     const int left = center.x - size / 2;
     const int top = center.y - size / 2;
@@ -30,7 +17,7 @@ buildSquare(const cv::Point& center, int size)
 }
 
 cv::Mat
-removeRowCol(const cv::Mat& mat, int idx)
+monoslam::util::removeRowCol(const cv::Mat& mat, int idx)
 {
     CV_DbgAssert(mat.rows == mat.cols);
 
@@ -62,7 +49,7 @@ removeRowCol(const cv::Mat& mat, int idx)
 }
 
 cv::Mat
-removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
+monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
 {
     CV_DbgAssert(offset > 0 && stride > 0);
 
@@ -80,7 +67,7 @@ removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, 
 }
 
 cv::Mat
-removeRow(const cv::Mat& mat, int idx)
+monoslam::util::removeRow(const cv::Mat& mat, int idx)
 {
     CV_DbgAssert(mat.rows == mat.cols);
 
@@ -108,7 +95,7 @@ removeRow(const cv::Mat& mat, int idx)
 }
 
 cv::Mat
-removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
+monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
 {
     CV_DbgAssert(offset > 0 && stride > 0);
 
@@ -126,7 +113,7 @@ removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int 
 }
 
 std::vector<cv::RotatedRect>
-computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas)
+monoslam::util::computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas)
 {
     std::vector<cv::RotatedRect> ellipses;
     ellipses.reserve(means.size());
@@ -147,15 +134,15 @@ computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S
 
         // Shift the angle from [-pi, pi] to [0, 2pi]
         if (angle < 0.0f) {
-            angle += PI_DOUBLE_F;
+            angle += numbers::PI_DOUBLE_F;
         }
 
         // Convert to degrees
-        angle *= RAD_TO_DEG_F;
+        angle *= numbers::RAD_TO_DEG_F;
 
         // Compute the size of the major and minor axes
-        const float majorAxis = diameterFactor * std::sqrt(eigenvals(0));
-        const float minorAxis = diameterFactor * std::sqrt(eigenvals(1));
+        const float majorAxis = diameterFactor * std::sqrt(eigenvals[0]);
+        const float minorAxis = diameterFactor * std::sqrt(eigenvals[1]);
 
         ellipses.push_back(
           cv::RotatedRect(static_cast<cv::Point2f>(means[i]), cv::Size2f(majorAxis, minorAxis), -angle));
@@ -165,9 +152,9 @@ computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S
 }
 
 cv::Rect
-getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
+monoslam::util::getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
 {
-    const double angle = ellipse.angle * DEG_TO_RAD;
+    const double angle = ellipse.angle * numbers::DEG_TO_RAD;
     const double c = std::cos(angle);
     const double s = std::sin(angle);
     const double a = 0.5 * ellipse.size.width;
@@ -186,31 +173,31 @@ getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
 }
 
 void
-drawRectangle(cv::Mat& image, const cv::Rect& r, const cv::Scalar& color)
+monoslam::util::drawRectangle(cv::Mat& image, const cv::Rect& r, const cv::Scalar& color)
 {
     cv::rectangle(image, r, color, 1, cv::LINE_AA);
 }
 
 void
-drawSquare(cv::Mat& image, const cv::Point& center, int width, const cv::Scalar& color)
+monoslam::util::drawSquare(cv::Mat& image, const cv::Point& center, int width, const cv::Scalar& color)
 {
     cv::rectangle(image, buildSquare(center, width), color, 1, cv::LINE_AA);
 }
 
 void
-drawEllipse(cv::Mat& image, const cv::RotatedRect& e, const cv::Scalar& color)
+monoslam::util::drawEllipse(cv::Mat& image, const cv::RotatedRect& e, const cv::Scalar& color)
 {
     cv::ellipse(image, e, color, 1, cv::LINE_AA);
 }
 
 void
-drawCircle(cv::Mat& image, const cv::Point& center, int radius, const cv::Scalar& color)
+monoslam::util::drawCircle(cv::Mat& image, const cv::Point& center, int radius, const cv::Scalar& color)
 {
     cv::circle(image, center, radius, color, 1, cv::LINE_AA);
 }
 
 void
-drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, int cx, int cy)
+monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, int cx, int cy)
 {
     // TODO: Can we use the cv::Rect intersection here?
     int templ_x = 0;
@@ -261,7 +248,7 @@ drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, 
 }
 
 cv::Mat
-computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi)
+monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi)
 {
     // Compute the (inclusive) limits of the extended roi
     int x0 = roi.x - u;
@@ -313,10 +300,12 @@ computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, c
 }
 
 double
-gaussian2Dpdf(const cv::Matx21d& x, const cv::Matx21d& mean, const cv::Matx22d& cov)
+monoslam::util::gaussian2Dpdf(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::Matx22d& cov)
 {
-    const double dx = x(0) - mean(0);
-    const double dy = x(1) - mean(1);
+    const cv::Vec2d diff = x - mean;
+
+    const double dx = diff[0];
+    const double dy = diff[1];
 
     const double a = cov(0, 0);
     const double b = cov(0, 1);
@@ -333,5 +322,5 @@ gaussian2Dpdf(const cv::Matx21d& x, const cv::Matx21d& mean, const cv::Matx22d& 
 
     const double mahalanobis2 = dx * (inv00 * dx + inv01 * dy) + dy * (inv10 * dx + inv11 * dy);
 
-    return std::exp(-0.5 * mahalanobis2) / (PI_DOUBLE * std::sqrt(det));
+    return std::exp(-0.5 * mahalanobis2) / (numbers::PI_DOUBLE * std::sqrt(det));
 }
