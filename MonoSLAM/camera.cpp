@@ -1,5 +1,9 @@
 #include "camera.hpp"
 
+#include <opencv2/core/types.hpp>
+
+#include "quaternion.hpp"
+
 monoslam::Camera::Camera(const cv::Matx33d& K_, const cv::Size& frameSize_)
   : K(K_)
   , distCoeffs(cv::Vec<double, 5>::all(0.0))
@@ -15,10 +19,14 @@ monoslam::Camera::Camera(const cv::Matx33d& K_, const cv::Vec<double, 5>& distCo
 }
 
 void
-monoslam::Camera::projectPoints(const cv::Matx33d& R,
-                                const cv::Vec3d& t,
-                                const std::vector<cv::Point3d>& points3D,
-                                std::vector<cv::Point2d>& points2D) const
+monoslam::Camera::setOrientation(const cv::Vec4d& q)
+{
+    q_ = q;
+    R_ = quaternion::toMatrix(q);
+}
+
+std::vector<cv::Point2d>
+monoslam::Camera::projectPoints(const std::vector<cv::Point3d>& points3D) const
 {
     const double fx = K(0, 0);
     const double fy = K(1, 1);
@@ -31,10 +39,10 @@ monoslam::Camera::projectPoints(const cv::Matx33d& R,
     const double p2 = distCoeffs[3];
     const double k3 = distCoeffs[4];
 
-    points2D.resize(points3D.size());
+    std::vector<cv::Point2d> points2D(points3D.size());
 
     std::transform(points3D.begin(), points3D.end(), points2D.begin(), [&](const cv::Point3d& pt) {
-        const cv::Vec3d pCam = R * (cv::Vec3d(pt) - t);
+        const cv::Vec3d pCam = R_.t() * (cv::Vec3d(pt) - r);
 
         const double zInv = 1.0 / pCam[2];
         const double xn = pCam[0] * zInv;
@@ -50,4 +58,6 @@ monoslam::Camera::projectPoints(const cv::Matx33d& R,
 
         return cv::Point2d(fx * (xn * radial + tangentialX) + cx, fy * (yn * radial + tangentialY) + cy);
     });
+
+    return points2D;
 }

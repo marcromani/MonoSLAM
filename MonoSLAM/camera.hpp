@@ -11,14 +11,11 @@ class Camera
 {
   public:
     cv::Vec3d r;  // Position, in world coordinates
-    cv::Vec4d
-      q;  // Orientation quaternion (R = quaternion::toMatrix(q)) // TODO: Overload "=" so that changing q changes R?
     cv::Vec3d v;  // Linear velocity, in world coordinates
     cv::Vec3d w;  // Angular velocity, in camera coordinates
 
-    cv::Matx<double, 13, 13> P;  // Camera state (r, q, v, w) covariance matrix
+    cv::Matx<double, 13, 13> P;  // Camera state (r, q_, v, w) covariance matrix
 
-    cv::Matx33d R;                  // Rotation matrix (from camera basis to world basis)
     cv::Matx33d K;                  // Intrinsic matrix
     cv::Vec<double, 5> distCoeffs;  // Lens distortion coefficients
 
@@ -34,18 +31,16 @@ class Camera
      */
     Camera(const cv::Matx33d& K, const cv::Vec<double, 5>& distCoeffs, const cv::Size& frameSize);
 
+    void setOrientation(const cv::Vec4d& q);
+
     /*
      * Projects 3D points onto the camera frame.
-     *
-     * R           Rotation matrix (world to camera)
-     * t           Camera position, in world coordinates
-     * points3D    Points to be projected, in world coordinates
-     * points2D    Point projections, in pixels
      */
-    void projectPoints(const cv::Matx33d& R,
-                       const cv::Vec3d& t,
-                       const std::vector<cv::Point3d>& points3D,
-                       std::vector<cv::Point2d>& points2D) const;
+    std::vector<cv::Point2d> projectPoints(const std::vector<cv::Point3d>& points3D) const;
+
+  private:
+    cv::Vec4d q_;    // Orientation quaternion (R_ = quaternion::toMatrix(q_))
+    cv::Matx33d R_;  // Rotation matrix (from camera basis to world basis)
 };
 
 }
