@@ -55,12 +55,16 @@ monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indic
 
     cv::Mat result = mat.clone();
 
-    for (size_t i = 0; i < indices.size(); ++i) {
-        const int idx = offset + stride * (indices[i] - i);
+    int removed = 0;
+
+    for (const int index : indices) {
+        const int idx = offset + stride * (index - removed);
 
         for (int j = 0; j < stride; ++j) {
             result = removeRowCol(result, idx);
         }
+
+        ++removed;
     }
 
     return result;
@@ -101,12 +105,16 @@ monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, 
 
     cv::Mat result = mat.clone();
 
-    for (size_t i = 0; i < indices.size(); ++i) {
-        const int idx = offset + stride * (indices[i] - i);
+    int removed = 0;
+
+    for (const int index : indices) {
+        const int idx = offset + stride * (index - removed);
 
         for (int j = 0; j < stride; ++j) {
             result = removeRow(result, idx);
         }
+
+        ++removed;
     }
 
     return result;
@@ -201,7 +209,7 @@ monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Poi
 {
     // TODO: Can we use the cv::Rect intersection here?
     int templ_x = 0;
-    int image_x = position.x - cx;
+    int image_x = static_cast<int>(position.x - cx);
 
     if (image_x > image.cols - 1) {
         return;
@@ -213,7 +221,7 @@ monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Poi
     }
 
     int templ_y = 0;
-    int image_y = position.y - cy;
+    int image_y = static_cast<int>(position.y - cy);
 
     if (image_y > image.rows - 1) {
         return;
