@@ -23,6 +23,7 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
                               const cv::Vec3d& n,
                               const cv::Mat1b& view1,
                               const cv::Rect& patch1,
+                              const cv::Matx33d& K,
                               const cv::Matx33d& R1,
                               const cv::Vec3d& t1,
                               const cv::Matx33d& R2,
@@ -53,8 +54,8 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
     const cv::Rect patchBox = cv::boundingRect(points);
 
     // Compute the projection of the center of the patch
-    const int x = patch1.x + 0.5 * patch1.width;
-    const int y = patch1.y + 0.5 * patch1.height;
+    const int x = static_cast<int>(patch1.x + 0.5 * patch1.width);
+    const int y = static_cast<int>(patch1.y + 0.5 * patch1.height);
 
     cv::Vec3d centerProj = H * cv::Vec3d(x, y, 1);
     centerProj /= centerProj[2];

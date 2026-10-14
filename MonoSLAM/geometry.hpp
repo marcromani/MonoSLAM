@@ -41,6 +41,7 @@ computeHomography(const cv::Vec3d& p,
  * n         Plane normal, in world coordinates
  * view1     Original view
  * patch1    Original patch
+ * K         Camera intrinsic matrix
  * R1        First pose rotation (world to camera)
  * t1        First pose translation, in world coordinates
  * R2        Second pose rotation (world to camera)
@@ -54,6 +55,7 @@ warpPatch(const cv::Vec3d& p,
           const cv::Vec3d& n,
           const cv::Mat1b& view1,
           const cv::Rect& patch1,
+          const cv::Matx33d& K,
           const cv::Matx33d& R1,
           const cv::Vec3d& t1,
           const cv::Matx33d& R2,
