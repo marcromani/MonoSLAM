@@ -1,65 +1,108 @@
-#ifndef BUFFER_H
-#define BUFFER_H
+#ifndef MONOSLAM_BUFFER_H
+#define MONOSLAM_BUFFER_H
 
-#include <atomic>
+#include <cassert>
+#include <condition_variable>
+#include <cstddef>
 #include <mutex>
-#include <thread>
 #include <vector>
 
-template <class T>
-class Buffer {
+namespace monoslam {
 
-private:
-
-    int in;
-    int out;
-    int size;
-
-    std::vector<T> data;
-
-    std::atomic<int> numItems;
-    std::mutex rwLock;
-
-public:
-
-    Buffer(int size_) : in(0), out(0), size(size_), data(size_), numItems(0) {}
-
-    void push(T item) {
-
-        std::lock_guard<std::mutex> lock(rwLock);
-
-        data[in] = item;
-
-        in++;
-        if (in == size)
-            in = 0;
-
-        if (numItems < size)
-            numItems++;
+template<class T>
+class Buffer
+{
+  public:
+    Buffer(size_t size)
+      : data_(size)
+      , in_(0)
+      , out_(0)
+      , numItems_(0)
+      , closed_(false)
+    {
+        assert(size > 0);
     }
 
-    bool empty() {
+    void push(T item)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
 
-        return (numItems == 0);
+            if (closed_) {
+                return;
+            }
+
+            data_[in_] = std::move(item);
+
+            ++in_;
+            if (in_ == data_.size()) {
+                in_ = 0;
+            }
+
+            if (numItems_ < data_.size()) {
+                ++numItems_;
+
+            } else {
+                out_ = in_;
+            }
+        }
+
+        notEmpty_.notify_one();
     }
 
-    T pop() {
+    bool pop(T& item)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
 
-        while (numItems == 0)
-            std::this_thread::yield();
+        notEmpty_.wait(lock, [this] { return numItems_ > 0 || closed_; });
 
-        std::lock_guard<std::mutex> lock(rwLock);
+        if (numItems_ == 0) {
+            return false;
+        }
 
-        T result = data[out];
+        item = std::move(data_[out_]);
 
-        out++;
-        if (out == size)
-            out = 0;
+        ++out_;
+        if (out_ == data_.size()) {
+            out_ = 0;
+        }
 
-        numItems--;
+        --numItems_;
 
-        return result;
+        return true;
     }
+
+    void close()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            closed_ = true;
+        }
+
+        notEmpty_.notify_all();
+    }
+
+    bool empty() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        return numItems_ == 0;
+    }
+
+  private:
+    std::vector<T> data_;
+
+    size_t in_;
+    size_t out_;
+    size_t numItems_;
+
+    mutable std::mutex mutex_;
+    std::condition_variable notEmpty_;
+
+    bool closed_;
 };
+
+}
 
 #endif

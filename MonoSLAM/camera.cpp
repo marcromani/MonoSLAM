@@ -1,7 +1,5 @@
 #include "camera.hpp"
 
-#include "util.hpp"
-
 monoslam::Camera::Camera(const cv::Matx33d& K_, const cv::Size& frameSize_)
   : K(K_)
   , distCoeffs(cv::Vec<double, 5>::all(0.0))

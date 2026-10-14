@@ -1,6 +1,6 @@
 #include "util.hpp"
 
-#include <algorithm>
+#include <cassert>
 #include <cmath>
 
 #include <opencv2/imgproc.hpp>
@@ -19,11 +19,11 @@ monoslam::util::buildSquare(const cv::Point& center, int size)
 cv::Mat
 monoslam::util::removeRowCol(const cv::Mat& mat, int idx)
 {
-    CV_DbgAssert(mat.rows == mat.cols);
+    assert(mat.rows == mat.cols);
 
     const int n = mat.rows;
 
-    CV_DbgAssert(0 <= idx && idx < n);
+    assert(0 <= idx && idx < n);
 
     if (n == 1) {
         return cv::Mat(0, 0, mat.type());
@@ -51,7 +51,7 @@ monoslam::util::removeRowCol(const cv::Mat& mat, int idx)
 cv::Mat
 monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
 {
-    CV_DbgAssert(offset > 0 && stride > 0);
+    assert(offset > 0 && stride > 0);
 
     cv::Mat result = mat.clone();
 
@@ -69,11 +69,11 @@ monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indic
 cv::Mat
 monoslam::util::removeRow(const cv::Mat& mat, int idx)
 {
-    CV_DbgAssert(mat.rows == mat.cols);
+    assert(mat.rows == mat.cols);
 
     const int n = mat.rows;
 
-    CV_DbgAssert(0 <= idx && idx < n);
+    assert(0 <= idx && idx < n);
 
     if (n == 1) {
         return cv::Mat(0, 0, mat.type());
@@ -97,7 +97,7 @@ monoslam::util::removeRow(const cv::Mat& mat, int idx)
 cv::Mat
 monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset, int stride)
 {
-    CV_DbgAssert(offset > 0 && stride > 0);
+    assert(offset > 0 && stride > 0);
 
     cv::Mat result = mat.clone();
 
@@ -313,7 +313,7 @@ monoslam::util::gaussian2D(const cv::Vec2d& x, const cv::Vec2d& mean, const cv::
     const double d = cov(1, 1);
 
     const double det = a * d - b * c;
-    CV_DbgAssert(det > 1e-12);  // TODO: Should have a global epsilon
+    assert(det > 1e-12);  // TODO: Should have a global epsilon
 
     const double inv00 = d / det;
     const double inv01 = -b / det;

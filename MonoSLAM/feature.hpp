@@ -1,8 +1,6 @@
 #ifndef MONOSLAM_FEATURE_H
 #define MONOSLAM_FEATURE_H
 
-#include <vector>
-
 #include <opencv2/core.hpp>
 
 namespace monoslam {
@@ -29,6 +27,8 @@ class Feature
     cv::Vec<double, 100> initDepthProbs;  // Pre-initialization depth probabilities
 
     bool initialized;  // Whether the feature is fully initialized or not
+
+    Feature() = default;  // Needs to be default-constructible for the monoslam::Buffer
 
     /*
      * Constructor for a fully initialized feature. It is a convenient method used only

@@ -11,7 +11,8 @@ class Camera
 {
   public:
     cv::Vec3d r;  // Position, in world coordinates
-    cv::Vec4d q;  // Orientation quaternion
+    cv::Vec4d
+      q;  // Orientation quaternion (R = quaternion::toMatrix(q)) // TODO: Overload "=" so that changing q changes R?
     cv::Vec3d v;  // Linear velocity, in world coordinates
     cv::Vec3d w;  // Angular velocity, in camera coordinates
 
