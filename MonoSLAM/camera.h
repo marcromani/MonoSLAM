@@ -5,6 +5,7 @@
 #include <optional>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/types.hpp>
 
 namespace monoslam {
 
@@ -25,6 +26,14 @@ class CameraPose
     std::array<cv::Matx33d, 4> dR_;  // Derivatives of R_ w.r.t. each quaternion component
 };
 
+struct Projection
+{
+    cv::Vec2d pixel;
+    cv::Matx<double, 2, 3> Jr;  // Derivative of the pixel w.r.t. the camera position
+    cv::Matx<double, 2, 4> Jq;  // Derivative of the pixel w.r.t. the camera quaternion
+    cv::Matx<double, 2, 3> Jp;  // Derivative of the pixel w.r.t. the world point
+};
+
 class CameraModel
 {
   public:
@@ -42,7 +51,18 @@ class CameraModel
     const cv::Vec<double, 5>& distCoeffs() const { return distCoeffs_; }
     const cv::Size& frameSize() const { return frameSize_; }
 
+    /*
+     * Maps the components of a 3D point from the affine world frame to camera pixel coordinates.
+     * If the point is not visible std::nullopt is returned.
+     */
     std::optional<cv::Point2d> project(const CameraPose& pose, const cv::Vec3d& p) const;
+
+    /*
+     * Maps the components of a 3D point from the affine world frame to camera pixel coordinates.
+     * Additionally, it computes the Jacobian of this projection w.r.t. each pose parameter and
+     * the 3D point itself. If the point is not visible std::nullopt is returned.
+     */
+    std::optional<Projection> projectWithJacobian(const CameraPose& pose, const cv::Vec3d& p) const;
 
     bool inView(const cv::Point2d& pixel) const;
 

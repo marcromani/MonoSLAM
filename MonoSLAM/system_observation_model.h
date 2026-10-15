@@ -16,9 +16,6 @@ class SystemObservationModel : public filter::ObservationModel
     filter::Prediction eval(const cv::Mat1d& x) const override;
 
   private:
-    cv::Mat1d h(const cv::Mat1d& x) const;
-    cv::Mat1d computeH(const cv::Mat1d& x) const;
-
     CameraModel cameraModel_;
 };
 
