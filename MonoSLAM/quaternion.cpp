@@ -3,11 +3,11 @@
 #include <cmath>
 
 cv::Vec4d
-monoslam::quaternion::fromVector(const cv::Vec3d& rotv)
+monoslam::quaternion::fromVector(const cv::Vec3d& rotationVector)
 {
-    const double x = rotv[0];
-    const double y = rotv[1];
-    const double z = rotv[2];
+    const double x = rotationVector[0];
+    const double y = rotationVector[1];
+    const double z = rotationVector[2];
 
     const double angle = std::sqrt(x * x + y * y + z * z);
 

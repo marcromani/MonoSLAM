@@ -3,11 +3,11 @@
 #include <thread>
 #include <vector>
 
-#include "buffer.hpp"
+// #include "buffer.hpp"
 #include "camera.hpp"
 #include "feature.hpp"
-#include "map.hpp"
-#include "opencv2/calib3d/calib3d.hpp"
+// #include "map.hpp"
+#include "opencv2/calib.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "quaternion.hpp"

@@ -6,34 +6,33 @@
 
 #include "opencv2/core/core.hpp"
 
-#include "buffer.hpp"
+// #include "buffer.hpp"
 #include "camera.hpp"
 #include "feature.hpp"
 
-class Map {
+class Map
+{
+  public:
+    Camera camera;  // Camera
 
-public:
+    std::vector<Feature> features;    // Initialized map features (used for tracking)
+    std::vector<Feature> candidates;  // Pre-initialized features (updated by particle filter)
 
-    Camera camera;                          // Camera
+    int patchSize;  // Size of the feature planar patch, in pixels
 
-    std::vector<Feature> features;          // Initialized map features (used for tracking)
-    std::vector<Feature> candidates;        // Pre-initialized features (updated by particle filter)
+    int minFeatureDensity;  // Minimum number of features per frame
+    int maxFeatureDensity;  // Maximum number of features per frame
 
-    int patchSize;                          // Size of the feature planar patch, in pixels
+    double failTolerance;  // Maximum ratio of matching failures before feature rejection
 
-    int minFeatureDensity;                  // Minimum number of features per frame
-    int maxFeatureDensity;                  // Maximum number of features per frame
+    int numVisibleFeatures;              // Number of currently visible features (a subset of those in sight)
+    std::vector<cv::Point2d> inviewPos;  // Image positions of currently (predicted) in sight features
 
-    double failTolerance;                   // Maximum ratio of matching failures before feature rejection
+    cv::Mat x;  // Map state (camera and features states)
+    cv::Mat P;  // Map state covariance matrix
 
-    int numVisibleFeatures;                 // Number of currently visible features (a subset of those in sight)
-    std::vector<cv::Point2d> inviewPos;     // Image positions of currently (predicted) in sight features
-
-    cv::Mat x;                              // Map state (camera and features states)
-    cv::Mat P;                              // Map state covariance matrix
-
-    cv::Mat A;                              // Linear and angular accelerations noise covariance matrix
-    cv::Mat R;                              // Measurement noise variances, in pixels
+    cv::Mat A;  // Linear and angular accelerations noise covariance matrix
+    cv::Mat R;  // Measurement noise variances, in pixels
 
     /*
      * Constructor for a lens distortion camera model.
@@ -46,16 +45,16 @@ public:
         int maxFeatureDensity_,
         double failTolerance_,
         const cv::Mat& accelerationVariances,
-        const cv::Mat& measurementNoiseVariances) :
-        camera(K, distCoeffs, frameSize),
-        patchSize(patchSize_),
-        minFeatureDensity(minFeatureDensity_),
-        maxFeatureDensity(maxFeatureDensity_),
-        failTolerance(failTolerance_),
-        numVisibleFeatures(0),
-        x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {
-
+        const cv::Mat& measurementNoiseVariances)
+      : camera(K, distCoeffs, frameSize)
+      , patchSize(patchSize_)
+      , minFeatureDensity(minFeatureDensity_)
+      , maxFeatureDensity(maxFeatureDensity_)
+      , failTolerance(failTolerance_)
+      , numVisibleFeatures(0)
+      , x(13, 1, CV_64FC1, cv::Scalar(0))
+      , P(13, 13, CV_64FC1, cv::Scalar(0))
+    {
         A = cv::Mat::diag(accelerationVariances);
         measurementNoiseVariances.copyTo(R);
     }
@@ -70,16 +69,16 @@ public:
         int maxFeatureDensity_,
         double failTolerance_,
         const cv::Mat& accelerationVariances,
-        const cv::Mat& measurementNoiseVariances) :
-        camera(K, frameSize),
-        patchSize(patchSize_),
-        minFeatureDensity(minFeatureDensity_),
-        maxFeatureDensity(maxFeatureDensity_),
-        failTolerance(failTolerance_),
-        numVisibleFeatures(0),
-        x(13, 1, CV_64FC1, cv::Scalar(0)),
-        P(13, 13, CV_64FC1, cv::Scalar(0)) {
-
+        const cv::Mat& measurementNoiseVariances)
+      : camera(K, frameSize)
+      , patchSize(patchSize_)
+      , minFeatureDensity(minFeatureDensity_)
+      , maxFeatureDensity(maxFeatureDensity_)
+      , failTolerance(failTolerance_)
+      , numVisibleFeatures(0)
+      , x(13, 1, CV_64FC1, cv::Scalar(0))
+      , P(13, 13, CV_64FC1, cv::Scalar(0))
+    {
         A = cv::Mat::diag(accelerationVariances);
         measurementNoiseVariances.copyTo(R);
     }
@@ -98,8 +97,7 @@ public:
      * squareSize       Size of a chessboard square, in meters
      * var              Variances of the initial camera state components
      */
-    bool initMap(const cv::Mat& frame, const cv::Size& patternSize, double squareSize,
-                 const std::vector<double>& var);
+    bool initMap(const cv::Mat& frame, const cv::Size& patternSize, double squareSize, const std::vector<double>& var);
 
     /*
      * Updates the camera and features data with the map state vector and map state
@@ -141,11 +139,9 @@ public:
      */
     void update(const cv::Mat& gray, cv::Mat& frame);
 
-    void updateCandidates(const cv::Mat& gray,
-                          Buffer<Feature>& goodCandidates, std::atomic<bool>& threadCompleted);
+    void updateCandidates(const cv::Mat& gray, Buffer<Feature>& goodCandidates, std::atomic<bool>& threadCompleted);
 
-private:
-
+  private:
     /*
      * Adds an initial feature to the map. Its position is known with zero uncertainty
      * hence the associated covariance matrix is the zero matrix. Moreover, since the
@@ -159,8 +155,11 @@ private:
      * R        Camera rotation (from world to camera)
      * t        Camera position, in world coordinates
      */
-    bool addInitialFeature(const cv::Mat& frame, const cv::Point2f& pos2D, const cv::Point3f& pos3D,
-                           const cv::Mat& R, const cv::Mat& t);
+    bool addInitialFeature(const cv::Mat& frame,
+                           const cv::Point2f& pos2D,
+                           const cv::Point3f& pos3D,
+                           const cv::Mat& R,
+                           const cv::Mat& t);
 
     /*
      * Sets the map as it was upon creation.
@@ -230,8 +229,10 @@ private:
     std::vector<cv::RotatedRect> computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat& S);
 
     void drawFeatures(cv::Mat& frame,
-                      const std::vector<int>& matchedInviewIndices, const std::vector<int>& failedInviewIndices,
-                      const std::vector<cv::RotatedRect>& ellipses, bool drawEllipses = true);
+                      const std::vector<int>& matchedInviewIndices,
+                      const std::vector<int>& failedInviewIndices,
+                      const std::vector<cv::RotatedRect>& ellipses,
+                      bool drawEllipses = true);
 
     void removeBadFeatures(const std::vector<int>& failedInviewIndices, const std::vector<int>& failedIndices);
 

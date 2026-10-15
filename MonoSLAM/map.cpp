@@ -117,11 +117,10 @@ void
 Map::broadcastData()
 {
     camera.r = x(Rect(0, 0, 1, 3));
-    camera.q = x(Rect(0, 3, 1, 4));
     camera.v = x(Rect(0, 7, 1, 3));
     camera.w = x(Rect(0, 10, 1, 3));
 
-    camera.R = getRotationMatrix(camera.q);
+    camera.setOrientation(x(Rect(0, 3, 1, 4)));
 
     camera.P = P(Rect(0, 0, 13, 13));
 
