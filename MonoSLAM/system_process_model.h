@@ -1,16 +1,16 @@
-#ifndef MONOSLAM_PROCESS_MODEL_H
-#define MONOSLAM_PROCESS_MODEL_H
+#ifndef MONOSLAM_SYSTEM_PROCESS_MODEL_H
+#define MONOSLAM_SYSTEM_PROCESS_MODEL_H
 
 #include <opencv2/core.hpp>
 
-#include "filter/process_model_base.hpp"
+#include "filter/process_model.h"
 
 namespace monoslam {
 
-class ProcessModel : public filter::ProcessModelBase
+class SystemProcessModel : public filter::ProcessModel
 {
   public:
-    ProcessModel(double linAccStd, double angAccStd);
+    SystemProcessModel(double linearAccStd, double angularAccStd);
 
     cv::Mat1d eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const override;
     cv::Mat1d noiseCov(double dt) const override;

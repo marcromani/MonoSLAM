@@ -1,11 +1,11 @@
-#include "util.hpp"
+#include "util.h"
 
 #include <cassert>
 #include <cmath>
 
 #include <opencv2/imgproc.hpp>
 
-#include "numbers.hpp"
+#include "numbers.h"
 
 cv::Rect
 monoslam::util::buildSquare(const cv::Point& center, int size)

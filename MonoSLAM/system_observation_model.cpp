@@ -1,39 +1,62 @@
-#include "observation_model.hpp"
+#include "system_observation_model.h"
 
 #include <cstddef>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
-#include "quaternion.hpp"
+#include "camera.h"
+#include "quaternion.h"
 
-monoslam::ObservationModel::ObservationModel(const cv::Matx33d& K)
-  : K_(K)
+monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& cameraModel)
+  : cameraModel_(cameraModel)
+{
+}
+
+monoslam::filter::Prediction
+monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 {
 }
 
 cv::Mat1d
-monoslam::ObservationModel::eval(const cv::Mat1d& x, cv::Mat1d& H, cv::Mat1d& V) const
+monoslam::SystemObservationModel::h(const cv::Mat1d& x) const
 {
+    // // Compute the camera rotation (from world basis to camera basis)
+    // const cv::Matx33d R = quaternion::toMatrix(x(cv::Rect(0, 3, 1, 4))).t();
+
+    // // Get the camera position (in world coordinates)
+    // const cv::Mat1d t = x(cv::Rect(0, 0, 1, 3));
+
+    const int numFeatures = (x.rows - 13) / 3;
+
+    std::vector<cv::Vec3d> vecs3D(static_cast<size_t>(numFeatures));
+
+    // Create a vector of feature positions
+    for (int i = 0; i < numFeatures; ++i) {
+        vecs3D[i] = cv::Vec3d(x(cv::Rect(0, 13 + 3 * i, 1, 3)));
+    }
+
+    CameraPose pose;
+
+    for (const cv::Vec3d& v : vecs3D) {
+        const std::optional<cv::Point2d> pOpt = cameraModel_.project(pose, v);
+
+        if (pOpt.has_value()) {
+            const cv::Point2d p = pOpt.value();
+
+            if (cameraModel_.inView(p)) {
+            }
+        }
+    }
 }
 
 cv::Mat1d
-monoslam::ObservationModel::noiseCov() const
+monoslam::SystemObservationModel::computeH(const cv::Mat1d& x) const
 {
-}
-
-cv::Mat1d
-monoslam::ObservationModel::h(const cv::Mat1d& x) const
-{
-}
-
-cv::Mat1d
-monoslam::ObservationModel::computeH(const cv::Mat1d& x) const
-{
-    // Compute the predicted camera rotation (from world basis to camera basis)
+    // Compute the camera rotation (from world basis to camera basis)
     const cv::Matx33d R = quaternion::toMatrix(x(cv::Rect(0, 3, 1, 4))).t();
 
-    // Get the predicted camera position (in world coordinates)
+    // Get the camera position (in world coordinates)
     const cv::Mat1d t = x(cv::Rect(0, 0, 1, 3));
 
     const int numFeatures = (x.rows - 13) / 3;

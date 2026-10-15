@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <condition_variable>
-#include <cstddef>
 #include <mutex>
 #include <vector>
 

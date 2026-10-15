@@ -1,21 +1,21 @@
-#include "process_model.hpp"
+#include "system_process_model.h"
 
-#include "quaternion.hpp"
+#include "quaternion.h"
 
-monoslam::ProcessModel::ProcessModel(double linAccStd, double angAccStd)
+monoslam::SystemProcessModel::SystemProcessModel(double linearAccStd, double angularAccStd)
 {
     acc_ = cv::Matx66d::zeros();
 
-    acc_(0, 0) = linAccStd * linAccStd;
-    acc_(1, 1) = linAccStd * linAccStd;
-    acc_(2, 2) = linAccStd * linAccStd;
-    acc_(3, 3) = angAccStd * angAccStd;
-    acc_(4, 4) = angAccStd * angAccStd;
-    acc_(5, 5) = angAccStd * angAccStd;
+    acc_(0, 0) = linearAccStd * linearAccStd;
+    acc_(1, 1) = linearAccStd * linearAccStd;
+    acc_(2, 2) = linearAccStd * linearAccStd;
+    acc_(3, 3) = angularAccStd * angularAccStd;
+    acc_(4, 4) = angularAccStd * angularAccStd;
+    acc_(5, 5) = angularAccStd * angularAccStd;
 }
 
 cv::Mat1d
-monoslam::ProcessModel::eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const
+monoslam::SystemProcessModel::eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const
 {
     F = computeF(x, dt);
     W = computeW(dt, F);
@@ -24,13 +24,13 @@ monoslam::ProcessModel::eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Ma
 }
 
 cv::Mat1d
-monoslam::ProcessModel::noiseCov(double dt) const
+monoslam::SystemProcessModel::noiseCov(double dt) const
 {
     return cv::Mat1d(acc_ * dt * dt);
 }
 
 cv::Mat1d
-monoslam::ProcessModel::f(const cv::Mat1d& x, double dt) const
+monoslam::SystemProcessModel::f(const cv::Mat1d& x, double dt) const
 {
     cv::Mat1d xPred = x.clone();
 
@@ -41,14 +41,16 @@ monoslam::ProcessModel::f(const cv::Mat1d& x, double dt) const
 
         const cv::Vec4d q = quaternion::multiply(xPred(cv::Rect(0, 3, 1, 4)), quaternion::fromVector(w * dt));
 
-        xPred(cv::Rect(0, 3, 1, 4)) = cv::Mat1d(q, false);
+        for (int i = 0; i < 4; ++i) {
+            xPred(3 + i) = q[i];
+        }
     }
 
     return xPred;
 }
 
 cv::Mat1d
-monoslam::ProcessModel::computeF(const cv::Mat1d& x, double dt) const
+monoslam::SystemProcessModel::computeF(const cv::Mat1d& x, double dt) const
 {
     cv::Mat1d F = cv::Mat1d::eye(x.rows, x.rows);
 
@@ -196,9 +198,9 @@ monoslam::ProcessModel::computeF(const cv::Mat1d& x, double dt) const
 }
 
 cv::Mat1d
-monoslam::ProcessModel::computeW(double dt, const cv::Mat1d& F) const
+monoslam::SystemProcessModel::computeW(double dt, const cv::Mat1d& F) const
 {
-    cv::Matx<double, 7, 6> W = cv::Matx<double, 7, 6>::zeros();
+    cv::Matx<double, 13, 6> W = cv::Matx<double, 13, 6>::zeros();
 
     // Set J{r_new / big_v}
 
@@ -210,8 +212,14 @@ monoslam::ProcessModel::computeW(double dt, const cv::Mat1d& F) const
 
     for (int i = 3; i < 7; ++i) {
         for (int j = 3; j < 6; ++j) {
-            W(i, j) = F(3 + i, 7 + j);
+            W(i, j) = F(i, 7 + j);
         }
+    }
+
+    // Set the bottom identity matrix, J{v_new / big_v} and J{w_new / big_w}
+
+    for (int i = 7; i < 13; ++i) {
+        W(i, i) = 1.0;
     }
 
     return cv::Mat1d(W);

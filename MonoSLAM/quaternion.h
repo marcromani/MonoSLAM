@@ -34,8 +34,8 @@ toMatrix(const cv::Vec4d&);
 /*
  * Computes the matrices of the derivatives of R(q)^t with respect to the quaternion
  * components. That is, the entries of Ri are the derivatives of the entries of the
- * transpose of the matrix returned by toMatrix(q) with respect to the ith quaternion
- * component.
+ * transpose of the matrix returned by quaternion::toMatrix(q) with respect to the
+ * ith quaternion component.
  */
 void
 toMatrixDerivatives(const cv::Vec4d& q, cv::Matx33d& R1, cv::Matx33d& R2, cv::Matx33d& R3, cv::Matx33d& R4);
