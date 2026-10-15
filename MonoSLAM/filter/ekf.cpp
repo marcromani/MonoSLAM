@@ -1,5 +1,7 @@
 #include "ekf.h"
 
+#include "observation_model.h"
+
 void
 monoslam::filter::EKF::predict(double dt)
 {
@@ -22,7 +24,7 @@ monoslam::filter::EKF::predict(double dt)
     }
 
     // Update the active part of the covariance
-    cv::Mat1b(F * Paa * F.t() + N).copyTo(P_(cv::Rect(0, 0, k, k)));
+    cv::Mat1d(F * Paa * F.t() + N).copyTo(P_(cv::Rect(0, 0, k, k)));
 
     if (k < n) {
         cv::Mat1d Pai = F * P_(cv::Rect(k, 0, n - k, k));
@@ -30,5 +32,24 @@ monoslam::filter::EKF::predict(double dt)
         // Update the cross terms with the inactive entries
         Pai.copyTo(P_(cv::Rect(k, 0, n - k, k)));
         cv::Mat1d(Pai.t()).copyTo(P_(cv::Rect(0, k, k, n - k)));
+    }
+}
+
+void
+monoslam::filter::EKF::update()
+{
+    const Prediction p = observationModel_->eval(x_);
+
+    if (p.h.empty()) {
+        return;
+    }
+
+    cv::Mat1d S;
+
+    if (p.V.empty()) {
+        S = p.H * P_ * p.H.t() + p.R;
+
+    } else {
+        S = p.H * P_ * p.H.t() + p.V * p.R * p.V.t();
     }
 }

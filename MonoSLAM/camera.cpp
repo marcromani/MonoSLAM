@@ -37,7 +37,7 @@ monoslam::CameraModel::CameraModel(const cv::Matx33d& K, const cv::Size& frameSi
 std::optional<cv::Point2d>
 monoslam::CameraModel::project(const CameraPose& pose, const cv::Vec3d& p) const
 {
-    const cv::Vec3d pCamera = pose.R().t() * (p - pose.r());
+    const cv::Vec3d pCamera = pose.R() * (p - pose.r());
 
     if (pCamera[2] <= 0.0) {
         return std::nullopt;
@@ -58,7 +58,7 @@ monoslam::CameraModel::projectWithJacobian(const CameraPose& pose, const cv::Vec
     const cv::Matx33d R = pose.R();
 
     const cv::Vec3d t = p - pose.r();
-    const cv::Vec3d pCamera = R.t() * t;
+    const cv::Vec3d pCamera = R * t;
 
     if (pCamera[2] <= 0.0) {
         return std::nullopt;
