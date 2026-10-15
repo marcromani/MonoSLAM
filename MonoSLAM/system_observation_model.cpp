@@ -1,9 +1,11 @@
 #include "system_observation_model.h"
 
+#include <numeric>
 #include <vector>
 
-monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& cameraModel)
+monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& cameraModel, double pixelStd)
   : cameraModel_(cameraModel)
+  , pixelStd_(pixelStd)
 {
 }
 
@@ -36,5 +38,34 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
         }
     }
 
-    // TODO: Continue here
+    const int m = static_cast<int>(visible.size());
+
+    filter::Prediction pred;
+
+    pred.h = cv::Mat1d(2 * m, 1);
+    pred.H = cv::Mat1d(2 * m, 7 + 3 * m);
+    pred.R = pixelStd_ * pixelStd_ * cv::Mat1d::eye(2 * m, 2 * m);
+
+    // There is a column in H for each component of a visible feature, plus r and q
+    pred.cols.resize(7 + 3 * m);
+
+    // Set the indices for r and q
+    std::iota(pred.cols.begin(), pred.cols.begin() + 7, 0);
+
+    for (int i = 0; i < m; ++i) {
+        const Projection& proj = projections[i];
+
+        pred.h(i) = proj.pixel[0];
+        pred.h(i) = proj.pixel[1];
+
+        proj.Jr.copyTo(pred.H(cv::Rect(0, 2 * i, 3, 2)));
+        proj.Jq.copyTo(pred.H(cv::Rect(3, 2 * i, 4, 2)));
+        proj.Jp.copyTo(pred.H(cv::Rect(7 + 3 * i, 2 * i, 3, 2)));
+
+        pred.cols[7 + 3 * i] = visible[i];
+        pred.cols[8 + 3 * i] = visible[i + 1];
+        pred.cols[9 + 3 * i] = visible[i + 2];
+    }
+
+    return pred;
 }
