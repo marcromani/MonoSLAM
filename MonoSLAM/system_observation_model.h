@@ -13,7 +13,7 @@ class SystemObservationModel : public filter::ObservationModel
   public:
     SystemObservationModel(const CameraModel& cameraModel, double pixelStd);
 
-    filter::Prediction eval(const cv::Mat1d& x) const override;
+    filter::ObservationPrediction eval(const cv::Mat1d& x) const override;
 
   private:
     CameraModel cameraModel_;  // Camera model, provides projections and their Jacobians

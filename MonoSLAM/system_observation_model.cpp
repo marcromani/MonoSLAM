@@ -9,7 +9,7 @@ monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& came
 {
 }
 
-monoslam::filter::Prediction
+monoslam::filter::ObservationPrediction
 monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 {
     const int numFeatures = (x.rows - 13) / 3;
@@ -28,9 +28,9 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
     for (int i = 0; i < numFeatures; ++i) {
         const int idx = 13 + 3 * i;
 
-        const cv::Vec3d p(x(idx), x(idx + 1), x(idx + 2));
+        const cv::Vec3d point(x(idx), x(idx + 1), x(idx + 2));
 
-        const std::optional<Projection> result = cameraModel_.projectWithJacobian(pose, p);
+        const std::optional<Projection> result = cameraModel_.projectWithJacobian(pose, point);
 
         if (result.has_value()) {
             projections.push_back(result.value());
@@ -40,7 +40,7 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 
     const int m = static_cast<int>(visible.size());
 
-    filter::Prediction pred;
+    filter::ObservationPrediction pred;
 
     pred.h = cv::Mat1d(2 * m, 1);
     pred.H = cv::Mat1d(2 * m, 7 + 3 * m);
@@ -62,6 +62,7 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
         proj.Jq.copyTo(pred.H(cv::Rect(3, 2 * i, 4, 2)));
         proj.Jp.copyTo(pred.H(cv::Rect(7 + 3 * i, 2 * i, 3, 2)));
 
+        // Set the indices for the ith feature
         pred.cols[7 + 3 * i] = visible[i];
         pred.cols[8 + 3 * i] = visible[i + 1];
         pred.cols[9 + 3 * i] = visible[i + 2];

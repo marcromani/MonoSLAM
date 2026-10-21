@@ -1,11 +1,13 @@
 #ifndef MONOSLAM_OBSERVATION_MODEL_H
 #define MONOSLAM_OBSERVATION_MODEL_H
 
+#include <functional>
+
 #include <opencv2/core.hpp>
 
 namespace monoslam::filter {
 
-struct Prediction
+struct ObservationPrediction
 {
     cv::Mat1d h;  // Predicted measurements, of size r x 1
     cv::Mat1d H;  // Matrix of the linearized measurement function w.r.t. x, of size r x s
@@ -30,8 +32,18 @@ class ObservationModel
      *
      * x    State, of size n x 1
      */
-    virtual Prediction eval(const cv::Mat1d& x) const = 0;
+    virtual ObservationPrediction eval(const cv::Mat1d& x) const = 0;
 };
+
+struct Measurement
+{
+    cv::Mat1d z;
+
+    std::vector<int> rows;
+};
+
+using GatedMeasurementFunction =
+  std::function<Measurement(const ObservationPrediction& prediction, const cv::Mat1d& S)>;
 
 }
 

@@ -5,24 +5,39 @@
 
 namespace monoslam::filter {
 
+struct ProcessPrediction
+{
+    cv::Mat1d x;  // Predicted state, according to the state transition x_{i+1} = f(x_i, w_i)
+                  // Dim(x) = n x 1
+
+    cv::Mat1d F;  // Jacobian of the state transition function w.r.t. x (F = df/dx)
+                  // Dim(F) = k x k
+
+    cv::Mat1d W;  // Jacobian of the state transition function w.r.t. w (W = df/dw)
+                  // If the matrix is empty it is assumed the noise is additive (i.e. W = I)
+                  // Dim(W) = k x b
+
+    cv::Mat1d Q;  // State transition noise covariance
+                  // Dim(Q) = b x b
+
+    std::vector<int> active;  // Indices of the "active" entries of the state x, which correspond to the rows of F and W
+                              // If the vector is empty it is assumed F and W are full-height (i.e. k = n)
+                              // Len(active) = k
+};
+
 class ProcessModel
 {
   public:
     virtual ~ProcessModel() = default;
 
     /*
-     * Returns xPred = f(x, w = 0), the prediction of the state transition function when evaluated
-     * at the previous state x, under the assumption of zero noise w. Also, it fills F = df/dx and
-     * W = df/dw, evaluated at the same point. Note that xPred is k x 1, F is k x k, and W is k x m,
-     * where k = activeDim(x) and m is the dimension of the error w. If W is empty it is assumed
-     * the noise is additive (i.e. W = I).
+     * Returns the predicted state.
+     * See filter::ProcessPrediction.
      *
      * x     State, of size n x 1
      * dt    Elapsed time since the last iteration
-     * F     Matrix of the linearized state transition function w.r.t. x
-     * W     Matrix of the linearized state transition function w.r.t. w
      */
-    virtual cv::Mat1d eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const = 0;
+    virtual ProcessPrediction eval(const cv::Mat1d& x, double dt) const = 0;
 
     /*
      * Returns Q, the state transition noise covariance, of size m x m.
@@ -34,9 +49,9 @@ class ProcessModel
     /*
      * Returns k, the number of entries of x on which the model is different from the identity.
      * Note that it is implicitly assumed that these "active" entries are grouped together at
-     * the front of the state vector x.
+     * the front of the state vector x. TODO: This definition is not quiet right
      */
-    virtual int activeDim(const cv::Mat1d& x) { return x.rows; };
+    virtual int activeDim(const cv::Mat1d& x) const { return x.rows; };
 };
 
 }

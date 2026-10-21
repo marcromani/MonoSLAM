@@ -14,6 +14,7 @@ class SystemProcessModel : public filter::ProcessModel
 
     cv::Mat1d eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const override;
     cv::Mat1d noiseCov(double dt) const override;
+    int activeDim(const cv::Mat1d& x) const override;
 
   private:
     cv::Mat1d f(const cv::Mat1d& x, double dt) const;

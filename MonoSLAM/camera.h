@@ -29,9 +29,9 @@ class CameraPose
 struct Projection
 {
     cv::Vec2d pixel;
-    cv::Matx<double, 2, 3> Jr;  // Derivative of the pixel w.r.t. the camera position
-    cv::Matx<double, 2, 4> Jq;  // Derivative of the pixel w.r.t. the camera quaternion
-    cv::Matx<double, 2, 3> Jp;  // Derivative of the pixel w.r.t. the world point
+    cv::Matx<double, 2, 3> Jr;  // Jacobian of the pixel w.r.t. the camera position
+    cv::Matx<double, 2, 4> Jq;  // Jacobian of the pixel w.r.t. the camera quaternion
+    cv::Matx<double, 2, 3> Jp;  // Jacobian of the pixel w.r.t. the world point
 };
 
 class CameraModel
@@ -59,8 +59,8 @@ class CameraModel
 
     /*
      * Maps the components of a 3D point from the affine world frame to camera pixel coordinates.
-     * Additionally, it computes the Jacobian of this projection w.r.t. each pose parameter and
-     * the 3D point itself. If the point is not visible std::nullopt is returned.
+     * Additionally, it computes the Jacobian of this projection w.r.t. the camera pose and the
+     * 3D point itself. If the point is not visible std::nullopt is returned.
      */
     std::optional<Projection> projectWithJacobian(const CameraPose& pose, const cv::Vec3d& p) const;
 

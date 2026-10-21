@@ -120,6 +120,76 @@ monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, 
     return result;
 }
 
+std::vector<int>
+monoslam::util::complement(const std::vector<int>& values, int max)
+{
+    std::vector<int> other;
+    other.reserve(max - values.size());
+
+    size_t idx = 0;
+
+    for (int i = 0; i < max; ++i) {
+        if (i != values[idx]) {
+            other.push_back(i);
+
+        } else {
+            ++idx;
+        }
+    }
+
+    return other;
+}
+
+cv::Mat
+monoslam::util::selectRows(const cv::Mat& mat, const std::vector<int>& rows)
+{
+    const int k = static_cast<int>(rows.size());
+
+    cv::Mat result(k, mat.cols, mat.type());
+
+    for (int i = 0; i < k; ++i) {
+        const int idx = rows[i];
+
+        mat.row(idx).copyTo(result.row(i));
+    }
+
+    return result;
+}
+
+cv::Mat
+monoslam::util::selectCols(const cv::Mat& mat, const std::vector<int>& cols)
+{
+    const int k = static_cast<int>(cols.size());
+
+    cv::Mat result(mat.rows, k, mat.type());
+
+    for (int i = 0; i < result.cols; ++i) {
+        const int idx = cols[i];
+
+        mat.col(idx).copyTo(result.col(i));
+    }
+
+    return result;
+}
+
+cv::Mat
+monoslam::util::selectRowsCols(const cv::Mat& mat, const std::vector<int>& rows, const std::vector<int>& cols)
+{
+    cv::Mat result(rows.size(), cols.size(), mat.type());
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const int r = rows[i];
+
+        for (size_t j = 0; j < cols.size(); ++j) {
+            const int c = cols[j];
+
+            result.data[cols.size() * i + j] = mat.data[mat.cols * r + c];
+        }
+    }
+
+    return result;
+}
+
 std::vector<cv::RotatedRect>
 monoslam::util::computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas)
 {

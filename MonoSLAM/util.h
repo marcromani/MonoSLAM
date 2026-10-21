@@ -69,6 +69,24 @@ cv::Mat
 removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset = 0, int stride = 1);
 
 /*
+ * Returns the (ordered) complement of an ordered subset of integers in S = {0, 1, ..., max-1}.
+ *
+ * values    The ordered subset of S
+ * max       The non-inclusive upper bound that defines S
+ */
+std::vector<int>
+complement(const std::vector<int>& values, int max);
+
+cv::Mat
+selectRows(const cv::Mat& mat, const std::vector<int>& rows);
+
+cv::Mat
+selectCols(const cv::Mat& mat, const std::vector<int>& cols);
+
+cv::Mat
+selectRowsCols(const cv::Mat& mat, const std::vector<int>& rows, const std::vector<int>& cols);
+
+/*
  * Returns the uncertainty ellipses where the predicted in-sight features should be found with
  * high probability. In particular, the ellipses are constructed so that they are n-sigma
  * confidence regions for a 2D Gaussian distribution. For instance, n = 2.146 corresponds to a

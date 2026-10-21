@@ -1,26 +1,47 @@
 #include "ekf.h"
 
+#include "../util.h"
 #include "observation_model.h"
+#include "process_model.h"
 
 void
 monoslam::filter::EKF::predict(double dt)
 {
-    const int n = x_.rows;
-    const int k = processModel_->activeDim(x_);
+    const ProcessPrediction p = processModel_->eval(x_, dt);
 
-    cv::Mat1d F, W;
-    x_ = processModel_->eval(x_, dt, F, W);
+    x_ = p.x;
 
-    // Covariance of the active entries of x
-    const cv::Mat1b Paa = P_(cv::Rect(0, 0, k, k));
+    cv::Mat1d N;  // TODO: Can it be p.active not empty (k < n) and p.W empty (k = b, w additive)?
 
-    cv::Mat1d N;
-
-    if (W.empty()) {
-        N = processModel_->noiseCov(dt);
+    if (p.W.empty()) {
+        N = p.Q;
 
     } else {
-        N = W * processModel_->noiseCov(dt) * W.t();
+        N = p.W * p.Q * p.W.t();
+    }
+
+    if (p.active.empty() || p.active.size() == p.x.rows) {
+        P_ = p.F * P_ * p.F.t() + N;
+
+    } else {
+        cv::Mat1d Paa = monoslam::util::selectRowsCols(P_, p.active, p.active);
+        Paa = p.F * Paa * p.F.t() + N;
+
+        std::vector<int> inactive = monoslam::util::complement(p.active, P_.rows);
+
+        cv::Mat1d Pai = monoslam::util::selectRowsCols(P_, p.active, inactive);
+        Pai = p.F * Pai;
+
+        for (int i = 0; i < p.active.size(); ++i) {
+            for (int j = 0; j < p.active.size(); ++j) {
+                P_(p.active[i], p.active[j]) = Paa(i, j);
+            }
+
+            for (int j = 0; j < inactive.size(); ++j) {
+                P_(p.active[i], inactive[j]) = Pai(i, j);
+                P_(inactive[j], p.active[i]) = Pai(i, j);
+            }
+        }
     }
 
     // Update the active part of the covariance
@@ -36,9 +57,9 @@ monoslam::filter::EKF::predict(double dt)
 }
 
 void
-monoslam::filter::EKF::update()
+monoslam::filter::EKF::update(const GatedMeasurementFunction& measure)
 {
-    const Prediction p = observationModel_->eval(x_);
+    const ObservationPrediction p = observationModel_->eval(x_);
 
     if (p.h.empty()) {
         return;
@@ -52,4 +73,14 @@ monoslam::filter::EKF::update()
     } else {
         S = p.H * P_ * p.H.t() + p.V * p.R * p.V.t();
     }
+
+    const Measurement measurement = measure(p, S);
+
+    cv::Mat1d residuals = measurement.z - util::selectRows(p.h, measurement.rows);
+
+    cv::Mat1d H = util::selectRows(p.H, measurement.rows);
+
+    cv::Mat1d P = util::selectRowsCols(P, p.cols);
+
+    H * P * H.t();
 }

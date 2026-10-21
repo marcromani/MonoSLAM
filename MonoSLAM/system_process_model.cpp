@@ -29,6 +29,12 @@ monoslam::SystemProcessModel::noiseCov(double dt) const
     return cv::Mat1d(acc_ * dt * dt);
 }
 
+int
+monoslam::SystemProcessModel::activeDim(const cv::Mat1d& x) const
+{
+    return 13;
+}
+
 cv::Mat1d
 monoslam::SystemProcessModel::f(const cv::Mat1d& x, double dt) const
 {
@@ -52,7 +58,7 @@ monoslam::SystemProcessModel::f(const cv::Mat1d& x, double dt) const
 cv::Mat1d
 monoslam::SystemProcessModel::computeF(const cv::Mat1d& x, double dt) const
 {
-    cv::Mat1d F = cv::Mat1d::eye(x.rows, x.rows);
+    cv::Mat1d F = cv::Mat1d::eye(13, 13);
 
     // Set J{r_new / v_old}
 
