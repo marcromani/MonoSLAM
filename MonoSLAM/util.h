@@ -1,6 +1,8 @@
 #ifndef MONOSLAM_UTIL_H
 #define MONOSLAM_UTIL_H
 
+#include <cstddef>
+
 #include <opencv2/core.hpp>
 
 namespace monoslam::util {
@@ -74,17 +76,17 @@ removeRows(const cv::Mat& mat, const std::vector<int>& indices, int offset = 0, 
  * values    The ordered subset of S
  * max       The non-inclusive upper bound that defines S
  */
-std::vector<int>
-complement(const std::vector<int>& values, int max);
+std::vector<size_t>
+complement(const std::vector<size_t>& values, size_t max);
 
 cv::Mat
-selectRows(const cv::Mat& mat, const std::vector<int>& rows);
+selectRows(const cv::Mat& mat, const std::vector<size_t>& rows);
 
 cv::Mat
-selectCols(const cv::Mat& mat, const std::vector<int>& cols);
+selectCols(const cv::Mat& mat, const std::vector<size_t>& cols);
 
 cv::Mat
-selectRowsCols(const cv::Mat& mat, const std::vector<int>& rows, const std::vector<int>& cols);
+selectRowsCols(const cv::Mat& mat, const std::vector<size_t>& rows, const std::vector<size_t>& cols);
 
 /*
  * Returns the uncertainty ellipses where the predicted in-sight features should be found with

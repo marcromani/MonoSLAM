@@ -1,5 +1,10 @@
 #include "ekf.h"
 
+#include <algorithm>
+#include <cassert>
+
+#include <opencv2/core.hpp>
+
 #include "../util.h"
 #include "observation_model.h"
 #include "process_model.h"
@@ -11,49 +16,50 @@ monoslam::filter::EKF::predict(double dt)
 
     x_ = p.x;
 
-    cv::Mat1d N;  // TODO: Can it be p.active not empty (k < n) and p.W empty (k = b, w additive)?
+    cv::Mat1d N;
 
     if (p.W.empty()) {
-        N = p.Q;
+        N = processModel_->noiseCov(dt);
 
     } else {
-        N = p.W * p.Q * p.W.t();
+        N = p.W * processModel_->noiseCov(dt) * p.W.t();
     }
 
-    if (p.active.empty() || p.active.size() == p.x.rows) {
+    const std::vector<size_t> active = processModel_->activeEntries();
+
+    if (active.empty() || active.size() == static_cast<size_t>(x_.rows)) {
         P_ = p.F * P_ * p.F.t() + N;
 
     } else {
-        cv::Mat1d Paa = monoslam::util::selectRowsCols(P_, p.active, p.active);
+        cv::Mat1d Paa = util::selectRowsCols(P_, active, active);
         Paa = p.F * Paa * p.F.t() + N;
 
-        std::vector<int> inactive = monoslam::util::complement(p.active, P_.rows);
+        const std::vector<size_t> inactive = util::complement(active, static_cast<size_t>(x_.rows));
 
-        cv::Mat1d Pai = monoslam::util::selectRowsCols(P_, p.active, inactive);
+        cv::Mat1d Pai = util::selectRowsCols(P_, active, inactive);
         Pai = p.F * Pai;
 
-        for (int i = 0; i < p.active.size(); ++i) {
-            for (int j = 0; j < p.active.size(); ++j) {
-                P_(p.active[i], p.active[j]) = Paa(i, j);
+        for (size_t i = 0; i < active.size(); ++i) {
+            const int r = static_cast<int>(active[i]);
+
+            for (size_t j = 0; j < active.size(); ++j) {
+                const int c = static_cast<int>(active[j]);
+
+                // Update the active part of the covariance
+                P_(r, c) = Paa(static_cast<int>(i), static_cast<int>(j));
             }
 
-            for (int j = 0; j < inactive.size(); ++j) {
-                P_(p.active[i], inactive[j]) = Pai(i, j);
-                P_(inactive[j], p.active[i]) = Pai(i, j);
+            for (size_t j = 0; j < inactive.size(); ++j) {
+                const int c = static_cast<int>(inactive[j]);
+
+                // Update the cross terms with the inactive entries
+                P_(r, c) = Pai(static_cast<int>(i), static_cast<int>(j));
+                P_(c, r) = Pai(static_cast<int>(i), static_cast<int>(j));
             }
         }
     }
 
-    // Update the active part of the covariance
-    cv::Mat1d(F * Paa * F.t() + N).copyTo(P_(cv::Rect(0, 0, k, k)));
-
-    if (k < n) {
-        cv::Mat1d Pai = F * P_(cv::Rect(k, 0, n - k, k));
-
-        // Update the cross terms with the inactive entries
-        Pai.copyTo(P_(cv::Rect(k, 0, n - k, k)));
-        cv::Mat1d(Pai.t()).copyTo(P_(cv::Rect(0, k, k, n - k)));
-    }
+    P_ = 0.5 * (P_ + P_.t());  // Symmetrize to avoid rounding errors over thousands of steps
 }
 
 void
@@ -65,22 +71,55 @@ monoslam::filter::EKF::update(const GatedMeasurementFunction& measure)
         return;
     }
 
-    cv::Mat1d S;
+    const cv::Mat1d N = p.V.empty() ? p.R : p.V * p.R * p.V.t();
 
-    if (p.V.empty()) {
-        S = p.H * P_ * p.H.t() + p.R;
+    const bool fullWidth = p.active.empty() || p.active.size() == static_cast<size_t>(x_.rows);
+
+    cv::Mat1d Paa, Pcols;
+
+    if (fullWidth) {
+        Paa = P_;
+        Pcols = P_;
 
     } else {
-        S = p.H * P_ * p.H.t() + p.V * p.R * p.V.t();
+        Paa = util::selectRowsCols(P_, p.active, p.active);
+        Pcols = util::selectCols(P_, p.active);
     }
+
+    cv::Mat1d S = p.H * Paa * p.H.t() + N;
 
     const Measurement measurement = measure(p, S);
 
-    cv::Mat1d residuals = measurement.z - util::selectRows(p.h, measurement.rows);
+    if (measurement.measured.empty()) {
+        return;
+    }
 
-    cv::Mat1d H = util::selectRows(p.H, measurement.rows);
+    assert(static_cast<int>(measurement.measured.size()) == measurement.z.rows);
+    assert(std::is_sorted(measurement.measured.begin(), measurement.measured.end()));
+    assert(measurement.measured.back() < static_cast<size_t>(p.h.rows));
+    assert(std::adjacent_find(measurement.measured.begin(), measurement.measured.end(), [](size_t a, size_t b) {
+               return a == b;
+           }) == measurement.measured.end());
 
-    cv::Mat1d P = util::selectRowsCols(P, p.cols);
+    cv::Mat1d h = p.h;
+    cv::Mat1d H = p.H;
 
-    H * P * H.t();
+    if (measurement.measured.size() != static_cast<size_t>(p.h.rows)) {
+        h = util::selectRows(h, measurement.measured);
+        H = util::selectRows(H, measurement.measured);
+        S = util::selectRowsCols(S, measurement.measured, measurement.measured);
+    }
+
+    const cv::Mat1d PHt = Pcols * H.t();
+
+    cv::Mat1d Kt;
+
+    if (!cv::solve(S, PHt.t(), Kt, cv::DECOMP_CHOLESKY)) {
+        return;
+    }
+
+    x_ += Kt.t() * (measurement.z - h);
+    P_ -= PHt * Kt;
+
+    P_ = 0.5 * (P_ + P_.t());  // Symmetrize to avoid rounding errors over thousands of steps
 }

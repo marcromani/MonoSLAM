@@ -1,7 +1,10 @@
 #include "util.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <cstring>
 
 #include <opencv2/imgproc.hpp>
 
@@ -19,6 +22,7 @@ monoslam::util::buildSquare(const cv::Point& center, int size)
 cv::Mat
 monoslam::util::removeRowCol(const cv::Mat& mat, int idx)
 {
+    assert(mat.dims == 2);
     assert(mat.rows == mat.cols);
 
     const int n = mat.rows;
@@ -57,7 +61,7 @@ monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indic
 
     int removed = 0;
 
-    for (const int index : indices) {
+    for (int index : indices) {
         const int idx = offset + stride * (index - removed);
 
         for (int j = 0; j < stride; ++j) {
@@ -73,6 +77,7 @@ monoslam::util::removeRowsCols(const cv::Mat& mat, const std::vector<int>& indic
 cv::Mat
 monoslam::util::removeRow(const cv::Mat& mat, int idx)
 {
+    assert(mat.dims == 2);
     assert(mat.rows == mat.cols);
 
     const int n = mat.rows;
@@ -107,7 +112,7 @@ monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, 
 
     int removed = 0;
 
-    for (const int index : indices) {
+    for (int index : indices) {
         const int idx = offset + stride * (index - removed);
 
         for (int j = 0; j < stride; ++j) {
@@ -120,20 +125,22 @@ monoslam::util::removeRows(const cv::Mat& mat, const std::vector<int>& indices, 
     return result;
 }
 
-std::vector<int>
-monoslam::util::complement(const std::vector<int>& values, int max)
+std::vector<size_t>
+monoslam::util::complement(const std::vector<size_t>& values, size_t max)
 {
-    std::vector<int> other;
+    assert(values.size() <= max);
+
+    std::vector<size_t> other;
     other.reserve(max - values.size());
 
     size_t idx = 0;
 
-    for (int i = 0; i < max; ++i) {
-        if (i != values[idx]) {
-            other.push_back(i);
+    for (size_t i = 0; i < max; ++i) {
+        if (idx < values.size() && i == values[idx]) {
+            ++idx;
 
         } else {
-            ++idx;
+            other.push_back(i);
         }
     }
 
@@ -141,49 +148,129 @@ monoslam::util::complement(const std::vector<int>& values, int max)
 }
 
 cv::Mat
-monoslam::util::selectRows(const cv::Mat& mat, const std::vector<int>& rows)
+monoslam::util::selectRows(const cv::Mat& mat, const std::vector<size_t>& rows)
 {
-    const int k = static_cast<int>(rows.size());
+    assert(mat.dims == 2);
 
-    cv::Mat result(k, mat.cols, mat.type());
+    for (size_t r : rows) {
+        assert(r < static_cast<size_t>(mat.rows));
+    }
 
-    for (int i = 0; i < k; ++i) {
-        const int idx = rows[i];
+    cv::Mat result(static_cast<int>(rows.size()), mat.cols, mat.type());
 
-        mat.row(idx).copyTo(result.row(i));
+    if (rows.empty()) {
+        return result;
+    }
+
+    const bool contiguousRows =
+      std::adjacent_find(rows.begin(), rows.end(), [](size_t a, size_t b) { return b != a + 1; }) == rows.end();
+
+    if (contiguousRows) {
+        mat.rowRange(static_cast<int>(rows.front()), static_cast<int>(rows.front() + rows.size())).copyTo(result);
+
+    } else {
+        for (size_t i = 0; i < rows.size(); ++i) {
+            const int idx = static_cast<int>(rows[i]);
+
+            mat.row(idx).copyTo(result.row(static_cast<int>(i)));
+        }
     }
 
     return result;
 }
 
 cv::Mat
-monoslam::util::selectCols(const cv::Mat& mat, const std::vector<int>& cols)
+monoslam::util::selectCols(const cv::Mat& mat, const std::vector<size_t>& cols)
 {
-    const int k = static_cast<int>(cols.size());
+    assert(mat.dims == 2);
 
-    cv::Mat result(mat.rows, k, mat.type());
+    for (size_t c : cols) {
+        assert(c < static_cast<size_t>(mat.cols));
+    }
 
-    for (int i = 0; i < result.cols; ++i) {
-        const int idx = cols[i];
+    cv::Mat result(mat.rows, static_cast<int>(cols.size()), mat.type());
 
-        mat.col(idx).copyTo(result.col(i));
+    if (cols.empty()) {
+        return result;
+    }
+
+    const bool contiguousCols =
+      std::adjacent_find(cols.begin(), cols.end(), [](size_t a, size_t b) { return b != a + 1; }) == cols.end();
+
+    if (contiguousCols) {
+        mat.colRange(static_cast<int>(cols.front()), static_cast<int>(cols.front() + cols.size())).copyTo(result);
+
+    } else {
+        const size_t elemSize = mat.elemSize();
+
+        for (int i = 0; i < mat.rows; ++i) {
+            const std::byte* src = mat.ptr<std::byte>(i);
+
+            std::byte* dst = result.ptr<std::byte>(i);
+
+            for (size_t j = 0; j < cols.size(); ++j) {
+                std::memcpy(dst + j * elemSize, src + cols[j] * elemSize, elemSize);
+            }
+        }
     }
 
     return result;
 }
 
 cv::Mat
-monoslam::util::selectRowsCols(const cv::Mat& mat, const std::vector<int>& rows, const std::vector<int>& cols)
+monoslam::util::selectRowsCols(const cv::Mat& mat, const std::vector<size_t>& rows, const std::vector<size_t>& cols)
 {
-    cv::Mat result(rows.size(), cols.size(), mat.type());
+    assert(mat.dims == 2);
 
-    for (size_t i = 0; i < rows.size(); ++i) {
-        const int r = rows[i];
+    for (size_t r : rows) {
+        assert(r < static_cast<size_t>(mat.rows));
+    }
 
-        for (size_t j = 0; j < cols.size(); ++j) {
-            const int c = cols[j];
+    for (size_t c : cols) {
+        assert(c < static_cast<size_t>(mat.cols));
+    }
 
-            result.data[cols.size() * i + j] = mat.data[mat.cols * r + c];
+    cv::Mat result(static_cast<int>(rows.size()), static_cast<int>(cols.size()), mat.type());
+
+    if (rows.empty() || cols.empty()) {
+        return result;
+    }
+
+    const size_t elemSize = mat.elemSize();
+
+    const bool contiguousCols =
+      std::adjacent_find(cols.begin(), cols.end(), [](size_t a, size_t b) { return b != a + 1; }) == cols.end();
+
+    if (contiguousCols) {
+        const bool contiguousRows =
+          std::adjacent_find(rows.begin(), rows.end(), [](size_t a, size_t b) { return b != a + 1; }) == rows.end();
+
+        if (contiguousRows) {
+            mat(cv::Rect(static_cast<int>(cols.front()),
+                         static_cast<int>(rows.front()),
+                         static_cast<int>(cols.size()),
+                         static_cast<int>(rows.size())))
+              .copyTo(result);
+
+        } else {
+            for (size_t i = 0; i < rows.size(); ++i) {
+                const std::byte* src = mat.ptr<std::byte>(static_cast<int>(rows[i]));
+
+                std::byte* dst = result.ptr<std::byte>(static_cast<int>(i));
+
+                std::memcpy(dst, src + cols.front() * elemSize, cols.size() * elemSize);
+            }
+        }
+
+    } else {
+        for (size_t i = 0; i < rows.size(); ++i) {
+            const std::byte* src = mat.ptr<std::byte>(static_cast<int>(rows[i]));
+
+            std::byte* dst = result.ptr<std::byte>(static_cast<int>(i));
+
+            for (size_t j = 0; j < cols.size(); ++j) {
+                std::memcpy(dst + j * elemSize, src + cols[j] * elemSize, elemSize);
+            }
         }
     }
 
@@ -199,8 +286,10 @@ monoslam::util::computeEllipses(const std::vector<cv::Point2d>& means, const cv:
     const float diameterFactor = 2.0f * numSigmas;
 
     for (size_t i = 0; i < means.size(); ++i) {
+        const int idx = static_cast<int>(2 * i);
+
         const cv::Matx22f Si =
-          static_cast<cv::Matx22f>(S(cv::Rect(2 * i, 2 * i, 2, 2)));  // Calls OpenCV's saturate_cast under the hood
+          static_cast<cv::Matx22f>(S(cv::Rect(idx, idx, 2, 2)));  // Calls OpenCV's saturate_cast under the hood
 
         // Compute the eigenvalues and eigenvectors
         cv::Vec2f eigenvals;

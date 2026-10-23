@@ -1,6 +1,9 @@
 #ifndef MONOSLAM_PROCESS_MODEL_H
 #define MONOSLAM_PROCESS_MODEL_H
 
+#include <cstddef>
+#include <vector>
+
 #include <opencv2/core.hpp>
 
 namespace monoslam::filter {
@@ -14,15 +17,8 @@ struct ProcessPrediction
                   // Dim(F) = k x k
 
     cv::Mat1d W;  // Jacobian of the state transition function w.r.t. w (W = df/dw)
-                  // If the matrix is empty it is assumed the noise is additive (i.e. W = I)
+                  // If the matrix is empty, it is assumed the noise is additive (i.e. W = I)
                   // Dim(W) = k x b
-
-    cv::Mat1d Q;  // State transition noise covariance
-                  // Dim(Q) = b x b
-
-    std::vector<int> active;  // Indices of the "active" entries of the state x, which correspond to the rows of F and W
-                              // If the vector is empty it is assumed F and W are full-height (i.e. k = n)
-                              // Len(active) = k
 };
 
 class ProcessModel
@@ -31,8 +27,8 @@ class ProcessModel
     virtual ~ProcessModel() = default;
 
     /*
-     * Returns the predicted state.
-     * See filter::ProcessPrediction.
+     * Predicts the next state and returns the corresponding data.
+     * See ProcessPrediction.
      *
      * x     State, of size n x 1
      * dt    Elapsed time since the last iteration
@@ -40,18 +36,22 @@ class ProcessModel
     virtual ProcessPrediction eval(const cv::Mat1d& x, double dt) const = 0;
 
     /*
-     * Returns Q, the state transition noise covariance, of size m x m.
+     * Returns Q, the state transition noise covariance, of size b x b. Note that if eval returns
+     * an empty W (additive noise), b = k and dim(Q) = k × k, with k = activeEntries().size().
      *
      * dt    Elapsed time since the last iteration
      */
     virtual cv::Mat1d noiseCov(double dt) const = 0;
 
     /*
-     * Returns k, the number of entries of x on which the model is different from the identity.
-     * Note that it is implicitly assumed that these "active" entries are grouped together at
-     * the front of the state vector x. TODO: This definition is not quiet right
+     * Returns the k sorted indices of the "active" entries of the state x (i.e. the entries that
+     * have an actual effect as an input to the state transition function). The indices identify
+     * which entry of the state x each column (row) of F corresponds to. For instance, if the
+     * index vector is (2, 5, 6, 9), F has 4 columns (rows): the first one corresponds to the second
+     * entry of x, the second one corresponds to the fifth entry of x, and so on. If the vector is empty,
+     * it is assumed F is full-width (full-height), that is, k = n.
      */
-    virtual int activeDim(const cv::Mat1d& x) const { return x.rows; };
+    virtual std::vector<size_t> activeEntries() const { return {}; }
 };
 
 }

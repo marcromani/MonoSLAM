@@ -14,13 +14,16 @@ monoslam::SystemProcessModel::SystemProcessModel(double linearAccStd, double ang
     acc_(5, 5) = angularAccStd * angularAccStd;
 }
 
-cv::Mat1d
-monoslam::SystemProcessModel::eval(const cv::Mat1d& x, double dt, cv::Mat1d& F, cv::Mat1d& W) const
+monoslam::filter::ProcessPrediction
+monoslam::SystemProcessModel::eval(const cv::Mat1d& x, double dt) const
 {
-    F = computeF(x, dt);
-    W = computeW(dt, F);
+    filter::ProcessPrediction p;
 
-    return f(x, dt);
+    p.x = f(x, dt);
+    p.F = computeF(x, dt);
+    p.W = computeW(dt, p.F);
+
+    return p;
 }
 
 cv::Mat1d
@@ -29,10 +32,10 @@ monoslam::SystemProcessModel::noiseCov(double dt) const
     return cv::Mat1d(acc_ * dt * dt);
 }
 
-int
-monoslam::SystemProcessModel::activeDim(const cv::Mat1d& x) const
+std::vector<size_t>
+monoslam::SystemProcessModel::activeEntries() const
 {
-    return 13;
+    return { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
 }
 
 cv::Mat1d

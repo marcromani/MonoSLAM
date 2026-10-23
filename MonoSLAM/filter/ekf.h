@@ -10,6 +10,11 @@
 
 namespace monoslam::filter {
 
+/*
+ * Implements the standard Extended Kalman Filter. It does not support manifold operations.
+ * That is, both the system state space and the system measurement space are assumed to be
+ * Euclidean vector spaces.
+ */
 class EKF
 {
   public:
