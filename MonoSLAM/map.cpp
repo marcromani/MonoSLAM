@@ -786,11 +786,10 @@ void Map::applyMotionModel(double dt) {
 
     x(Rect(0, 0, 1, 3)) += x(Rect(0, 7, 1, 3)) * dt;
 
-    if (x.at<double>(10, 0) != 0 || x.at<double>(11, 0) != 0 || x.at<double>(12, 0) != 0)
-        x(Rect(0, 3, 1, 4)) = quaternionMultiply(
-                                  x(Rect(0, 3, 1, 4)),
-                                  computeQuaternion(x(Rect(0, 10, 1, 3)) * dt)
-                              );
+    if (x.at<double>(10, 0) != 0 || x.at<double>(11, 0) != 0 || x.at<double>(12, 0) != 0) {
+        Mat q = x(Rect(0, 3, 1, 4));
+        quaternionMultiply(q, computeQuaternion(x(Rect(0, 10, 1, 3)) * dt)).copyTo(q);
+    }
 }
 
 /*
