@@ -79,21 +79,23 @@ Mat removeRowCol(const Mat& mat, int idx) {
 /*
  * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
  * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows and columns are grouped together and referenced by
- * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
- * are 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how the matrix
+ * rows and columns are grouped together and referenced by the indices. For example, given
+ * indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows and columns are 5, 6,
+ * 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows and columns to be deleted
+ * offset       Indices offset
  * stride       Row and column stride
  */
-Mat removeRowsCols(const Mat& mat, vector<int>& indices, int stride) {
+Mat removeRowsCols(const Mat& mat, vector<int>& indices, int offset, int stride) {
 
     Mat result = mat.clone();
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
-        int idx = stride * (indices[i] - i);
+        int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; j++)
             result = removeRowCol(result, idx);
@@ -130,67 +132,29 @@ Mat removeRow(const Mat& mat, int idx) {
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
  * copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows are grouped together and referenced by the
- * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
- * 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how
+ * the matrix rows are grouped together and referenced by the indices. For example,
+ * given indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows are
+ * 5, 6, 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows to be deleted
+ * offset       Indices offset
  * stride       Row stride
  */
-Mat removeRows(const Mat& mat, vector<int>& indices, int stride) {
+Mat removeRows(const Mat& mat, vector<int>& indices, int offset, int stride) {
 
     Mat result = mat.clone();
 
     for (unsigned int i = 0; i < indices.size(); i++) {
 
-        int idx = stride * (indices[i] - i);
+        int idx = offset + stride * (indices[i] - i);
 
         for (int j = 0; j < stride; j++)
             result = removeRow(result, idx);
     }
 
     return result;
-}
-
-/*
- * Returns the ellipses where the predicted in sight features should be found with
- * high probability. In particular, the ellipses are constructed so that they are
- * confidence regions at level 0.86.
- *
- * means    Predicted in sight features pixel locations
- * S        Innovation covariance matrix of the predicted in sight features
- */
-vector<RotatedRect> computeEllipses(const vector<Point2d>& means, const Mat& S) {
-
-    vector<RotatedRect> ellipses;
-
-    for (unsigned int i = 0; i < means.size(); i++) {
-
-        Mat Si = S(Rect(2*i, 2*i, 2, 2));
-
-        // Compute the eigenvalues and eigenvectors
-        Mat eigenval, eigenvec;
-        eigen(Si, eigenval, eigenvec);
-
-        // Compute the angle between the largest eigenvector and the x axis
-        double angle = atan2(eigenvec.at<double>(0, 1), eigenvec.at<double>(0, 0));
-
-        // Shift the angle from [-pi, pi] to [0, 2pi]
-        if (angle < 0)
-            angle += PI_DOUBLE;
-
-        // Convert to degrees
-        angle *= RAD_TO_DEG;
-
-        // Compute the size of the major and minor axes
-        double majorAxis = 4 * sqrt(eigenval.at<double>(0));
-        double minorAxis = 4 * sqrt(eigenval.at<double>(1));
-
-        ellipses.push_back(RotatedRect(means[i], Size(majorAxis, minorAxis), -angle));
-    }
-
-    return ellipses;
 }
 
 /*
@@ -245,15 +209,19 @@ Rect getBoundingBox(const RotatedRect& ellipse, const Size& imageSize) {
 
     double x0 = x - xmax;
     double y0 = y - ymax;
-    double w = 2 * xmax + 1;
-    double h = 2 * ymax + 1;
+    double x1 = x + xmax;
+    double y1 = y + ymax;
 
-    if (x0 + w > imageSize.width)
-        w = imageSize.width - x0;
-    if (y0 + h > imageSize.height)
-        h = imageSize.height - y0;
+    if (x0 < 0)
+        x0 = 0;
+    if (y0 < 0)
+        y0 = 0;
+    if (x1 > imageSize.width)
+        x1 = imageSize.width - 1;
+    if (y1 > imageSize.height)
+        y1 = imageSize.height - 1;
 
-    return Rect(max(x - xmax, 0.), max(y - ymax, 0.), w, h);
+    return Rect(max(x0, 0.), max(y0, 0.), x1 - x0 + 1, y1 - y0 + 1);
 }
 
 /*
@@ -310,6 +278,16 @@ void drawCircle(Mat& image, const Point2i& center, int radius, const Scalar& col
     circle(image, center, radius, color, 1, LINE_AA);
 }
 
+/*
+ * Draws the template on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * templ        Grayscale or color template to be drawn
+ * position     Image position of the template origin
+ * cx           First pixel coordinate of the template origin
+ * cy           Second pixel coordinate of the template origin
+ */
 void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx, int cy) {
 
     int templ_x = 0;
@@ -353,4 +331,88 @@ void drawTemplate(Mat& image, const Mat& templ, const Point2d& position, int cx,
         h = image.rows - image_y;
 
     templ(Rect(templ_x, templ_y, w, h)).copyTo(image(Rect(image_x, image_y, w, h)));
+}
+
+/*
+ * Computes the image corresponding to a given region of interest of a frame such that
+ * the template pixel coordinates u, v are superimposed over all of the image pixels of
+ * frame(roi) when matchTemplate is called for this image and the template. The provided
+ * region of interest is modified conveniently. This function addresses several issues:
+ * (1) The default computed image, frame(roi), may be smaller than the template, hence
+ * matchTemplate can not be used. (2) Even if the image is at least as large as the template,
+ * it might be necessary to test the template against all the pixel positions of the image,
+ * the former being centered at a specific pixel location. This is not how matchTemplate
+ * operates (it shifts the template around the image but keeps it always inside it) so
+ * the image must be correctly resized to achieve this behavior.
+ *
+ * frame    Grayscale or color base image
+ * templ    Grayscale or color template to match
+ * u        First pixel coordinate of the patch matching center
+ * v        Second pixel coordinate of the patch matching center
+ * roi      Original region of interest
+ */
+Mat computeMatchingImage(const Mat& frame, const Mat& templ, int u, int v, Rect& roi) {
+
+    // Compute the limits of the extended roi
+    int x0 = roi.x - u;
+    int y0 = roi.y - v;
+    int x1 = roi.x + roi.width + templ.cols - u - 2;
+    int y1 = roi.y + roi.height + templ.rows - v - 2;
+
+    /*
+     * Ensure that the roi coordinates are inside the frame boundaries
+     * and compute how the image should be extended along its borders.
+     */
+
+    int left    = 0;
+    int right   = 0;
+    int top     = 0;
+    int bottom  = 0;
+
+    if (x0 < 0) {
+
+        left = - x0;
+        x0 = 0;
+    }
+
+    if (x1 > frame.cols - 1) {
+
+        right = x1 - frame.cols + 1;
+        x1 = frame.cols - 1;
+    }
+
+    if (y0 < 0) {
+
+        top = - y0;
+        y0 = 0;
+    }
+
+    if (y1 > frame.rows - 1) {
+
+        bottom = y1 - frame.rows + 1;
+        y1 = frame.rows - 1;
+    }
+
+    // Update the region of interest
+    roi.x = x0;
+    roi.y = y0;
+    roi.width = x1 - x0 + 1;
+    roi.height = y1 - y0 + 1;
+
+    // Get the image
+    Mat image = frame(roi);
+
+    // Extend the image with black borders
+    copyMakeBorder(image, image, top, bottom, left, right, BORDER_CONSTANT, Scalar::all(0));
+
+    return image;
+}
+
+double gaussian2Dpdf(const Mat& x, const Mat& mean, const Mat& cov) {
+
+    Mat diff = x - mean;
+    Mat covInv = cov.inv();
+    Mat exponent = - 0.5 * diff.t() * covInv * diff;
+
+    return sqrt(determinant(covInv)) * exp(exponent.at<double>(0, 0)) / PI_DOUBLE;
 }

@@ -50,10 +50,11 @@ public:
      * t2           Second pose translation, in world coordinates
      * u            First pixel coordinate of the projection of the original patch center
      * v            Second pixel coordinate of the projection of the original patch center
+     * mask         Warped template mask, it specifies the pixels that belong to the original patch
      */
     cv::Mat warpPatch(const cv::Mat& p, const cv::Mat& n, const cv::Mat& view1, const cv::Rect& patch1,
                       const cv::Mat& R1, const cv::Mat& t1, const cv::Mat& R2, const cv::Mat& t2,
-                      int& u, int& v);
+                      int& u, int& v, cv::Mat& mask);
 
     /*
      * Projects 3D points onto the camera frame.

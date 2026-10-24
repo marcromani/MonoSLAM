@@ -47,15 +47,17 @@ cv::Mat removeRowCol(const cv::Mat& mat, int idx);
 /*
  * Removes specific rows and columns of a square matrix. The matrix is not reduced in-place,
  * but a deep copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows and columns are grouped together and referenced by
- * the indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows and columns
- * are 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how the matrix
+ * rows and columns are grouped together and referenced by the indices. For example, given
+ * indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows and columns are 5, 6,
+ * 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows and columns to be deleted
+ * offset       Indices offset
  * stride       Row and column stride
  */
-cv::Mat removeRowsCols(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
+cv::Mat removeRowsCols(const cv::Mat& mat, std::vector<int>& indices, int offset = 0, int stride = 1);
 
 /*
  * Removes the nth row of a matrix. The matrix is not reduced in-place, but a deep
@@ -69,15 +71,17 @@ cv::Mat removeRow(const cv::Mat& mat, int idx);
 /*
  * Removes specific rows of a matrix. The matrix is not reduced in-place, but a deep
  * copy is returned. The indices to be removed should be sorted in ascending order.
- * The stride indicates how the matrix rows are grouped together and referenced by the
- * indices. For example, given indices 0, 3, 7 and a stride of 2 the deleted rows are
- * 0, 1, 6, 7, 14, 15.
+ * The offset specifies the shift applied to the indices. The stride indicates how
+ * the matrix rows are grouped together and referenced by the indices. For example,
+ * given indices 0, 3, 7, an offset of 5 and a stride of 2, the deleted rows are
+ * 5, 6, 11, 12, 19, 20.
  *
  * mat          Matrix to be reduced
  * indices      Sorted rows to be deleted
+ * offset       Indices offset
  * stride       Row stride
  */
-cv::Mat removeRows(const cv::Mat& mat, std::vector<int>& indices, int stride = 1);
+cv::Mat removeRows(const cv::Mat& mat, std::vector<int>& indices, int offset = 0, int stride = 1);
 
 /*
  * Removes specific elements of a vector. The vector is reduced in-place. The indices of the
@@ -92,16 +96,6 @@ void removeIndices(std::vector<T>& vec, const std::vector<int>& indices) {
     for (int i = indices.size() - 1; i >= 0; i--)
         vec.erase(vec.begin() + indices[i]);
 }
-
-/*
- * Returns the ellipses where the predicted in sight features should be found with
- * high probability. In particular, the ellipses are constructed so that they are
- * confidence regions at level 0.86.
- *
- * means    Predicted in sight features pixel locations
- * S        Innovation covariance matrix of the predicted in sight features
- */
-std::vector<cv::RotatedRect> computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat& S);
 
 /*
  * Returns the smallest straight rectangle which contains the given ellipse. The computed
@@ -154,6 +148,38 @@ void drawEllipse(cv::Mat& image, const cv::RotatedRect& ellipse, const cv::Scala
  */
 void drawCircle(cv::Mat& image, const cv::Point2i& center, int radius, const cv::Scalar& color);
 
+/*
+ * Draws the template on the given image. The image is modified by the function so a deep
+ * copy should be made in order to preserve the original.
+ *
+ * image        Grayscale or color image to draw on
+ * templ        Grayscale or color template to be drawn
+ * position     Image position of the template origin
+ * cx           First pixel coordinate of the template origin
+ * cy           Second pixel coordinate of the template origin
+ */
 void drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, int cx, int cy);
+
+/*
+ * Computes the image corresponding to a given region of interest of a frame such that
+ * the template pixel coordinates u, v are superimposed over all of the image pixels of
+ * frame(roi) when matchTemplate is called for this image and the template. The provided
+ * region of interest is modified conveniently. This function addresses several issues:
+ * (1) The default computed image, frame(roi), may be smaller than the template, hence
+ * matchTemplate can not be used. (2) Even if the image is at least as large as the template,
+ * it might be necessary to test the template against all the pixel positions of the image,
+ * the former being centered at a specific pixel location. This is not how matchTemplate
+ * operates (it shifts the template around the image but keeps it always inside it) so
+ * the image must be correctly resized to achieve this behavior.
+ *
+ * frame    Grayscale or color base image
+ * templ    Grayscale or color template to match
+ * u        First pixel coordinate of the patch matching center
+ * v        Second pixel coordinate of the patch matching center
+ * roi      Original region of interest
+ */
+cv::Mat computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi);
+
+double gaussian2Dpdf(const cv::Mat& x, const cv::Mat& mean, const cv::Mat& cov);
 
 #endif

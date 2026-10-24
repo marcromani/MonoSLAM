@@ -42,10 +42,13 @@ int main(int argc, char *argv[]) {
          << "Sample reprojection error tolerance is set to " << tol << " pixels" << endl;
 
     // Initialize video feed device
-    VideoCapture cap(0);
+    VideoCapture cap("/dev/video2");
 
     if (!cap.isOpened())
         return -1;
+
+    cap.set(CAP_PROP_FRAME_WIDTH, 1024);
+    cap.set(CAP_PROP_FRAME_HEIGHT, 768);
 
     // Create a window
     string window = "Camera Calibration";
@@ -57,7 +60,8 @@ int main(int argc, char *argv[]) {
 
     // Create the image to be shown
     cap.read(frame);
-    Mat showFrame(frame.rows, 2*frame.cols, frame.type());
+    resize(frame, frame, Size(640, 480));
+    Mat showFrame(frame.rows, 2 * frame.cols, frame.type());
 
     int i = 0;
     chrono::time_point<clock_> t0 = clock_::now();
@@ -65,6 +69,7 @@ int main(int argc, char *argv[]) {
     while (true) {
 
         cap.read(frame);
+        resize(frame, frame, Size(640, 480));
 
         frame.copyTo(showFrame(Rect(0, 0, frame.cols, frame.rows)));
 
