@@ -52,8 +52,7 @@ struct Measurement
                                    // It is assumed measured.size() = z.rows, so an empty vector means no measurement
 };
 
-using GatedMeasurementFunction =
-  std::function<Measurement(const ObservationPrediction& prediction, const cv::Mat1d& S)>;
+using GatedMeasurementFunction = std::function<Measurement(const ObservationPrediction& p, const cv::Mat1d& S)>;
 
 }
 

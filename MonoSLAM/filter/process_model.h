@@ -52,6 +52,8 @@ class ProcessModel
      * it is assumed F is full-width (full-height), that is, k = n.
      */
     virtual std::vector<size_t> activeEntries() const { return {}; }
+
+    virtual void enforceStateConstraints(cv::Mat1d& x, cv::Mat1d& P) const {}
 };
 
 }

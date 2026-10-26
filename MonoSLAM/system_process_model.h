@@ -13,6 +13,7 @@ class SystemProcessModel : public filter::ProcessModel
     filter::ProcessPrediction eval(const cv::Mat1d& x, double dt) const override;
     cv::Mat1d noiseCov(double dt) const override;
     std::vector<size_t> activeEntries() const override;
+    void enforceStateConstraints(cv::Mat1d& x, cv::Mat1d& P) const override;
 
   private:
     cv::Mat1d f(const cv::Mat1d& x, double dt) const;

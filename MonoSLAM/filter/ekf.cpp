@@ -121,5 +121,7 @@ monoslam::filter::EKF::update(const GatedMeasurementFunction& measure)
     x_ += Kt.t() * (measurement.z - h);
     P_ -= PHt * Kt;
 
+    processModel_->enforceStateConstraints(x_, P_);
+
     P_ = 0.5 * (P_ + P_.t());  // Symmetrize to avoid rounding errors over thousands of steps
 }

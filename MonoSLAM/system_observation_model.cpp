@@ -12,7 +12,7 @@ monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& came
 monoslam::filter::ObservationPrediction
 monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 {
-    const int numFeatures = (x.rows - 13) / 3;
+    const size_t numFeatures = static_cast<size_t>((x.rows - 13) / 3);
 
     const cv::Vec3d r(x(0), x(1), x(2));
     const cv::Vec4d q(x(3), x(4), x(5), x(6));
@@ -25,8 +25,8 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
     projections.reserve(numFeatures);
     visible.reserve(numFeatures);
 
-    for (int i = 0; i < numFeatures; ++i) {
-        const int idx = 13 + 3 * i;
+    for (size_t i = 0; i < numFeatures; ++i) {
+        const int idx = static_cast<int>(13 + 3 * i);
 
         const cv::Vec3d point(x(idx), x(idx + 1), x(idx + 2));
 
@@ -40,33 +40,33 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 
     const int m = static_cast<int>(visible.size());
 
-    filter::ObservationPrediction pred;
+    filter::ObservationPrediction p;
 
-    pred.h = cv::Mat1d(2 * m, 1);
-    pred.H = cv::Mat1d(2 * m, 7 + 3 * m);
-    pred.R = pixelStd_ * pixelStd_ * cv::Mat1d::eye(2 * m, 2 * m);
+    p.h = cv::Mat1d(2 * m, 1);
+    p.H = cv::Mat1d(2 * m, 7 + 3 * m);
+    p.R = pixelStd_ * pixelStd_ * cv::Mat1d::eye(2 * m, 2 * m);
 
     // There is a column in H for each component of a visible feature, plus r and q
-    pred.cols.resize(7 + 3 * m);
+    p.active.resize(7 + 3 * m);
 
     // Set the indices for r and q
-    std::iota(pred.cols.begin(), pred.cols.begin() + 7, 0);
+    std::iota(p.active.begin(), p.active.begin() + 7, 0);
 
     for (int i = 0; i < m; ++i) {
         const Projection& proj = projections[i];
 
-        pred.h(i) = proj.pixel[0];
-        pred.h(i) = proj.pixel[1];
+        p.h(i) = proj.pixel[0];
+        p.h(i) = proj.pixel[1];
 
-        proj.Jr.copyTo(pred.H(cv::Rect(0, 2 * i, 3, 2)));
-        proj.Jq.copyTo(pred.H(cv::Rect(3, 2 * i, 4, 2)));
-        proj.Jp.copyTo(pred.H(cv::Rect(7 + 3 * i, 2 * i, 3, 2)));
+        proj.Jr.copyTo(p.H(cv::Rect(0, 2 * i, 3, 2)));
+        proj.Jq.copyTo(p.H(cv::Rect(3, 2 * i, 4, 2)));
+        proj.Jp.copyTo(p.H(cv::Rect(7 + 3 * i, 2 * i, 3, 2)));
 
         // Set the indices for the ith feature
-        pred.cols[7 + 3 * i] = visible[i];
-        pred.cols[8 + 3 * i] = visible[i + 1];
-        pred.cols[9 + 3 * i] = visible[i + 2];
+        p.active[7 + 3 * i] = visible[i];
+        p.active[8 + 3 * i] = visible[i + 1];
+        p.active[9 + 3 * i] = visible[i + 2];
     }
 
-    return pred;
+    return p;
 }

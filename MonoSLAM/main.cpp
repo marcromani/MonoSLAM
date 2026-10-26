@@ -1,8 +1,11 @@
 #include <cstdlib>
 #include <memory>
 
+#include <opencv2/core.hpp>
+
 #include "camera.h"
 #include "filter/ekf.h"
+#include "filter/observation_model.h"
 #include "system_observation_model.h"
 #include "system_process_model.h"
 
@@ -42,7 +45,9 @@ main(int argc, char* argv[])
 
         ekf.predict(dt);
 
-        ekf.update([&](const filter::Prediction& p, const cv::Mat1d& S) { return matcher.match(frame, p, S); });
+        ekf.update([&](const monoslam::filter::ObservationPrediction& p, const cv::Mat1d& S) {
+            return matcher.match(frame, p, S);
+        });
 
         t_init = t_final;
     }
