@@ -9,6 +9,20 @@
 #include "observation_model.h"
 #include "process_model.h"
 
+monoslam::filter::EKF::EKF(const std::shared_ptr<ProcessModel>& processModel,
+                           const std::shared_ptr<ObservationModel>& observationModel)
+  : processModel_(processModel)
+  , observationModel_(observationModel)
+{
+}
+
+void
+monoslam::filter::EKF::init(const cv::Mat1d& x, const cv::Mat1d& P)
+{
+    x_ = x.clone();
+    P_ = P.clone();
+}
+
 void
 monoslam::filter::EKF::predict(double dt)
 {
@@ -63,7 +77,7 @@ monoslam::filter::EKF::predict(double dt)
 }
 
 void
-monoslam::filter::EKF::update(const GatedMeasurementFunction& measure)
+monoslam::filter::EKF::update(const MeasurementFunction& measure)
 {
     const ObservationPrediction p = observationModel_->eval(x_);
 
@@ -88,7 +102,7 @@ monoslam::filter::EKF::update(const GatedMeasurementFunction& measure)
 
     cv::Mat1d S = p.H * Paa * p.H.t() + N;
 
-    const Measurement measurement = measure(p, S);
+    const Measurement measurement = measure(x_, p, S);
 
     if (measurement.measured.empty()) {
         return;

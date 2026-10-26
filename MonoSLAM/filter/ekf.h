@@ -20,8 +20,10 @@ class EKF
   public:
     EKF(const std::shared_ptr<ProcessModel>&, const std::shared_ptr<ObservationModel>&);
 
+    void init(const cv::Mat1d& x, const cv::Mat1d& P);
+
     void predict(double dt);
-    void update(const GatedMeasurementFunction& measure);
+    void update(const MeasurementFunction& measure);
 
   private:
     std::shared_ptr<ProcessModel> processModel_;

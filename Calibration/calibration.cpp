@@ -198,8 +198,6 @@ try {
         return EXIT_FAILURE;
     }
 
-    fs << "Image size" << frameSize;
-
     fs << "fx" << K(0, 0);
     fs << "fy" << K(1, 1);
     fs << "cx" << K(0, 2);
@@ -210,6 +208,8 @@ try {
     fs << "p1" << distCoeffs[2];
     fs << "p2" << distCoeffs[3];
     fs << "k3" << distCoeffs[4];
+
+    fs << "Image size" << frameSize;
 
     fs.release();
 

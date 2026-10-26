@@ -99,7 +99,7 @@ selectRowsCols(const cv::Mat& mat, const std::vector<size_t>& rows, const std::v
  * numSigmas    Number of standard deviations for the confidence region boundary
  */
 std::vector<cv::RotatedRect>
-computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas = 2.146f);
+computeEllipses(const cv::Mat2d& means, const cv::Mat1d& S, float numSigmas = 2.146f);
 
 /*
  * Returns the smallest straight rectangle which contains the given ellipse. The computed

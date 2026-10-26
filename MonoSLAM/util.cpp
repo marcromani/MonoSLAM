@@ -278,15 +278,18 @@ monoslam::util::selectRowsCols(const cv::Mat& mat, const std::vector<size_t>& ro
 }
 
 std::vector<cv::RotatedRect>
-monoslam::util::computeEllipses(const std::vector<cv::Point2d>& means, const cv::Mat_<double>& S, float numSigmas)
+monoslam::util::computeEllipses(const cv::Mat2d& means, const cv::Mat1d& S, float numSigmas)
 {
+    cv::Mat2f meansF;
+    means.convertTo(meansF, CV_32FC2);
+
     std::vector<cv::RotatedRect> ellipses;
-    ellipses.reserve(means.size());
+    ellipses.reserve(static_cast<size_t>(means.rows));
 
     const float diameterFactor = 2.0f * numSigmas;
 
-    for (size_t i = 0; i < means.size(); ++i) {
-        const int idx = static_cast<int>(2 * i);
+    for (int i = 0; i < means.rows; ++i) {
+        const int idx = 2 * i;
 
         const cv::Matx22f Si =
           static_cast<cv::Matx22f>(S(cv::Rect(idx, idx, 2, 2)));  // Calls OpenCV's saturate_cast under the hood
@@ -311,8 +314,7 @@ monoslam::util::computeEllipses(const std::vector<cv::Point2d>& means, const cv:
         const float majorAxis = diameterFactor * std::sqrt(eigenvals[0]);
         const float minorAxis = diameterFactor * std::sqrt(eigenvals[1]);
 
-        ellipses.push_back(
-          cv::RotatedRect(static_cast<cv::Point2f>(means[i]), cv::Size2f(majorAxis, minorAxis), -angle));
+        ellipses.push_back(cv::RotatedRect(meansF(i), cv::Size2f(majorAxis, minorAxis), -angle));
     }
 
     return ellipses;
