@@ -5,9 +5,9 @@
 
 #include <opencv2/core.hpp>
 
-#include "../util.h"
 #include "observation_model.h"
 #include "process_model.h"
+#include "util.h"
 
 monoslam::filter::EKF::EKF(const std::shared_ptr<ProcessModel>& processModel,
                            const std::shared_ptr<ObservationModel>& observationModel)

@@ -12,7 +12,7 @@ AlignArrayOfStructures: Left
 InsertNewlineAtEOF: true
 KeepEmptyLines:
   AtStartOfBlock: false
-  # AtEndOfBlock: true  # Not until clang-format 22
+#   AtEndOfBlock: true  # Not yet available in clang-format 23.1.4
   AtEndOfFile: false
 WrapNamespaceBodyWithEmptyLines: Always
 AlignTrailingComments:
