@@ -271,6 +271,7 @@ printUsage(const char* execName)
               << "  -h, --help: Show this message\n";
 }
 
+// TODO: This can be reused in MonoSLAM initialization
 std::vector<cv::Point3f>
 build3DCoordinates(const cv::Size& patternSize, double squareSize)
 {

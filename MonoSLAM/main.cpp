@@ -7,7 +7,9 @@
 #include <string_view>
 
 #include <opencv2/core.hpp>
+#include <opencv2/geometry.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect.hpp>
 #include <opencv2/videoio.hpp>
 
 #include "camera.h"
@@ -15,6 +17,7 @@
 #include "filter/ekf.h"
 #include "filter/observation_model.h"
 #include "matcher.h"
+#include "quaternion.h"
 #include "system_observation_model.h"
 #include "system_process_model.h"
 
@@ -34,6 +37,15 @@ printUsage(const char* execName);
 
 bool
 readCameraFile(const std::string& filename, cv::Matx33d& K, cv::Vec<double, 5>& distCoeffs, cv::Size& frameSize);
+
+bool
+initSystem(const cv::Mat1b& frame,
+           const cv::Size& patternSize,
+           double squareSize,
+           const monoslam::CameraModel& camera,
+           cv::Mat1d& x,
+           cv::Mat1d& P,
+           std::vector<monoslam::Feature>& features);
 
 int
 main(int argc, char* argv[])
@@ -55,6 +67,8 @@ main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    const cv::Size patternSize(cols - 1, rows - 1);
+
     cv::Matx33d K;
     cv::Vec<double, 5> distCoeffs;
     cv::Size frameSize;
@@ -71,8 +85,6 @@ main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    const cv::Size patternSize(cols - 1, rows - 1);
-
     cv::Mat1d x;
     cv::Mat1d P;
 
@@ -82,6 +94,8 @@ main(int argc, char* argv[])
 
     cv::Mat3b frame;
 
+    const monoslam::CameraModel camera(K, distCoeffs, frameSize);
+
     do {
         if (!device.read(frame)) {
             std::cerr << "Could not read a camera frame\n";
@@ -90,16 +104,12 @@ main(int argc, char* argv[])
 
         t0 = Clock::now();
 
-        const bool ready = monoslam::initSystem(frame, patternSize, x, P, features);
-
-    } while (!ready);
+    } while (!initSystem(frame, patternSize, squareSize, camera, x, P, features));
 
     constexpr double linearAccStd = 50.0;   // Linear acceleration standard deviation, in cm / s²
     constexpr double angularAccStd = 1.57;  // Angular acceleration standard deviation, in rad / s²
 
     const auto processModel = std::make_shared<monoslam::SystemProcessModel>(linearAccStd, angularAccStd);
-
-    const monoslam::CameraModel camera(K, distCoeffs, frameSize);
 
     constexpr double pixelStd = 2.0;
 
@@ -253,6 +263,164 @@ readCameraFile(const std::string& filename, cv::Matx33d& K, cv::Vec<double, 5>& 
 
     K = cv::Matx33d(fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0);
     distCoeffs = cv::Vec<double, 5>(k1, k2, p1, p2, k3);
+
+    return true;
+}
+
+bool
+initSystem(const cv::Mat1b& frame,
+           const cv::Size& patternSize,
+           double squareSize,
+           const monoslam::CameraModel& camera,
+           cv::Mat1d& x,
+           cv::Mat1d& P,
+           std::vector<monoslam::Feature>& features)
+{
+    std::vector<cv::Point2f> points2D;
+
+    const bool patternFound = cv::findChessboardCorners(frame,
+                                                        patternSize,
+                                                        points2D,
+                                                        cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_NORMALIZE_IMAGE |
+                                                          cv::CALIB_CB_FILTER_QUADS | cv::CALIB_CB_FAST_CHECK);
+
+    if (patternFound) {
+        cv::cornerSubPix(frame, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(30, 0.1));
+
+    } else {
+        return false;
+    }
+
+    std::vector<cv::Point3f> points3D;
+    points3D.reserve(static_cast<std::size_t>(patternSize.width * patternSize.height));
+
+    for (int i = 0; i < patternSize.height; ++i) {
+        for (int j = 0; j < patternSize.width; ++j) {
+            points3D.emplace_back(static_cast<float>(squareSize * i), static_cast<float>(squareSize * j), 0.0f);
+        }
+    }
+
+    cv::Vec3d rotationVec, translationVec;
+
+    const bool poseFound = cv::solvePnP(
+      points3D, points2D, camera.K(), camera.distCoeffs(), rotationVec, translationVec, false, cv::SOLVEPNP_ITERATIVE);
+
+    if (!poseFound) {
+        return false;
+    }
+
+    cv::Matx33d R;
+    cv::Vec3d t;
+
+    // Convert to rotation R (from world to camera) and translation t (in world coordinates)
+    cv::Rodrigues(rotationVec, R);
+    t = -R.t() * translationVec;
+
+    // Compute the camera orientation quaternion
+    const cv::Vec4d q = monoslam::quaternion::conjugate(monoslam::quaternion::fromVector(rotationVec));
+
+    // ADD CAMERA //
+
+    // Update the camera state (zero linear and angular velocities)
+    x = cv::Mat1d::zeros(13 + 3 * 5, 1);
+
+    t.copyTo(x(cv::Rect(0, 0, 1, 3)));
+    q.copyTo(x(cv::Rect(0, 3, 1, 4)));
+
+    // Update the camera covariance
+    P = cv::Mat1d::zeros(13 + 3 * 5, 13 + 3 * 5);
+
+    P(0, 0) = 1.0;
+    P(1, 1) = 1.0;
+    P(2, 2) = 1.0;
+
+    P(3, 3) = 0.0;
+    P(4, 4) = 0.0;
+    P(5, 5) = 0.0;
+    P(6, 6) = 0.0;
+
+    P(7, 7) = 1.0;
+    P(8, 8) = 1.0;
+    P(9, 9) = 1.0;
+
+    P(10, 10) = 0.00762;
+    P(11, 11) = 0.00762;
+    P(12, 12) = 0.00762;
+
+    // ADD INITIAL FEATURES //
+
+    const size_t w = static_cast<size_t>(patternSize.width);
+    const size_t h = static_cast<size_t>(patternSize.height);
+
+    size_t idx = 0;
+
+    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+        return false;
+    }
+
+    x(13) = points3D[idx].x;
+    x(14) = points3D[idx].y;
+    x(15) = points3D[idx].z;
+
+    P(13, 13) = 1.0;
+    P(14, 14) = 1.0;
+    P(15, 15) = 1.0;
+
+    idx = w - 1;
+
+    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+        return false;
+    }
+
+    x(16) = points3D[idx].x;
+    x(17) = points3D[idx].y;
+    x(18) = points3D[idx].z;
+
+    P(16, 16) = 1.0;
+    P(17, 17) = 1.0;
+    P(18, 18) = 1.0;
+
+    idx = (h - 1) * w;
+
+    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+        return false;
+    }
+
+    x(19) = points3D[idx].x;
+    x(20) = points3D[idx].y;
+    x(21) = points3D[idx].z;
+
+    P(19, 19) = 1.0;
+    P(20, 20) = 1.0;
+    P(21, 21) = 1.0;
+
+    idx = w * h - 1;
+
+    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+        return false;
+    }
+
+    x(22) = points3D[idx].x;
+    x(23) = points3D[idx].y;
+    x(24) = points3D[idx].z;
+
+    P(22, 22) = 1.0;
+    P(23, 23) = 1.0;
+    P(24, 24) = 1.0;
+
+    idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
+
+    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+        return false;
+    }
+
+    x(25) = points3D[idx].x;
+    x(26) = points3D[idx].y;
+    x(27) = points3D[idx].z;
+
+    P(25, 25) = 1.0;
+    P(26, 26) = 1.0;
+    P(27, 27) = 1.0;
 
     return true;
 }
