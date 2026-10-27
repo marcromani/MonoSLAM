@@ -30,8 +30,13 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
     const bool fullWidth = p.active.empty();
 
     for (int i = 7; i < p.H.cols; i += 3) {
-        const size_t activeIdx = static_cast<size_t>((i - 7) / 3);             // Index in p.active
-        const size_t globalIdx = fullWidth ? activeIdx : p.active[activeIdx];  // Index in the state x
+        const size_t activeIdx = static_cast<size_t>(i);                           // Index in p.active
+        const size_t globalIdx = fullWidth ? activeIdx + 6 : p.active[activeIdx];  // Index in the state x
+        const size_t featureIdx = (globalIdx - 13) / 3;                            // Feature index
+
+        if (featureIdx >= ellipses.size()) {
+            continue;
+        }
 
         const cv::Vec3d position(
           x.rowRange(static_cast<int>(globalIdx), static_cast<int>(globalIdx) + 3));  // Current feature position
@@ -39,19 +44,19 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
         const cv::Vec3d t(x(0), x(1), x(2));                                            // Current camera position
         const cv::Matx33d R = quaternion::toMatrix(cv::Vec4d(x(3), x(4), x(5), x(6)));  // Current camera rotation
 
-        const Feature& feature = features[(globalIdx - 13) / 3];
+        const Feature& feature = features[featureIdx];
 
         int u, v;
         cv::Mat1b mask;
 
         const cv::Mat1b warped = geometry::warpPatch(
-          position, feature.normal, feature.frame, feature.roi, K, feature.R, feature.t, R, t, u, v, mask);
+          position, feature.normal, feature.frame, feature.roi, K, feature.R, feature.t, R.t(), t, u, v, mask);
 
         if (warped.empty()) {
             // TODO
 
         } else {
-            cv::Rect roi = util::getBoundingBox(ellipses[activeIdx], frame.size());
+            cv::Rect roi = util::getBoundingBox(ellipses[featureIdx], frame.size());
 
             const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, u, v, roi);
 
@@ -68,7 +73,8 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
 
                 z.emplace_back(px, py);
 
-                measured.push_back(2 * activeIdx);
+                measured.push_back(2 * (activeIdx - 7) / 3);
+                measured.push_back(2 * (activeIdx - 7) / 3 + 1);
 
             } else {
             }

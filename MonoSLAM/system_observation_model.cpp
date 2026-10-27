@@ -64,8 +64,8 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 
         // Set the indices for the ith feature
         p.active[7 + 3 * i] = visible[i];
-        p.active[8 + 3 * i] = visible[i + 1];
-        p.active[9 + 3 * i] = visible[i + 2];
+        p.active[8 + 3 * i] = visible[i] + 1;
+        p.active[9 + 3 * i] = visible[i] + 2;
     }
 
     return p;

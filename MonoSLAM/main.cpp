@@ -8,6 +8,7 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/geometry.hpp>
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect.hpp>
 #include <opencv2/videoio.hpp>
@@ -93,6 +94,8 @@ main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    cv::namedWindow("MonoSLAM", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
+
     cv::Mat1d x;
     cv::Mat1d P;
 
@@ -115,7 +118,15 @@ main(int argc, char* argv[])
 
         t0 = Clock::now();
 
+        cv::imshow("MonoSLAM", gray);
+
+        if (cv::waitKey(1) == 27) {
+            break;
+        }
+
     } while (!initSystem(gray, patternSize, squareSize, camera, x, P, features));
+
+    std::cout << "Initialization succeeded\n";
 
     constexpr double linearAccStd = 50.0;   // Linear acceleration standard deviation, in cm / s²
     constexpr double angularAccStd = 1.57;  // Angular acceleration standard deviation, in rad / s²
@@ -146,10 +157,29 @@ main(int argc, char* argv[])
         ekf.predict(dt);
 
         ekf.update([&](const cv::Mat1d& x_, const monoslam::filter::ObservationPrediction& p_, const cv::Mat1d& S_) {
-            return matcher.match(gray, features, K, x_, p_, S_);
+            const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
+
+            for (int i = 0; i < measurement.z.rows; i += 2) {
+                const double u = measurement.z(i);
+                const double v = measurement.z(i + 1);
+
+                const cv::Point center(static_cast<int>(u), static_cast<int>(v));
+
+                monoslam::util::drawCircle(gray, center, 10, cv::Scalar(0));
+            }
+
+            std::cout << measurement.z.rows << std::endl;
+
+            return measurement;
         });
 
         t0 = t1;
+
+        cv::imshow("MonoSLAM", gray);
+
+        if (cv::waitKey(1) == 27) {
+            break;
+        }
     }
 
     return EXIT_SUCCESS;

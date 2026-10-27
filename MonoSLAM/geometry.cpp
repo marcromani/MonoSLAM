@@ -1,5 +1,7 @@
 #include "geometry.h"
 
+#include <vector>
+
 #include <opencv2/geometry.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -49,7 +51,7 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
     cv::threshold(warped, mask, 0.0, 255.0, cv::THRESH_BINARY);
 
     // Use the binary mask to crop the warped image so that it only contains the patch
-    cv::Mat2i points;
+    std::vector<cv::Point2i> points;
     cv::findNonZero(mask, points);
     const cv::Rect patchBox = cv::boundingRect(points);
 
