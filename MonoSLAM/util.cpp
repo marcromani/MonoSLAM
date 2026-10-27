@@ -417,7 +417,7 @@ monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Poi
 }
 
 cv::Mat
-monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi)
+monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect roi)
 {
     // Compute the (inclusive) limits of the extended roi
     int x0 = roi.x - u;

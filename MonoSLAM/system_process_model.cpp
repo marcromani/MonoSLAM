@@ -288,7 +288,7 @@ monoslam::SystemProcessModel::computeW(double dt, const cv::Mat1d& F) const
     // Set the bottom identity matrix, J{v_new / big_v} and J{w_new / big_w}
 
     for (int i = 7; i < 13; ++i) {
-        W(i, i) = 1.0;
+        W(i, i - 7) = 1.0;
     }
 
     return cv::Mat1d(W);

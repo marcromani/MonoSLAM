@@ -160,8 +160,8 @@ main(int argc, char* argv[])
             const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
 
             for (int i = 0; i < measurement.z.rows; i += 2) {
-                const double u = measurement.z(i);
-                const double v = measurement.z(i + 1);
+                const double u = measurement.z(2 * i);
+                const double v = measurement.z(2 * i + 1);
 
                 const cv::Point center(static_cast<int>(u), static_cast<int>(v));
 

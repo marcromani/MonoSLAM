@@ -191,7 +191,7 @@ drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, 
  * roi      Original region of interest
  */
 cv::Mat
-computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect& roi);
+computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect roi);
 
 /*
  * 2D Gaussian probability density function.

@@ -73,8 +73,8 @@ monoslam::quaternion::toMatrixDerivatives(const cv::Vec4d& q,
     const double c = q[2];
     const double d = q[3];
 
-    R1 = cv::Matx33d(a, d, -c, -d, a, b, c, -b, a);
-    R2 = cv::Matx33d(b, c, d, c, -b, a, d, -a, -b);
-    R3 = cv::Matx33d(-c, b, -a, b, c, d, a, d, -c);
-    R4 = cv::Matx33d(-d, a, b, -a, -d, c, b, c, d);
+    R1 = 2.0 * cv::Matx33d(a, d, -c, -d, a, b, c, -b, a);
+    R2 = 2.0 * cv::Matx33d(b, c, d, c, -b, a, d, -a, -b);
+    R3 = 2.0 * cv::Matx33d(-c, b, -a, b, c, d, a, d, -c);
+    R4 = 2.0 * cv::Matx33d(-d, a, b, -a, -d, c, b, c, d);
 }

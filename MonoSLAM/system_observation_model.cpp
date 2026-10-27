@@ -55,8 +55,8 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
     for (int i = 0; i < m; ++i) {
         const Projection& proj = projections[i];
 
-        p.h(i) = proj.pixel[0];
-        p.h(i) = proj.pixel[1];
+        p.h(2 * i) = proj.pixel[0];
+        p.h(2 * i + 1) = proj.pixel[1];
 
         proj.Jr.copyTo(p.H(cv::Rect(0, 2 * i, 3, 2)));
         proj.Jq.copyTo(p.H(cv::Rect(3, 2 * i, 4, 2)));

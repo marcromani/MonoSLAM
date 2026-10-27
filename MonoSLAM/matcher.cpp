@@ -29,22 +29,20 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
 
     const bool fullWidth = p.active.empty();
 
-    for (int i = 7; i < p.H.cols; i += 3) {
-        const size_t activeIdx = static_cast<size_t>(i);                           // Index in p.active
-        const size_t globalIdx = fullWidth ? activeIdx + 6 : p.active[activeIdx];  // Index in the state x
-        const size_t featureIdx = (globalIdx - 13) / 3;                            // Feature index
+    for (size_t i = 7; i < static_cast<size_t>(p.H.cols); i += 3) {
+        const size_t h_idx = (i - 7) / 3;                      // Index of the feature as a row in h
+        const size_t x_idx = fullWidth ? i + 6 : p.active[i];  // Index of the feature as a row in x
+        const size_t f_idx = (x_idx - 13) / 3;                 // Index of the feature
 
-        if (featureIdx >= ellipses.size()) {
-            continue;
-        }
+        assert(h_idx < ellipses.size());
 
         const cv::Vec3d position(
-          x.rowRange(static_cast<int>(globalIdx), static_cast<int>(globalIdx) + 3));  // Current feature position
+          x.rowRange(static_cast<int>(x_idx), static_cast<int>(x_idx) + 3));  // Current feature position
 
         const cv::Vec3d t(x(0), x(1), x(2));                                            // Current camera position
         const cv::Matx33d R = quaternion::toMatrix(cv::Vec4d(x(3), x(4), x(5), x(6)));  // Current camera rotation
 
-        const Feature& feature = features[featureIdx];
+        const Feature& feature = features[f_idx];
 
         int u, v;
         cv::Mat1b mask;
@@ -56,7 +54,7 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
             // TODO
 
         } else {
-            cv::Rect roi = util::getBoundingBox(ellipses[featureIdx], frame.size());
+            cv::Rect roi = util::getBoundingBox(ellipses[h_idx], frame.size());
 
             const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, u, v, roi);
 
@@ -67,14 +65,14 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
             cv::Point location;
             cv::minMaxLoc(result, 0, &value, 0, &location);
 
-            if (value > 0.9) {
-                const int px = location.x + roi.x + u;
-                const int py = location.y + roi.y + v;
+            if (value > 0.97) {
+                const int px = location.x + roi.x;
+                const int py = location.y + roi.y;
 
                 z.emplace_back(px, py);
 
-                measured.push_back(2 * (activeIdx - 7) / 3);
-                measured.push_back(2 * (activeIdx - 7) / 3 + 1);
+                measured.push_back(2 * h_idx);
+                measured.push_back(2 * h_idx + 1);
 
             } else {
             }
@@ -90,8 +88,8 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
     measurement.z = cv::Mat1d(static_cast<int>(2 * z.size()), 1);
 
     for (int i = 0; i < measurement.z.rows / 2; i += 2) {
-        measurement.z(i) = z[static_cast<size_t>(i)].x;
-        measurement.z(i + 1) = z[static_cast<size_t>(i)].y;
+        measurement.z(2 * i) = z[static_cast<size_t>(i)].x;
+        measurement.z(2 * i + 1) = z[static_cast<size_t>(i)].y;
     }
 
     measurement.measured = measured;

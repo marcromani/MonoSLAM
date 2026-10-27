@@ -46,7 +46,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
             -pedantic-errors
             -Wconversion
             -Wsign-conversion
-            -Wshadow)
+            -Wshadow
+            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fsanitize=address,undefined>)
+
+    target_link_options(
+        monoslam
+        PRIVATE
+            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fsanitize=address,undefined>)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
