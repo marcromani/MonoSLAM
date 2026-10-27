@@ -75,13 +75,13 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
             const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, u, v, roi);
 
             cv::Mat1f result;
-            cv::matchTemplate(extendedFrame, warped, result, cv::TM_CCORR_NORMED, mask);
+            cv::matchTemplate(extendedFrame, warped, result, cv::TM_CCOEFF_NORMED, mask);
 
             double value;
             cv::Point location;
             cv::minMaxLoc(result, 0, &value, 0, &location);
 
-            if (value > 0.8) {
+            if (value > 0.9) {
                 const int px = location.x + roi.x;
                 const int py = location.y + roi.y;
 

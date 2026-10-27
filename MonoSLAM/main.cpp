@@ -114,6 +114,7 @@ main(int argc, char* argv[])
             continue;
         }
 
+        cv::resize(frame, frame, frameSize);
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
         t0 = Clock::now();
@@ -133,7 +134,7 @@ main(int argc, char* argv[])
 
     const auto processModel = std::make_shared<monoslam::SystemProcessModel>(linearAccStd, angularAccStd);
 
-    constexpr double pixelStd = 2.0;
+    constexpr double pixelStd = 3.0;
 
     const auto observationModel = std::make_shared<monoslam::SystemObservationModel>(camera, pixelStd);
 
@@ -148,6 +149,7 @@ main(int argc, char* argv[])
             continue;
         }
 
+        cv::resize(frame, frame, frameSize);
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
         Clock::time_point t1 = Clock::now();
@@ -369,14 +371,14 @@ initSystem(const cv::Mat1b& frame,
     // Update the camera covariance
     P = cv::Mat1d::zeros(13 + 3 * 5, 13 + 3 * 5);
 
-    P(0, 0) = 1.0;
-    P(1, 1) = 1.0;
-    P(2, 2) = 1.0;
+    P(0, 0) = 0.01;
+    P(1, 1) = 0.01;
+    P(2, 2) = 0.01;
 
-    P(3, 3) = 0.01;
-    P(4, 4) = 0.01;
-    P(5, 5) = 0.01;
-    P(6, 6) = 0.01;
+    P(3, 3) = 0.000001;
+    P(4, 4) = 0.000001;
+    P(5, 5) = 0.000001;
+    P(6, 6) = 0.000001;
 
     P(7, 7) = 1.0;
     P(8, 8) = 1.0;
@@ -403,9 +405,9 @@ initSystem(const cv::Mat1b& frame,
     x(14) = points3D[idx].y;
     x(15) = points3D[idx].z;
 
-    P(13, 13) = 1.0;
-    P(14, 14) = 1.0;
-    P(15, 15) = 1.0;
+    P(13, 13) = 0.01;
+    P(14, 14) = 0.01;
+    P(15, 15) = 0.01;
 
     idx = w - 1;
 
@@ -417,9 +419,9 @@ initSystem(const cv::Mat1b& frame,
     x(17) = points3D[idx].y;
     x(18) = points3D[idx].z;
 
-    P(16, 16) = 1.0;
-    P(17, 17) = 1.0;
-    P(18, 18) = 1.0;
+    P(16, 16) = 0.01;
+    P(17, 17) = 0.01;
+    P(18, 18) = 0.01;
 
     idx = (h - 1) * w;
 
@@ -431,9 +433,9 @@ initSystem(const cv::Mat1b& frame,
     x(20) = points3D[idx].y;
     x(21) = points3D[idx].z;
 
-    P(19, 19) = 1.0;
-    P(20, 20) = 1.0;
-    P(21, 21) = 1.0;
+    P(19, 19) = 0.01;
+    P(20, 20) = 0.01;
+    P(21, 21) = 0.01;
 
     idx = w * h - 1;
 
@@ -445,9 +447,9 @@ initSystem(const cv::Mat1b& frame,
     x(23) = points3D[idx].y;
     x(24) = points3D[idx].z;
 
-    P(22, 22) = 1.0;
-    P(23, 23) = 1.0;
-    P(24, 24) = 1.0;
+    P(22, 22) = 0.01;
+    P(23, 23) = 0.01;
+    P(24, 24) = 0.01;
 
     idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
 
@@ -459,9 +461,9 @@ initSystem(const cv::Mat1b& frame,
     x(26) = points3D[idx].y;
     x(27) = points3D[idx].z;
 
-    P(25, 25) = 1.0;
-    P(26, 26) = 1.0;
-    P(27, 27) = 1.0;
+    P(25, 25) = 0.01;
+    P(26, 26) = 0.01;
+    P(27, 27) = 0.01;
 
     return true;
 }
