@@ -209,7 +209,7 @@ try {
     fs << "p2" << distCoeffs[3];
     fs << "k3" << distCoeffs[4];
 
-    fs << "Image size" << frameSize;
+    fs << "Frame size" << frameSize;
 
     fs.release();
 

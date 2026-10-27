@@ -35,7 +35,7 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
                               cv::Mat1b& mask)
 {
     // Black background
-    cv::Mat1b black = cv::Mat1b::zeros(view1.rows, view1.cols);
+    cv::Mat1b black = cv::Mat1b::zeros(view1.size());
 
     // Copy the original patch into the black background
     view1(patch1).copyTo(black(patch1));
@@ -47,10 +47,14 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
     cv::Mat1b warped;
     cv::warpPerspective(black, warped, H, view1.size());
 
-    // Set every non-black pixel of the warped image to white
-    cv::threshold(warped, mask, 0.0, 255.0, cv::THRESH_BINARY);
+    // Mask of the original patch
+    cv::Mat1b shadow = cv::Mat1b::zeros(view1.size());
+    shadow(patch1).setTo(255);
 
-    // Use the binary mask to crop the warped image so that it only contains the patch
+    // Warped mask
+    cv::warpPerspective(shadow, mask, H, view1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0.0));
+
+    // Use the mask to crop the warped image so that it only contains the patch
     std::vector<cv::Point2i> points;
     cv::findNonZero(mask, points);
     const cv::Rect patchBox = cv::boundingRect(points);

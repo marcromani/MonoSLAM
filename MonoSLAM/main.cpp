@@ -160,8 +160,8 @@ main(int argc, char* argv[])
             const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
 
             for (int i = 0; i < measurement.z.rows; i += 2) {
-                const double u = measurement.z(2 * i);
-                const double v = measurement.z(2 * i + 1);
+                const double u = measurement.z(i);
+                const double v = measurement.z(i + 1);
 
                 const cv::Point center(static_cast<int>(u), static_cast<int>(v));
 
@@ -293,7 +293,7 @@ readCameraFile(const std::string& filename, cv::Matx33d& K, cv::Vec<double, 5>& 
     double k3;
     node >> k3;
 
-    node = fs["Image size"];
+    node = fs["Frame size"];
     CV_Assert(!node.empty());
 
     node >> frameSize;
@@ -373,10 +373,10 @@ initSystem(const cv::Mat1b& frame,
     P(1, 1) = 1.0;
     P(2, 2) = 1.0;
 
-    P(3, 3) = 0.0;
-    P(4, 4) = 0.0;
-    P(5, 5) = 0.0;
-    P(6, 6) = 0.0;
+    P(3, 3) = 0.01;
+    P(4, 4) = 0.01;
+    P(5, 5) = 0.01;
+    P(6, 6) = 0.01;
 
     P(7, 7) = 1.0;
     P(8, 8) = 1.0;

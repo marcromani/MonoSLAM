@@ -1,5 +1,7 @@
 #include "matcher.h"
 
+#include <iostream>
+
 #include <opencv2/imgproc.hpp>
 
 #include "filter/observation_model.h"
@@ -56,6 +58,20 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
         } else {
             cv::Rect roi = util::getBoundingBox(ellipses[h_idx], frame.size());
 
+            if (roi.empty()) {
+                const int idx = static_cast<int>(2 * h_idx);
+                const cv::Mat1d Si = S(cv::Rect(idx, idx, 2, 2));
+
+                std::cerr << "Empty matching ROI\n"
+                          << "Feature index: " << h_idx << '\n'
+                          << "Predicted measurement: " << p.h.rowRange(idx, idx + 2).t() << "Innovation covariance:\n"
+                          << Si << "Ellipse centre: " << ellipses[h_idx].center << '\n'
+                          << "Ellipse size: " << ellipses[h_idx].size << '\n'
+                          << "Frame size: " << frame.size() << '\n';
+
+                continue;
+            }
+
             const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, u, v, roi);
 
             cv::Mat1f result;
@@ -65,7 +81,7 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
             cv::Point location;
             cv::minMaxLoc(result, 0, &value, 0, &location);
 
-            if (value > 0.97) {
+            if (value > 0.8) {
                 const int px = location.x + roi.x;
                 const int py = location.y + roi.y;
 
@@ -73,6 +89,11 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
 
                 measured.push_back(2 * h_idx);
                 measured.push_back(2 * h_idx + 1);
+
+                std::cerr << "[match] feature " << f_idx << " predicted=(" << p.h(2 * static_cast<int>(h_idx)) << ','
+                          << p.h(2 * static_cast<int>(h_idx) + 1) << ')' << " best=(" << px << ',' << py << ')'
+                          << " score=" << value << " template=" << warped.size() << " search=" << extendedFrame.size()
+                          << " mask pixels=" << cv::countNonZero(mask) << '/' << mask.total() << " ROI=" << roi << '\n';
 
             } else {
             }
@@ -87,7 +108,7 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
 
     measurement.z = cv::Mat1d(static_cast<int>(2 * z.size()), 1);
 
-    for (int i = 0; i < measurement.z.rows / 2; i += 2) {
+    for (int i = 0; i < measurement.z.rows / 2; ++i) {
         measurement.z(2 * i) = z[static_cast<size_t>(i)].x;
         measurement.z(2 * i + 1) = z[static_cast<size_t>(i)].y;
     }
