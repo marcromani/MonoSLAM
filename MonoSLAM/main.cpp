@@ -20,6 +20,7 @@
 #include "quaternion.h"
 #include "system_observation_model.h"
 #include "system_process_model.h"
+#include "util.h"
 
 using Clock = std::chrono::steady_clock;
 
@@ -46,6 +47,13 @@ initSystem(const cv::Mat1b& frame,
            cv::Mat1d& x,
            cv::Mat1d& P,
            std::vector<monoslam::Feature>& features);
+
+bool
+addInitialFeature(const cv::Mat1b& frame,
+                  const cv::Point2f& point2D,
+                  const cv::Matx33d& R,
+                  const cv::Vec3d& t,
+                  std::vector<monoslam::Feature>& features);
 
 int
 main(int argc, char* argv[])
@@ -92,9 +100,10 @@ main(int argc, char* argv[])
 
     Clock::time_point t0;
 
-    cv::Mat3b frame;
-
     const monoslam::CameraModel camera(K, distCoeffs, frameSize);
+
+    cv::Mat3b frame;
+    cv::Mat1b gray;
 
     do {
         if (!device.read(frame)) {
@@ -102,9 +111,11 @@ main(int argc, char* argv[])
             continue;
         }
 
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+
         t0 = Clock::now();
 
-    } while (!initSystem(frame, patternSize, squareSize, camera, x, P, features));
+    } while (!initSystem(gray, patternSize, squareSize, camera, x, P, features));
 
     constexpr double linearAccStd = 50.0;   // Linear acceleration standard deviation, in cm / s²
     constexpr double angularAccStd = 1.57;  // Angular acceleration standard deviation, in rad / s²
@@ -120,8 +131,6 @@ main(int argc, char* argv[])
 
     monoslam::Matcher matcher;
 
-    cv::Mat1b gray;
-
     while (true) {
         if (!device.read(frame)) {
             std::cerr << "Could not read a camera frame\n";
@@ -136,8 +145,8 @@ main(int argc, char* argv[])
 
         ekf.predict(dt);
 
-        ekf.update([&](const cv::Mat1d& x, const monoslam::filter::ObservationPrediction& p, const cv::Mat1d& S) {
-            return matcher.match(gray, features, x, p, S);
+        ekf.update([&](const cv::Mat1d& x_, const monoslam::filter::ObservationPrediction& p_, const cv::Mat1d& S_) {
+            return matcher.match(gray, features, K, x_, p_, S_);
         });
 
         t0 = t1;
@@ -349,12 +358,14 @@ initSystem(const cv::Mat1b& frame,
 
     // ADD INITIAL FEATURES //
 
+    features.clear();
+
     const size_t w = static_cast<size_t>(patternSize.width);
     const size_t h = static_cast<size_t>(patternSize.height);
 
     size_t idx = 0;
 
-    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
         return false;
     }
 
@@ -368,7 +379,7 @@ initSystem(const cv::Mat1b& frame,
 
     idx = w - 1;
 
-    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
         return false;
     }
 
@@ -382,7 +393,7 @@ initSystem(const cv::Mat1b& frame,
 
     idx = (h - 1) * w;
 
-    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
         return false;
     }
 
@@ -396,7 +407,7 @@ initSystem(const cv::Mat1b& frame,
 
     idx = w * h - 1;
 
-    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
         return false;
     }
 
@@ -410,7 +421,7 @@ initSystem(const cv::Mat1b& frame,
 
     idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
 
-    if (!addInitialFeature(frame, points2D[idx], points3D[idx], R, t, features)) {
+    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
         return false;
     }
 
@@ -421,6 +432,31 @@ initSystem(const cv::Mat1b& frame,
     P(25, 25) = 1.0;
     P(26, 26) = 1.0;
     P(27, 27) = 1.0;
+
+    return true;
+}
+
+bool
+addInitialFeature(const cv::Mat1b& frame,
+                  const cv::Point2f& point2D,
+                  const cv::Matx33d& R,
+                  const cv::Vec3d& t,
+                  std::vector<monoslam::Feature>& features)
+{
+    const cv::Point pixel(static_cast<int>(point2D.x), static_cast<int>(point2D.y));
+    const cv::Rect roi = monoslam::util::buildSquare(pixel, 23);
+
+    const bool overflow = roi.x < 0 || roi.x + roi.width > frame.cols || roi.y < 0 || roi.y + roi.height > frame.rows;
+
+    // Check if the feature patch is outside the frame boundaries
+    if (overflow) {
+        return false;
+    }
+
+    const cv::Vec3d normal(0.0, 0.0, 1.0);
+
+    // Add the feature
+    features.emplace_back(frame, roi, normal, R, t);
 
     return true;
 }

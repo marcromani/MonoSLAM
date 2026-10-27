@@ -54,7 +54,7 @@ class Feature
      * initDirection     Unit vector from camera to feature, in world coordinates
      * initDepthRange    Interval for the uniformly distributed depth hypotheses
      */
-    Feature(const cv::Mat1b& image,
+    Feature(const cv::Mat1b& frame,
             const cv::Rect& roi,
             const cv::Matx33d& R,
             const cv::Vec3d& t,

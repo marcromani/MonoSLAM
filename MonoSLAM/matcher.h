@@ -17,6 +17,7 @@ class Matcher
 
     filter::Measurement match(const cv::Mat1b& frame,
                               const std::vector<Feature>& features,
+                              const cv::Matx33d& K,
                               const cv::Mat1d& x,
                               const filter::ObservationPrediction& p,
                               const cv::Mat1d& S);

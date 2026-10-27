@@ -12,6 +12,7 @@ monoslam::Matcher::Matcher() {}
 monoslam::filter::Measurement
 monoslam::Matcher::match(const cv::Mat1b& frame,
                          const std::vector<Feature>& features,
+                         const cv::Matx33d& K,
                          const cv::Mat1d& x,
                          const filter::ObservationPrediction& p,
                          const cv::Mat1d& S)
