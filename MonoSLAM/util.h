@@ -91,15 +91,15 @@ selectRowsCols(const cv::Mat& mat, const std::vector<size_t>& rows, const std::v
 /*
  * Returns the uncertainty ellipses where the predicted in-sight features should be found with
  * high probability. In particular, the ellipses are constructed so that they are n-sigma
- * confidence regions for a 2D Gaussian distribution. For instance, n = 2.146 corresponds to a
- * 0.9 confidence level.
+ * confidence regions for a 2D Gaussian distribution. For instance, n = 3.035 corresponds to a
+ * 0.99 confidence level.
  *
  * means        Pixel locations of the predicted in-sight features
  * S            Innovation covariance matrix of the predicted in-sight features
  * numSigmas    Number of standard deviations for the confidence region boundary
  */
 std::vector<cv::RotatedRect>
-computeEllipses(const cv::Mat2d& means, const cv::Mat1d& S, float numSigmas = 2.146f);
+computeEllipses(const cv::Mat2d& means, const cv::Mat1d& S, float numSigmas = 3.035f);
 
 /*
  * Returns the smallest straight rectangle which contains the given ellipse. The computed
@@ -191,7 +191,7 @@ drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, 
  * roi      Original region of interest
  */
 cv::Mat
-computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect roi);
+computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, double u, double v, cv::Rect& roi);
 
 /*
  * 2D Gaussian probability density function.

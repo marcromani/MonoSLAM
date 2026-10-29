@@ -6,6 +6,7 @@ add_executable(
     feature.cpp
     filter/ekf.cpp
     geometry.cpp
+    logging.h
     main.cpp
     matcher.cpp
     quaternion.cpp
@@ -29,7 +30,7 @@ target_include_directories(monoslam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 cmake_policy(PUSH)
 cmake_policy(SET CMP0146 OLD)
 
-find_package(OpenCV 5 REQUIRED COMPONENTS core calib highgui imgproc objdetect videoio)
+find_package(OpenCV 5 REQUIRED COMPONENTS core calib highgui imgproc objdetect videoio video)
 
 cmake_policy(POP)
 

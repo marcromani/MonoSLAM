@@ -60,8 +60,8 @@ warpPatch(const cv::Vec3d& p,
           const cv::Vec3d& t1,
           const cv::Matx33d& R2,
           const cv::Vec3d& t2,
-          int& u,
-          int& v,
+          double& u,
+          double& v,
           cv::Mat1b& mask);
 
 }

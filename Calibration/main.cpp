@@ -29,7 +29,7 @@ bool
 getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, double& tol, std::string& filename);
 
 void
-printUsage(const char* execName);
+printUsage(const char* execName, std::ostream& os);
 
 std::vector<cv::Point3f>
 build3DCoordinates(const cv::Size& patternSize, double squareSize);
@@ -40,7 +40,7 @@ try {
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if (arg == "-h" || arg == "--help") {
-            printUsage(argv[0]);
+            printUsage(argv[0], std::cout);
             return EXIT_SUCCESS;
         }
     }
@@ -51,7 +51,7 @@ try {
     std::string filename;
 
     if (!getOptions(argc, argv, rows, cols, squareSize, tol, filename)) {
-        printUsage(argv[0]);
+        printUsage(argv[0], std::cerr);
         return EXIT_FAILURE;
     }
 
@@ -194,7 +194,7 @@ try {
     cv::FileStorage fs(filename, cv::FileStorage::WRITE);
 
     if (!fs.isOpened()) {
-        std::cerr << "Could not open \"" << filename << "\": camera settings not saved\n";
+        std::cerr << "Could not open " << filename << ": camera settings not saved\n";
         return EXIT_FAILURE;
     }
 
@@ -261,14 +261,14 @@ getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, dou
 }
 
 void
-printUsage(const char* execName)
+printUsage(const char* execName, std::ostream& os)
 {
-    std::cerr << "Usage: " << execName << " rows cols square_size [tol] filename\n"
-              << "  rows, cols: Number of squares of the calibration pattern\n"
-              << "  square_size: Size of the square, in cm\n"
-              << "  tol: Per-view RMS rejection threshold (defaults to 1.5 pixels)\n"
-              << "  filename: Output name, \".json\" is appended\n"
-              << "  -h, --help: Show this message\n";
+    os << "Usage: " << execName << " rows cols square_size [tol] filename\n"
+       << "   rows, cols: Number of squares of the calibration pattern\n"
+       << "  square_size: Size of the square, in cm\n"
+       << "          tol: Per-view RMS rejection threshold (defaults to 1.5 pixels)\n"
+       << "     filename: Output name, \".json\" is appended\n"
+       << "   -h, --help: Show this message\n";
 }
 
 // TODO: This can be reused in MonoSLAM initialization

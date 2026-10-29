@@ -324,8 +324,10 @@ cv::Rect
 monoslam::util::getBoundingBox(const cv::RotatedRect& ellipse, const cv::Size& imageSize)
 {
     const double angle = ellipse.angle * numbers::DEG_TO_RAD;
+
     const double c = std::cos(angle);
     const double s = std::sin(angle);
+
     const double a = 0.5 * ellipse.size.width;
     const double b = 0.5 * ellipse.size.height;
 
@@ -417,17 +419,21 @@ monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Poi
 }
 
 cv::Mat
-monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, int u, int v, cv::Rect roi)
+monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, double u, double v, cv::Rect& roi)
 {
+    roi &= cv::Rect(0, 0, frame.cols, frame.rows);
+
+    if (roi.empty()) {
+        return {};
+    }
+
     // Compute the (inclusive) limits of the extended roi
-    int x0 = roi.x - u;
-    int y0 = roi.y - v;
-    int x1 = roi.x + roi.width + templ.cols - u - 2;
-    int y1 = roi.y + roi.height + templ.rows - v - 2;
+    int x0 = roi.x - static_cast<int>(std::floor(u));
+    int y0 = roi.y - static_cast<int>(std::floor(v));
+    int x1 = roi.x + roi.width + templ.cols - static_cast<int>(std::floor(u)) - 2;
+    int y1 = roi.y + roi.height + templ.rows - static_cast<int>(std::floor(v)) - 2;
 
-    // Ensure that the roi coordinates are inside the frame boundaries
-    // and compute how the image should be extended along its borders
-
+    // Make sure the roi coordinates are inside the frame boundaries and compute how the image should be extended
     int left = 0;
     int right = 0;
     int top = 0;

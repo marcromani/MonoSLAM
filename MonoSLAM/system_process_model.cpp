@@ -169,7 +169,9 @@ monoslam::SystemProcessModel::computeF(const cv::Mat1d& x, double dt) const
     const double w2 = x(11);
     const double w3 = x(12);
 
-    if (w1 == 0.0 && w2 == 0.0 && w3 == 0.0) {
+    const double norm2 = w1 * w1 + w2 * w2 + w3 * w3;
+
+    if (norm2 < 1e-12) {  // TODO: Global epsilon
         // Compute J{q(w*dt) / w_old}
 
         Q2 = cv::Matx43d::zeros();
@@ -221,7 +223,6 @@ monoslam::SystemProcessModel::computeF(const cv::Mat1d& x, double dt) const
         const double w22 = w2 * w2;
         const double w33 = w3 * w3;
 
-        const double norm2 = w11 + w22 + w33;
         const double norm = std::sqrt(norm2);
 
         const double c = std::cos(0.5 * dt * norm);
@@ -261,7 +262,7 @@ monoslam::SystemProcessModel::computeF(const cv::Mat1d& x, double dt) const
 
     // Set J{q_new / w_old}
 
-    F(cv::Rect(10, 3, 3, 4)) = cv::Mat1d(M, false);
+    cv::Mat1d(M, false).copyTo(F(cv::Rect(10, 3, 3, 4)));
 
     return F;
 }

@@ -1,5 +1,6 @@
+#include <algorithm>
 #include <charconv>
-#include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -17,13 +18,12 @@
 #include "feature.h"
 #include "filter/ekf.h"
 #include "filter/observation_model.h"
+#include "logging.h"
 #include "matcher.h"
 #include "quaternion.h"
 #include "system_observation_model.h"
 #include "system_process_model.h"
 #include "util.h"
-
-using Clock = std::chrono::steady_clock;
 
 bool
 parseInt(std::string_view text, int& value);
@@ -34,6 +34,7 @@ parsePositiveDouble(std::string_view text, double& value);
 bool
 getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, std::string& filename);
 
+template<monoslam::logging::LogLevel level>
 void
 printUsage(const char* execName);
 
@@ -62,7 +63,7 @@ main(int argc, char* argv[])
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if (arg == "-h" || arg == "--help") {
-            printUsage(argv[0]);
+            printUsage<monoslam::logging::LogLevel::INFO>(argv[0]);
             return EXIT_SUCCESS;
         }
     }
@@ -72,7 +73,7 @@ main(int argc, char* argv[])
     std::string filename;
 
     if (!getOptions(argc, argv, rows, cols, squareSize, filename)) {
-        printUsage(argv[0]);
+        printUsage<monoslam::logging::LogLevel::ERROR>(argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -83,16 +84,28 @@ main(int argc, char* argv[])
     cv::Size frameSize;
 
     if (!readCameraFile(filename, K, distCoeffs, frameSize)) {
-        std::cerr << "Could not open \"" << filename << "\": camera settings not loaded\n";
+        MONOSLAM_LOG(monoslam::logging::LogLevel::ERROR, "Could not open ", filename, '\n');
         return EXIT_FAILURE;
     }
 
     cv::VideoCapture device("/dev/video4");
 
     if (!device.isOpened()) {
-        std::cerr << "Could not open /dev/video4\n";
+        MONOSLAM_LOG(monoslam::logging::LogLevel::ERROR, "Could not open /dev/video4\n");
         return EXIT_FAILURE;
     }
+
+    const double FPS = device.get(cv::CAP_PROP_FPS);
+
+    MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG,
+                 " Camera reported FPS: ",
+                 FPS,
+                 '\n',
+                 "Camera reported size: ",
+                 device.get(cv::CAP_PROP_FRAME_WIDTH),
+                 'x',
+                 device.get(cv::CAP_PROP_FRAME_HEIGHT),
+                 '\n');
 
     cv::namedWindow("MonoSLAM", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
 
@@ -101,8 +114,6 @@ main(int argc, char* argv[])
 
     std::vector<monoslam::Feature> features;
 
-    Clock::time_point t0;
-
     const monoslam::CameraModel camera(K, distCoeffs, frameSize);
 
     cv::Mat3b frame;
@@ -110,14 +121,12 @@ main(int argc, char* argv[])
 
     do {
         if (!device.read(frame)) {
-            std::cerr << "Could not read a camera frame\n";
+            MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG, "Could not read a camera frame\n");
             continue;
         }
 
         cv::resize(frame, frame, frameSize);
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-
-        t0 = Clock::now();
 
         cv::imshow("MonoSLAM", gray);
 
@@ -127,9 +136,9 @@ main(int argc, char* argv[])
 
     } while (!initSystem(gray, patternSize, squareSize, camera, x, P, features));
 
-    std::cout << "Initialization succeeded\n";
+    MONOSLAM_LOG(monoslam::logging::LogLevel::INFO, "Initialization succeeded\n");
 
-    constexpr double linearAccStd = 50.0;   // Linear acceleration standard deviation, in cm / s²
+    constexpr double linearAccStd = 100.0;  // Linear acceleration standard deviation, in cm / s²
     constexpr double angularAccStd = 1.57;  // Angular acceleration standard deviation, in rad / s²
 
     const auto processModel = std::make_shared<monoslam::SystemProcessModel>(linearAccStd, angularAccStd);
@@ -145,18 +154,14 @@ main(int argc, char* argv[])
 
     while (true) {
         if (!device.read(frame)) {
-            std::cerr << "Could not read a camera frame\n";
+            MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG, "Could not read a camera frame\n");
             continue;
         }
 
         cv::resize(frame, frame, frameSize);
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
-        Clock::time_point t1 = Clock::now();
-
-        double dt = std::chrono::duration<double>(t1 - t0).count();
-
-        ekf.predict(dt);
+        ekf.predict(1.0 / FPS);
 
         ekf.update([&](const cv::Mat1d& x_, const monoslam::filter::ObservationPrediction& p_, const cv::Mat1d& S_) {
             const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
@@ -167,15 +172,11 @@ main(int argc, char* argv[])
 
                 const cv::Point center(static_cast<int>(u), static_cast<int>(v));
 
-                monoslam::util::drawCircle(gray, center, 10, cv::Scalar(0));
+                monoslam::util::drawCircle(gray, center, 11, cv::Scalar(0.0));
             }
-
-            std::cout << measurement.z.rows << std::endl;
 
             return measurement;
         });
-
-        t0 = t1;
 
         cv::imshow("MonoSLAM", gray);
 
@@ -222,14 +223,18 @@ getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, std
     return true;
 }
 
+template<monoslam::logging::LogLevel level>
 void
 printUsage(const char* execName)
 {
-    std::cerr << "Usage: " << execName << " rows cols square_size filename\n"
-              << "  rows, cols: Number of squares of the calibration pattern\n"
-              << "  square_size: Size of the square, in cm\n"
-              << "  filename: Camera intrinsics filename, \".json\" is appended\n"
-              << "  -h, --help: Show this message\n";
+    MONOSLAM_LOG(level,
+                 "Usage: ",
+                 execName,
+                 " rows cols square_size filename\n",
+                 "   rows, cols: Number of squares of the calibration pattern\n",
+                 "  square_size: Size of the square, in cm\n",
+                 "     filename: Camera intrinsics filename, \".json\" is appended\n",
+                 "   -h, --help: Show this message\n");
 }
 
 bool
@@ -326,7 +331,7 @@ initSystem(const cv::Mat1b& frame,
                                                           cv::CALIB_CB_FILTER_QUADS | cv::CALIB_CB_FAST_CHECK);
 
     if (patternFound) {
-        cv::cornerSubPix(frame, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(30, 0.1));
+        cv::cornerSubPix(frame, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(100, 0.1));
 
     } else {
         return false;
@@ -350,6 +355,30 @@ initSystem(const cv::Mat1b& frame,
         return false;
     }
 
+    cv::solvePnPRefineLM(
+      points3D, points2D, camera.K(), camera.distCoeffs(), rotationVec, translationVec, cv::TermCriteria(100, 1e-8));
+
+    std::vector<cv::Point2f> reprojected;
+    cv::projectPoints(points3D, rotationVec, translationVec, camera.K(), camera.distCoeffs(), reprojected);
+
+    double reprojectionRMS = 0.0;
+    double reprojectionMax = 0.0;
+
+    for (std::size_t i = 0; i < points2D.size(); ++i) {
+        const double error = cv::norm(points2D[i] - reprojected[i]);
+        reprojectionRMS += error * error;
+        reprojectionMax = std::max(reprojectionMax, error);
+    }
+
+    reprojectionRMS = std::sqrt(reprojectionRMS / static_cast<double>(points2D.size()));
+
+    MONOSLAM_LOG(monoslam::logging::LogLevel::INFO,
+                 "Initialization reprojection error: ",
+                 reprojectionRMS,
+                 " pixels (RMS), ",
+                 reprojectionMax,
+                 " pixels (max)\n");
+
     cv::Matx33d R;
     cv::Vec3d t;
 
@@ -371,22 +400,22 @@ initSystem(const cv::Mat1b& frame,
     // Update the camera covariance
     P = cv::Mat1d::zeros(13 + 3 * 5, 13 + 3 * 5);
 
-    P(0, 0) = 0.01;
-    P(1, 1) = 0.01;
-    P(2, 2) = 0.01;
+    P(0, 0) = 1.0;
+    P(1, 1) = 1.0;
+    P(2, 2) = 1.0;
 
-    P(3, 3) = 0.000001;
-    P(4, 4) = 0.000001;
-    P(5, 5) = 0.000001;
-    P(6, 6) = 0.000001;
+    P(3, 3) = 0.0;
+    P(4, 4) = 0.0;
+    P(5, 5) = 0.0;
+    P(6, 6) = 0.0;
 
     P(7, 7) = 1.0;
     P(8, 8) = 1.0;
     P(9, 9) = 1.0;
 
-    P(10, 10) = 0.00762;
-    P(11, 11) = 0.00762;
-    P(12, 12) = 0.00762;
+    P(10, 10) = 0.008;
+    P(11, 11) = 0.008;
+    P(12, 12) = 0.008;
 
     // ADD INITIAL FEATURES //
 
@@ -405,9 +434,9 @@ initSystem(const cv::Mat1b& frame,
     x(14) = points3D[idx].y;
     x(15) = points3D[idx].z;
 
-    P(13, 13) = 0.01;
-    P(14, 14) = 0.01;
-    P(15, 15) = 0.01;
+    P(13, 13) = 0.0;
+    P(14, 14) = 0.0;
+    P(15, 15) = 0.0;
 
     idx = w - 1;
 
@@ -419,9 +448,9 @@ initSystem(const cv::Mat1b& frame,
     x(17) = points3D[idx].y;
     x(18) = points3D[idx].z;
 
-    P(16, 16) = 0.01;
-    P(17, 17) = 0.01;
-    P(18, 18) = 0.01;
+    P(16, 16) = 0.0;
+    P(17, 17) = 0.0;
+    P(18, 18) = 0.0;
 
     idx = (h - 1) * w;
 
@@ -433,9 +462,9 @@ initSystem(const cv::Mat1b& frame,
     x(20) = points3D[idx].y;
     x(21) = points3D[idx].z;
 
-    P(19, 19) = 0.01;
-    P(20, 20) = 0.01;
-    P(21, 21) = 0.01;
+    P(19, 19) = 0.0;
+    P(20, 20) = 0.0;
+    P(21, 21) = 0.0;
 
     idx = w * h - 1;
 
@@ -447,9 +476,9 @@ initSystem(const cv::Mat1b& frame,
     x(23) = points3D[idx].y;
     x(24) = points3D[idx].z;
 
-    P(22, 22) = 0.01;
-    P(23, 23) = 0.01;
-    P(24, 24) = 0.01;
+    P(22, 22) = 0.0;
+    P(23, 23) = 0.0;
+    P(24, 24) = 0.0;
 
     idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
 
@@ -461,9 +490,9 @@ initSystem(const cv::Mat1b& frame,
     x(26) = points3D[idx].y;
     x(27) = points3D[idx].z;
 
-    P(25, 25) = 0.01;
-    P(26, 26) = 0.01;
-    P(27, 27) = 0.01;
+    P(25, 25) = 0.0;
+    P(26, 26) = 0.0;
+    P(27, 27) = 0.0;
 
     return true;
 }
@@ -475,19 +504,20 @@ addInitialFeature(const cv::Mat1b& frame,
                   const cv::Vec3d& t,
                   std::vector<monoslam::Feature>& features)
 {
-    const cv::Point pixel(static_cast<int>(point2D.x), static_cast<int>(point2D.y));
-    const cv::Rect roi = monoslam::util::buildSquare(pixel, 23);
+    const cv::Point pixel(static_cast<int>(std::round(point2D.x)), static_cast<int>(std::round(point2D.y)));
 
-    const bool overflow = roi.x < 0 || roi.x + roi.width > frame.cols || roi.y < 0 || roi.y + roi.height > frame.rows;
+    constexpr int patchSize = 23;
 
-    // Check if the feature patch is outside the frame boundaries
+    const cv::Rect roi = monoslam::util::buildSquare(pixel, patchSize);
+
+    const bool overflow = roi.x < 0 || roi.y < 0 || roi.x + roi.width > frame.cols || roi.y + roi.height > frame.rows;
+
     if (overflow) {
         return false;
     }
 
     const cv::Vec3d normal(0.0, 0.0, 1.0);
 
-    // Add the feature
     features.emplace_back(frame, roi, normal, R, t);
 
     return true;

@@ -30,46 +30,50 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
                               const cv::Vec3d& t1,
                               const cv::Matx33d& R2,
                               const cv::Vec3d& t2,
-                              int& u,
-                              int& v,
+                              double& u,
+                              double& v,
                               cv::Mat1b& mask)
 {
-    // Black background
-    cv::Mat1b black = cv::Mat1b::zeros(view1.size());
-
-    // Copy the original patch into the black background
-    view1(patch1).copyTo(black(patch1));
+    assert(0 <= patch1.x &&
+           0 <= patch1.y &&
+           patch1.x + patch1.width <= view1.cols &&
+           patch1.y + patch1.height <= view1.rows);
 
     // Compute the homography matrix between the first and second views
     const cv::Matx33d H = computeHomography(p, n, K, R1, t1, R2, t2);
 
     // Apply the homography
     cv::Mat1b warped;
-    cv::warpPerspective(black, warped, H, view1.size());
+    cv::warpPerspective(view1, warped, H, view1.size());
 
-    // Mask of the original patch
-    cv::Mat1b shadow = cv::Mat1b::zeros(view1.size());
-    shadow(patch1).setTo(255);
+    // Warp a solid white copy of the patch to build a shape mask
+    cv::Mat1b shape = cv::Mat1b::zeros(view1.size());
+    shape(patch1).setTo(255);
 
-    // Warped mask
-    cv::warpPerspective(shadow, mask, H, view1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0.0));
+    // Warp the shape mask
+    cv::warpPerspective(shape, mask, H, view1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0.0));
 
-    // Use the mask to crop the warped image so that it only contains the patch
+    // Compute the bounding box of the warped patch using the warped shape mask
     std::vector<cv::Point2i> points;
     cv::findNonZero(mask, points);
+
+    if (points.empty()) {
+        mask = {};
+        return {};
+    }
+
     const cv::Rect patchBox = cv::boundingRect(points);
 
-    // Compute the projection of the center of the patch
-    const int x = static_cast<int>(patch1.x + 0.5 * patch1.width);
-    const int y = static_cast<int>(patch1.y + 0.5 * patch1.height);
+    // Map the center of the patch to the new view
+    const double x = patch1.x + 0.5 * patch1.width;
+    const double y = patch1.y + 0.5 * patch1.height;
 
-    cv::Vec3d centerProj = H * cv::Vec3d(x, y, 1);
-    centerProj /= centerProj[2];
+    const cv::Vec3d center = H * cv::Vec3d(x, y, 1);
 
-    u = static_cast<int>(centerProj[0] - patchBox.x);
-    v = static_cast<int>(centerProj[1] - patchBox.y);
+    u = center[0] / center[2] - patchBox.x;
+    v = center[1] / center[2] - patchBox.y;
 
-    mask = mask(patchBox);  // TODO: Should clone? Otherwise mask -> mask(patchBox) and dangling pointer?
+    mask = mask(patchBox);
 
     return warped(patchBox);
 }
