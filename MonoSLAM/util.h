@@ -9,14 +9,15 @@ namespace monoslam::util {
 
 /*
  * Returns a square region of interest given its center pixel coordinates and size.
- * Note that only if size is an odd number will the square be truly centered at the
- * desired position.
+ * For integer pixel coordinates, note that only if size is an odd number will the
+ * square be truly centered at the desired position. Non-integer pixel coordinates
+ * have their values rounded to the nearest integer.
  *
  * center    Center of the square
  * size      Size of the square
  */
 cv::Rect
-buildSquare(const cv::Point& center, int size);
+buildSquare(const cv::Point2d& center, int size);
 
 /*
  * Removes the nth row and column of a square matrix. The matrix is not reduced
@@ -172,26 +173,33 @@ drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Point2d& position, 
 
 /*
  * Computes the image corresponding to a given region of interest of a frame, frame(roi),
- * and extends it so that the template's center pixel coordinates u, v are superimposed over
- * all of the image pixels of frame(roi), when cv::matchTemplate is called with it and the template.
- * The provided region of interest is also modified accordingly. The goal is to make cv::matchTemplate
- * return a matrix that has exactly the same size as roi, where each pixel in the result represents
- * the match score if the template were perfectly centered on that pixel. This function addresses
- * two issues: (1) The default computed image, frame(roi), may be smaller than the template, hence
- * cv::matchTemplate cannot be used. (2) Even if frame(roi) is at least as large as the template,
- * it might be necessary to test the template against all the pixel positions of the image,
- * the former being centered at a specific pixel location (u, v). This is not how cv::matchTemplate
- * operates (it shifts the template around the image but always keeps it within its bounds), so
- * the image must be correctly resized to achieve this behavior.
+ * and extends it so that the template's center pixel (u, v), when having integer values,
+ * is superimposed over all of the image pixels of frame(roi), when cv::matchTemplate is
+ * called with it and the template. The goal is to make cv::matchTemplate return a matrix
+ * that has exactly the same size as roi, where each pixel in the result represents the
+ * matching score if the template were perfectly centered on that pixel. This function
+ * addresses two issues: (1) The default computed image, frame(roi), may be smaller than
+ * the template, hence cv::matchTemplate cannot be used. (2) Even if frame(roi) is at least
+ * as large as the template, it might be necessary to test the template against all the pixel
+ * positions of the image, the former being centered at a specific pixel location (u, v).
+ * This is not how cv::matchTemplate operates (it shifts the template around the image but
+ * always keeps it within its bounds), so the image must be correctly resized to achieve
+ * the desired behavior.
  *
- * frame    Grayscale or color base image
- * templ    Grayscale or color template to match
- * u        First pixel coordinate of the patch matching center
- * v        Second pixel coordinate of the patch matching center
- * roi      Original region of interest
+ * frame     Grayscale or color base image
+ * templ     Grayscale or color template to match
+ * u         First pixel coordinate of the patch matching center
+ * v         Second pixel coordinate of the patch matching center
+ * roi       Original region of interest
+ * origin    The origin (top-left corner) of the returned image w.r.t. the source image
  */
 cv::Mat
-computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, double u, double v, cv::Rect& roi);
+computeMatchingImage(const cv::Mat& frame,
+                     const cv::Mat& templ,
+                     double u,
+                     double v,
+                     const cv::Rect& roi,
+                     cv::Point& origin);
 
 /*
  * 2D Gaussian probability density function.

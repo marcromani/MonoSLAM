@@ -35,33 +35,34 @@ computeHomography(const cv::Vec3d& p,
  * first view and s2 is the same patch as would be seen from the second view.
  * A pinhole camera model is assumed (i.e. zero distortion coefficients) so that
  * the computed map be a planar homography. This remains a good approximation
- * provided the planar patch is small or the lens distortion is low.
+ * provided the lens distortion is small.
  *
- * p         Point in the plane, in world coordinates
- * n         Plane normal, in world coordinates
- * view1     Original view
- * patch1    Original patch
- * K         Camera intrinsic matrix
- * R1        First pose rotation (world to camera)
- * t1        First pose translation, in world coordinates
- * R2        Second pose rotation (world to camera)
- * t2        Second pose translation, in world coordinates
- * u         First pixel coordinate of the projection of the original patch center
- * v         Second pixel coordinate of the projection of the original patch center
- * mask      Warped patch mask, it specifies the pixels that belong to the original patch
+ * p          Point in the plane, in world coordinates
+ * n          Plane normal, in world coordinates
+ * view1      Original view
+ * anchor1    Center of the patch
+ * patch1     Original patch
+ * K          Camera intrinsic matrix
+ * R1         First pose rotation (world to camera)
+ * t1         First pose translation, in world coordinates
+ * R2         Second pose rotation (world to camera)
+ * t2         Second pose translation, in world coordinates
+ * u          First pixel coordinate of the projection of the original patch center
+ * v          Second pixel coordinate of the projection of the original patch center
+ * mask       Warped patch mask, it specifies the pixels that belong to the original patch
  */
 cv::Mat1b
 warpPatch(const cv::Vec3d& p,
           const cv::Vec3d& n,
           const cv::Mat1b& view1,
+          const cv::Point2d& anchor1,
           const cv::Rect& patch1,
           const cv::Matx33d& K,
           const cv::Matx33d& R1,
           const cv::Vec3d& t1,
           const cv::Matx33d& R2,
           const cv::Vec3d& t2,
-          double& u,
-          double& v,
+          cv::Point2d& anchor2,
           cv::Mat1b& mask);
 
 }

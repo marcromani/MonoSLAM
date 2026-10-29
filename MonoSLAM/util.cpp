@@ -11,10 +11,10 @@
 #include "numbers.h"
 
 cv::Rect
-monoslam::util::buildSquare(const cv::Point& center, int size)
+monoslam::util::buildSquare(const cv::Point2d& center, int size)
 {
-    const int left = center.x - size / 2;
-    const int top = center.y - size / 2;
+    const int left = static_cast<int>(std::lround(center.x)) - size / 2;
+    const int top = static_cast<int>(std::lround(center.y)) - size / 2;
 
     return cv::Rect(left, top, size, size);
 }
@@ -419,19 +419,29 @@ monoslam::util::drawTemplate(cv::Mat& image, const cv::Mat& templ, const cv::Poi
 }
 
 cv::Mat
-monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ, double u, double v, cv::Rect& roi)
+monoslam::util::computeMatchingImage(const cv::Mat& frame,
+                                     const cv::Mat& templ,
+                                     double u,
+                                     double v,
+                                     const cv::Rect& roi,
+                                     cv::Point& origin)
 {
-    roi &= cv::Rect(0, 0, frame.cols, frame.rows);
+    cv::Rect extendedRoi = roi & cv::Rect(0, 0, frame.cols, frame.rows);
 
-    if (roi.empty()) {
+    if (extendedRoi.empty()) {
         return {};
     }
 
     // Compute the (inclusive) limits of the extended roi
-    int x0 = roi.x - static_cast<int>(std::floor(u));
-    int y0 = roi.y - static_cast<int>(std::floor(v));
-    int x1 = roi.x + roi.width + templ.cols - static_cast<int>(std::floor(u)) - 2;
-    int y1 = roi.y + roi.height + templ.rows - static_cast<int>(std::floor(v)) - 2;
+    int x0 = extendedRoi.x - static_cast<int>(std::floor(u));
+    int y0 = extendedRoi.y - static_cast<int>(std::floor(v));
+    int x1 = extendedRoi.x + extendedRoi.width + templ.cols - static_cast<int>(std::floor(u)) - 2;
+    int y1 = extendedRoi.y + extendedRoi.height + templ.rows - static_cast<int>(std::floor(v)) - 2;
+
+    assert(x0 < x1 && y0 < y1);
+
+    origin.x = x0;
+    origin.y = y0;
 
     // Make sure the roi coordinates are inside the frame boundaries and compute how the image should be extended
     int left = 0;
@@ -460,13 +470,13 @@ monoslam::util::computeMatchingImage(const cv::Mat& frame, const cv::Mat& templ,
     }
 
     // Update the region of interest
-    roi.x = x0;
-    roi.y = y0;
-    roi.width = x1 - x0 + 1;
-    roi.height = y1 - y0 + 1;
+    extendedRoi.x = x0;
+    extendedRoi.y = y0;
+    extendedRoi.width = x1 - x0 + 1;
+    extendedRoi.height = y1 - y0 + 1;
 
     // Get the image
-    cv::Mat image = frame(roi);
+    cv::Mat image = frame(extendedRoi);
 
     // Extend the image with black borders
     cv::copyMakeBorder(image, image, top, bottom, left, right, cv::BORDER_CONSTANT, cv::Scalar::all(0.0));

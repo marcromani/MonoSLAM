@@ -45,11 +45,21 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
 
         const Feature& feature = features[fIdx];
 
-        double u, v;
+        cv::Point2d center;
         cv::Mat1b mask;
 
-        const cv::Mat1b warped = geometry::warpPatch(
-          position, feature.normal, feature.frame, feature.roi, K, feature.R, feature.t, R.t(), t, u, v, mask);
+        const cv::Mat1b warped = geometry::warpPatch(position,
+                                                     feature.normal,
+                                                     feature.frame,
+                                                     feature.position,
+                                                     feature.roi,
+                                                     K,
+                                                     feature.R,
+                                                     feature.t,
+                                                     R.t(),
+                                                     t,
+                                                     center,
+                                                     mask);
 
         if (warped.empty()) {
             // TODO
@@ -66,7 +76,7 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
                 MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG,
                              "[Empty matching ROI]\n",
                              "          Feature index: ",
-                             hIdx,
+                             fIdx,
                              '\n',
                              "  Predicted measurement:",
                              p.h.rowRange(idx, idx + 2).t(),
@@ -84,7 +94,8 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
                 continue;
             }
 
-            const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, u, v, roi);
+            cv::Point origin;
+            const cv::Mat1b extendedFrame = util::computeMatchingImage(frame, warped, center.x, center.y, roi, origin);
 
             cv::Mat1f result;
             cv::matchTemplate(extendedFrame, warped, result, cv::TM_CCORR_NORMED, mask);
@@ -93,9 +104,9 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
             cv::Point location;
             cv::minMaxLoc(result, 0, &value, 0, &location);
 
-            if (location.x >= 0 && value > 0.9) {
-                const int px = location.x + roi.x;
-                const int py = location.y + roi.y;
+            if (value > 0.9) {
+                const double px = origin.x + location.x + center.x;
+                const double py = origin.y + location.y + center.y;
 
                 z.emplace_back(px, py);
 
@@ -107,9 +118,9 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
                              fIdx,
                              '\n',
                              "     Prediction: (",
-                             p.h(static_cast<int>(hIdx)),
+                             p.h(static_cast<int>(2 * hIdx)),
                              ", ",
-                             p.h(static_cast<int>(hIdx) + 1),
+                             p.h(static_cast<int>(2 * hIdx + 1)),
                              ")\n",
                              "     Matched at: (",
                              px,

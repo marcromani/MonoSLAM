@@ -377,7 +377,7 @@ initSystem(const cv::Mat1b& frame,
                  reprojectionRMS,
                  " pixels (RMS), ",
                  reprojectionMax,
-                 " pixels (max)\n");
+                 " pixels (Max)\n");
 
     cv::Matx33d R;
     cv::Vec3d t;
@@ -504,21 +504,20 @@ addInitialFeature(const cv::Mat1b& frame,
                   const cv::Vec3d& t,
                   std::vector<monoslam::Feature>& features)
 {
-    const cv::Point pixel(static_cast<int>(std::round(point2D.x)), static_cast<int>(std::round(point2D.y)));
-
     constexpr int patchSize = 23;
 
-    const cv::Rect roi = monoslam::util::buildSquare(pixel, patchSize);
+    const cv::Vec3d normal(0.0, 0.0, 1.0);
 
+    const monoslam::Feature feature(frame, point2D, patchSize, normal, R, t);
+
+    const cv::Rect& roi = feature.roi;
     const bool overflow = roi.x < 0 || roi.y < 0 || roi.x + roi.width > frame.cols || roi.y + roi.height > frame.rows;
 
     if (overflow) {
         return false;
     }
 
-    const cv::Vec3d normal(0.0, 0.0, 1.0);
-
-    features.emplace_back(frame, roi, normal, R, t);
+    features.push_back(feature);
 
     return true;
 }

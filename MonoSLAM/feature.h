@@ -8,8 +8,9 @@ namespace monoslam {
 class Feature
 {
   public:
-    cv::Mat1b frame;  // Original grayscale frame
-    cv::Rect roi;     // Patch region in the original frame
+    cv::Mat1b frame;       // Original grayscale frame
+    cv::Point2d position;  // Pixel position in the original frame
+    cv::Rect roi;          // Patch region in the original frame
 
     cv::Vec3d normal;  // Patch normal vector, in world coordinates
 
@@ -32,14 +33,16 @@ class Feature
      * during map initialization, when manually initialized features are added with zero
      * position uncertainty.
      *
-     * frame     Grayscale camera frame at the time the feature is initialized
-     * roi       Feature patch
-     * normal    Patch normal vector, in world coordinates
-     * R         Camera rotation at feature initialization (world to camera)
-     * t         Camera position at feature initialization, in world coordinates
+     * frame        Grayscale camera frame at the time the feature is initialized
+     * position     Feature pixel position
+     * patchSize    Feature patch size
+     * normal       Patch normal vector, in world coordinates
+     * R            Camera rotation at feature initialization (world to camera)
+     * t            Camera position at feature initialization, in world coordinates
      */
     Feature(const cv::Mat1b& frame,
-            const cv::Rect& roi,
+            const cv::Point2d& position,
+            int patchSize,
             const cv::Vec3d& normal,
             const cv::Matx33d& R,
             const cv::Vec3d& t);
@@ -48,14 +51,16 @@ class Feature
      * Constructor for a pre-initialized (candidate) feature.
      *
      * frame             Grayscale camera frame at the time the feature is initialized
-     * roi               Feature patch
+     * position          Feature pixel position
+     * patchSize         Feature patch size
      * R                 Camera rotation at feature initialization (world to camera)
      * t                 Camera position at feature initialization, in world coordinates
      * initDirection     Unit vector from camera to feature, in world coordinates
      * initDepthRange    Interval for the uniformly distributed depth hypotheses
      */
     Feature(const cv::Mat1b& frame,
-            const cv::Rect& roi,
+            const cv::Point2d& position,
+            int patchSize,
             const cv::Matx33d& R,
             const cv::Vec3d& t,
             const cv::Vec3d& initDirection,
