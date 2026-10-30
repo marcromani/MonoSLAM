@@ -10,6 +10,7 @@ add_executable(
     main.cpp
     matcher.cpp
     quaternion.cpp
+    sanitizer.cpp
     system_observation_model.cpp
     system_process_model.cpp
     util.cpp)
@@ -39,6 +40,11 @@ target_include_directories(monoslam SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(monoslam PRIVATE ${OpenCV_LIBS})
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    target_compile_definitions(
+        monoslam
+        PRIVATE
+            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:MONOSLAM_SANITIZERS_ENABLED>)
+
     target_compile_options(
         monoslam
         PRIVATE

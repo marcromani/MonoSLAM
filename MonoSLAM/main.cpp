@@ -131,7 +131,7 @@ main(int argc, char* argv[])
         cv::imshow("MonoSLAM", gray);
 
         if (cv::waitKey(1) == 27) {
-            break;
+            return EXIT_SUCCESS;
         }
 
     } while (!initSystem(gray, patternSize, squareSize, camera, x, P, features));
