@@ -108,6 +108,17 @@ monoslam::Matcher::match(const cv::Mat1b& frame,
                 const double px = origin.x + location.x + center.x;
                 const double py = origin.y + location.y + center.y;
 
+                const int idx = static_cast<int>(2 * hIdx);
+                const cv::Matx22d Si = S(cv::Rect(idx, idx, 2, 2));
+
+                const cv::Vec2d innovation = cv::Vec2d(px - p.h(idx), py - p.h(idx + 1));
+
+                const double NIS = innovation.dot(Si.inv() * innovation);
+
+                if (!(NIS < 9.210340371976184)) {
+                    continue;
+                }
+
                 z.emplace_back(px, py);
 
                 measured.push_back(2 * hIdx);

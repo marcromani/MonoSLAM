@@ -2,7 +2,6 @@
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -159,26 +158,40 @@ main(int argc, char* argv[])
         }
 
         cv::resize(frame, frame, frameSize);
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);  // The single-channel frame is used in the filter
+        cv::cvtColor(gray, frame, cv::COLOR_GRAY2BGR);  // The original frame is reused for the GUI
 
         ekf.predict(1.0 / FPS);
 
         ekf.update([&](const cv::Mat1d& x_, const monoslam::filter::ObservationPrediction& p_, const cv::Mat1d& S_) {
+            for (int i = 0; i < p_.h.rows; i += 2) {
+                const cv::Point position(static_cast<int>(p_.h(i)), static_cast<int>(p_.h(i + 1)));
+
+                const cv::Mat1d S = S_(cv::Rect(i, i, 2, 2));
+
+                // TODO: Ellipses should be passed to the matcher, since we already compute them here for the GUI
+                const std::vector<cv::RotatedRect> ellipses =
+                  monoslam::util::computeEllipses(p_.h.rowRange(i, i + 2).reshape(2, 1), S);
+
+                monoslam::util::drawCircle(frame, position, 3, cv::Scalar(0.0, 255.0, 0.0));
+                monoslam::util::drawEllipse(frame, ellipses[0], cv::Scalar(0.0, 255.0, 0.0));
+            }
+
             const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
 
             for (int i = 0; i < measurement.z.rows; i += 2) {
                 const double u = measurement.z(i);
                 const double v = measurement.z(i + 1);
 
-                const cv::Point center(static_cast<int>(u), static_cast<int>(v));
+                const cv::Point position(static_cast<int>(u), static_cast<int>(v));
 
-                monoslam::util::drawCircle(gray, center, 11, cv::Scalar(0.0));
+                monoslam::util::drawCircle(frame, position, 3, cv::Scalar(0.0, 0.0, 255.0));
             }
 
             return measurement;
         });
 
-        cv::imshow("MonoSLAM", gray);
+        cv::imshow("MonoSLAM", frame);
 
         if (cv::waitKey(1) == 27) {
             break;
@@ -400,18 +413,18 @@ initSystem(const cv::Mat1b& frame,
     // Update the camera covariance
     P = cv::Mat1d::zeros(13 + 3 * 5, 13 + 3 * 5);
 
-    P(0, 0) = 1.0;
-    P(1, 1) = 1.0;
-    P(2, 2) = 1.0;
+    P(0, 0) = 0.05;
+    P(1, 1) = 0.05;
+    P(2, 2) = 0.05;
 
-    P(3, 3) = 0.0;
-    P(4, 4) = 0.0;
-    P(5, 5) = 0.0;
-    P(6, 6) = 0.0;
+    P(3, 3) = 1e-4;
+    P(4, 4) = 1e-4;
+    P(5, 5) = 1e-4;
+    P(6, 6) = 1e-4;
 
-    P(7, 7) = 1.0;
-    P(8, 8) = 1.0;
-    P(9, 9) = 1.0;
+    P(7, 7) = 25.0;
+    P(8, 8) = 25.0;
+    P(9, 9) = 25.0;
 
     P(10, 10) = 0.008;
     P(11, 11) = 0.008;
@@ -434,9 +447,9 @@ initSystem(const cv::Mat1b& frame,
     x(14) = points3D[idx].y;
     x(15) = points3D[idx].z;
 
-    P(13, 13) = 0.0;
-    P(14, 14) = 0.0;
-    P(15, 15) = 0.0;
+    P(13, 13) = 0.05;
+    P(14, 14) = 0.05;
+    P(15, 15) = 0.05;
 
     idx = w - 1;
 
@@ -448,9 +461,9 @@ initSystem(const cv::Mat1b& frame,
     x(17) = points3D[idx].y;
     x(18) = points3D[idx].z;
 
-    P(16, 16) = 0.0;
-    P(17, 17) = 0.0;
-    P(18, 18) = 0.0;
+    P(16, 16) = 0.05;
+    P(17, 17) = 0.05;
+    P(18, 18) = 0.05;
 
     idx = (h - 1) * w;
 
@@ -462,9 +475,9 @@ initSystem(const cv::Mat1b& frame,
     x(20) = points3D[idx].y;
     x(21) = points3D[idx].z;
 
-    P(19, 19) = 0.0;
-    P(20, 20) = 0.0;
-    P(21, 21) = 0.0;
+    P(19, 19) = 0.05;
+    P(20, 20) = 0.05;
+    P(21, 21) = 0.05;
 
     idx = w * h - 1;
 
@@ -476,9 +489,9 @@ initSystem(const cv::Mat1b& frame,
     x(23) = points3D[idx].y;
     x(24) = points3D[idx].z;
 
-    P(22, 22) = 0.0;
-    P(23, 23) = 0.0;
-    P(24, 24) = 0.0;
+    P(22, 22) = 0.05;
+    P(23, 23) = 0.05;
+    P(24, 24) = 0.05;
 
     idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
 
@@ -490,9 +503,9 @@ initSystem(const cv::Mat1b& frame,
     x(26) = points3D[idx].y;
     x(27) = points3D[idx].z;
 
-    P(25, 25) = 0.0;
-    P(26, 26) = 0.0;
-    P(27, 27) = 0.0;
+    P(25, 25) = 0.05;
+    P(26, 26) = 0.05;
+    P(27, 27) = 0.05;
 
     return true;
 }
