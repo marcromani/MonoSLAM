@@ -1,7 +1,7 @@
 .cache/
 .vscode/
 build/
+build-debug/
+build-release/
 debug/
-*.o
-*.xml
-main
+*.log
