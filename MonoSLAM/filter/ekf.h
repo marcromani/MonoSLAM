@@ -25,6 +25,9 @@ class EKF
     void predict(double dt);
     void update(const MeasurementFunction& measure);
 
+    const cv::Mat1d& state() const { return x_; }
+    const cv::Mat1d& covariance() const { return P_; }
+
   private:
     std::shared_ptr<ProcessModel> processModel_;
     std::shared_ptr<ObservationModel> observationModel_;
