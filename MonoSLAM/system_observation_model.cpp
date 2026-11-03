@@ -3,6 +3,8 @@
 #include <numeric>
 #include <vector>
 
+#include "system_process_model.h"
+
 monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& cameraModel, double pixelStd)
   : cameraModel_(cameraModel)
   , pixelStd_(pixelStd)
@@ -12,7 +14,7 @@ monoslam::SystemObservationModel::SystemObservationModel(const CameraModel& came
 monoslam::filter::ObservationPrediction
 monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
 {
-    const size_t numFeatures = static_cast<size_t>((x.rows - 13) / 3);
+    const size_t numFeatures = static_cast<size_t>((x.rows - firstFeatureState) / 3);
 
     const cv::Vec3d r(x(0), x(1), x(2));
     const cv::Vec4d q(x(3), x(4), x(5), x(6));
@@ -26,7 +28,7 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
     visible.reserve(numFeatures);
 
     for (size_t i = 0; i < numFeatures; ++i) {
-        const int idx = static_cast<int>(13 + 3 * i);
+        const int idx = static_cast<int>(firstFeatureState + 3 * i);
 
         const cv::Vec3d point(x(idx), x(idx + 1), x(idx + 2));
 
@@ -43,14 +45,14 @@ monoslam::SystemObservationModel::eval(const cv::Mat1d& x) const
     filter::ObservationPrediction p;
 
     p.h = cv::Mat1d(2 * m, 1);
-    p.H = cv::Mat1d(2 * m, 7 + 3 * m);
+    p.H = cv::Mat1d::zeros(2 * m, cameraStateSize + 3 * m);
     p.R = pixelStd_ * pixelStd_ * cv::Mat1d::eye(2 * m, 2 * m);
 
     // There is a column in H for each component of a visible feature, plus r and q
-    p.active.resize(7 + 3 * m);
+    p.active.resize(cameraStateSize + 3 * m);
 
     // Set the indices for r and q
-    std::iota(p.active.begin(), p.active.begin() + 7, 0);
+    std::iota(p.active.begin(), p.active.begin() + cameraStateSize, 0);
 
     for (int i = 0; i < m; ++i) {
         const Projection& proj = projections[i];

@@ -26,7 +26,8 @@ multiply(const cv::Vec4d& q1, const cv::Vec4d& q2);
 /*
  * Computes a rotation matrix from a rotation quaternion. In particular, if the
  * quaternion is an orientation quaternion, which rotates a reference frame A to
- * its final pose B, the matrix is a change of basis from B to A.
+ * its final pose B, the matrix is a change of basis from B to A. The relation
+ * between rotation matrices and the Hamilton product is R(q1 x q2) = R(q1) * R(q2).
  */
 cv::Matx33d
 toMatrix(const cv::Vec4d&);
