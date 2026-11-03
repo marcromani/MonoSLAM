@@ -5,19 +5,43 @@
 #include <opencv2/geometry.hpp>
 #include <opencv2/imgproc.hpp>
 
-cv::Matx33d
+bool
 monoslam::geometry::computeHomography(const cv::Vec3d& p,
                                       const cv::Vec3d& n,
-                                      const cv::Matx33d& K,
+                                      const cv::Rect& region,
+                                      const CameraModel& camera,
                                       const cv::Matx33d& R1,
                                       const cv::Vec3d& t1,
                                       const cv::Matx33d& R2,
-                                      const cv::Vec3d& t2)
+                                      const cv::Vec3d& t2,
+                                      cv::Matx33d& H)
 {
-    const cv::Matx<double, 1, 1> m = n.t() * (p - t1);
-    const cv::Matx33d H = K * R2 * (m(0) * cv::Matx33d::eye() + (t1 - t2) * n.t()) * R1.t() * K.inv();
+    const cv::Point2f topLeft(region.tl());
+    const cv::Point2f bottomRight(region.br());
 
-    return H;
+    const std::vector<cv::Point2f> corners1 = {
+        topLeft, cv::Point2f(bottomRight.x, topLeft.y), bottomRight, cv::Point2f(topLeft.x, bottomRight.y)
+    };
+
+    const double m = n.dot(p - t1);
+
+    std::vector<cv::Point2f> corners2;
+
+    for (const cv::Point2f& corner : corners1) {
+        const cv::Vec3d direction = R1.t() * camera.unproject(corner);  // Ray through the corner, in world coordinates
+        const cv::Vec3d point = t1 + direction * (m / n.dot(direction));  // Intersection of the ray with the plane
+        const cv::Vec3d pointCamera = R2 * (point - t2);
+
+        if (pointCamera[2] <= 0.0) {
+            return false;
+        }
+
+        corners2.emplace_back(camera.distort(pointCamera[0] / pointCamera[2], pointCamera[1] / pointCamera[2]));
+    }
+
+    H = cv::Matx33d(cv::getPerspectiveTransform(corners1, corners2));
+
+    return true;
 }
 
 cv::Mat1b
@@ -26,7 +50,7 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
                               const cv::Mat1b& view1,
                               const cv::Point2d& anchor1,
                               const cv::Rect& patch1,
-                              const cv::Matx33d& K,
+                              const CameraModel& camera,
                               const cv::Matx33d& R1,
                               const cv::Vec3d& t1,
                               const cv::Matx33d& R2,
@@ -40,29 +64,47 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
            patch1.y + patch1.height <= view1.rows);
 
     // Compute the homography matrix between the first and second views
-    const cv::Matx33d H = computeHomography(p, n, K, R1, t1, R2, t2);
+    cv::Matx33d H;
 
-    // Apply the homography
-    cv::Mat1b warped;
-    cv::warpPerspective(view1, warped, H, view1.size());
-
-    // Warp a solid white copy of the patch to build a shape mask
-    cv::Mat1b shape = cv::Mat1b::zeros(view1.size());
-    shape(patch1).setTo(255);
-
-    // Warp the shape mask
-    cv::warpPerspective(shape, mask, H, view1.size());
-
-    // Compute the bounding box of the warped patch using the warped shape mask
-    std::vector<cv::Point2i> points;
-    cv::findNonZero(mask, points);
-
-    if (points.empty()) {
+    if (!computeHomography(p, n, patch1, camera, R1, t1, R2, t2, H)) {
         mask = {};
         return {};
     }
 
-    const cv::Rect patchBox = cv::boundingRect(points);
+    // Compute the bounding box of the warped patch to avoid warping the whole view
+    const cv::Point2f topLeft(patch1.tl());
+    const cv::Point2f bottomRight(patch1.br());
+
+    const std::vector<cv::Point2f> corners = {
+        topLeft, cv::Point2f(bottomRight.x, topLeft.y), bottomRight, cv::Point2f(topLeft.x, bottomRight.y)
+    };
+
+    std::vector<cv::Point2f> warpedCorners;
+    cv::perspectiveTransform(corners, warpedCorners, cv::Matx33f(H));
+
+    const cv::Rect patchBox = cv::boundingRect(warpedCorners) & cv::Rect(0, 0, view1.cols, view1.rows);
+
+    if (patchBox.empty()) {
+        mask = {};
+        return {};
+    }
+
+    // Apply the homography, with the origin of the output at the corner of the box
+    const cv::Matx33d toBox(1.0, 0.0, -patchBox.x, 0.0, 1.0, -patchBox.y, 0.0, 0.0, 1.0);
+
+    cv::Mat1b warped;
+    cv::warpPerspective(view1, warped, toBox * H, patchBox.size());
+
+    // Warp a solid white copy of the patch to build a shape mask
+    cv::Mat1b shape(view1.size(), 0);
+    shape(patch1).setTo(255);
+
+    cv::warpPerspective(shape, mask, toBox * H, patchBox.size());
+
+    if (cv::countNonZero(mask) == 0) {
+        mask = {};
+        return {};
+    }
 
     // Map the center of the patch to the new view
     const cv::Vec3d center = H * cv::Vec3d(anchor1.x, anchor1.y, 1);
@@ -70,7 +112,5 @@ monoslam::geometry::warpPatch(const cv::Vec3d& p,
     anchor2.x = center[0] / center[2] - patchBox.x;
     anchor2.y = center[1] / center[2] - patchBox.y;
 
-    mask = mask(patchBox);
-
-    return warped(patchBox);
+    return warped;
 }
