@@ -1,6 +1,9 @@
 #include "camera.h"
 
 #include <optional>
+#include <vector>
+
+#include <opencv2/geometry.hpp>
 
 #include "quaternion.h"
 
@@ -218,4 +221,15 @@ monoslam::CameraModel::distort(double x, double y) const
     const double tangentialY = 2.0 * p2 * x * y + p1 * (r2 + 2.0 * y * y);
 
     return cv::Point2d(fx * (x * radial + tangentialX) + cx, fy * (y * radial + tangentialY) + cy);
+}
+
+cv::Vec3d
+monoslam::CameraModel::unproject(const cv::Point2d& pixel) const
+{
+    const std::vector<cv::Point2d> distorted = { pixel };
+
+    std::vector<cv::Point2d> normalized;
+    cv::undistortPoints(distorted, normalized, K_, distCoeffs_);
+
+    return cv::Vec3d(normalized[0].x, normalized[0].y, 1.0);
 }

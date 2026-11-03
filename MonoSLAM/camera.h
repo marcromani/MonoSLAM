@@ -28,8 +28,9 @@ class CameraPose
 struct Projection
 {
     cv::Vec2d pixel;
+
     cv::Matx<double, 2, 3> Jr;  // Jacobian of the pixel w.r.t. the camera position
-    cv::Matx<double, 2, 4> Jq;  // Jacobian of the pixel w.r.t. the camera quaternion
+    cv::Matx<double, 2, 4> Jq;  // Jacobian of the pixel w.r.t. the camera orientation
     cv::Matx<double, 2, 3> Jp;  // Jacobian of the pixel w.r.t. the world point
 };
 
@@ -63,11 +64,22 @@ class CameraModel
      */
     std::optional<Projection> projectWithJacobian(const CameraPose& pose, const cv::Vec3d& p) const;
 
+    /*
+     * Checks whether the pixel is within the frame boundaries or not.
+     */
     bool inView(const cv::Point2d& pixel) const;
 
-  private:
+    /*
+     * Maps normalized camera coordinates to pixel coordinates, including lens distortion.
+     */
     cv::Point2d distort(double x, double y) const;
 
+    /*
+     * Returns the (unit) direction vector of the 3D ray associated to a pixel, in camera coordinates.
+     */
+    cv::Vec3d unproject(const cv::Point2d& pixel) const;
+
+  private:
     cv::Matx33d K_;                  // Intrinsic matrix
     cv::Vec<double, 5> distCoeffs_;  // Lens distortion coefficients
     cv::Size frameSize_;             // Frame size, in pixels (width, height)
