@@ -40,6 +40,7 @@ constexpr double minNovelty = 30.0;  // Bits, from the closest descriptor the fe
 
 constexpr int minAttempts = 10;     // Before a feature can be judged
 constexpr int recentAttempts = 20;  // It is judged on these last ones, at most
+constexpr int minFramesAway = 10;   // Out of view, after which a feature is judged anew
 constexpr double minMatchRatio = 0.5;
 
 /*
@@ -211,11 +212,28 @@ monoslam::Mapper::recordMatches(std::vector<Feature>& features,
                                 const std::vector<std::size_t>& searched,
                                 const std::vector<std::size_t>& used) const
 {
-    for (std::size_t i : searched) {
+    for (std::size_t i = 0; i < features.size(); ++i) {
+        Feature& feature = features[i];
+
+        if (std::find(searched.begin(), searched.end(), i) == searched.end()) {
+            feature.returning = ++feature.framesAway >= minFramesAway || feature.returning;
+            continue;
+        }
+
+        // A feature that comes back into view after a while is judged anew: the failures before it
+        // left, near the border or blurred by the turn, and the drift of the pose while it was away,
+        // say nothing about the feature itself
+        if (feature.framesAway >= minFramesAway) {
+            feature.matchingAttempts = 0;
+            feature.matchHistory = 0;
+        }
+
         const bool matched = std::find(used.begin(), used.end(), i) != used.end();
 
-        ++features[i].matchingAttempts;
-        features[i].matchHistory = (features[i].matchHistory << 1) | (matched ? 1u : 0u);
+        feature.framesAway = 0;
+        feature.returning = feature.returning && !matched;
+        ++feature.matchingAttempts;
+        feature.matchHistory = (feature.matchHistory << 1) | (matched ? 1u : 0u);
     }
 }
 

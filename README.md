@@ -38,12 +38,14 @@ only the filter's own models and covariances, and a match is not even proposed i
 its search region looks almost as alike.
 
 Every feature is searched in a small region around its seed, which follows the image motion of the
-corners around it: the motion model cannot predict a jerk of the hand, but the images can. New
+corners around it: the motion model cannot predict a jerk of the hand, but the images can. A
+feature that comes back into view after a while is searched around its prediction instead, within
+three standard deviations of its innovation, since its seed has drifted in the meantime. New
 features are added, as in
 [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf), where
 the frame has none, if they are textured enough to be located and do not look like anything around
 them, and removed when they stop being matched. Every feature keeps ORB descriptors of how it has
-looked, so that after a weak frame, or a long excursion, the map can be found anywhere in the frame
+looked, so that after a weak frame the map can be found anywhere in the frame
 ([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
 `docs/monoslam.tex` describes the system in detail: the frame loop, the derivation of the

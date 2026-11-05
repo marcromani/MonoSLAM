@@ -189,18 +189,6 @@ class EKF
                                     double maxNIS);
 
     /*
-     * Updates the state with features found by other means, those of them in view whose
-     * normalized innovation squared is below maxNIS, and returns those.
-     *
-     * features    Features found
-     * pixels      Where they were found
-     * maxNIS      Largest normalized innovation squared of a feature that is used
-     */
-    std::vector<std::size_t> measure(const std::vector<std::size_t>& features,
-                                     const std::vector<cv::Point2d>& pixels,
-                                     double maxNIS);
-
-    /*
      * Adds a feature first seen at a pixel. Its anchor and ray come from the camera pose and the
      * pixel, so they inherit the uncertainty of both, and its correlation with the camera. Its
      * inverse depth is a guess with a large uncertainty, which the following updates refine as the

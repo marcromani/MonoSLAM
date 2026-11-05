@@ -30,9 +30,10 @@ class FlowTracker
     /*
      * Moves the seeds to a new frame and returns them. Each seed follows an affine motion fitted
      * to the generic corners around it, which unlike a global model does not assume anything about
-     * the structure of the scene, only that close points in the image move alike. The flow of the
-     * feature itself takes over only if it agrees with that motion, since the flow of a single
-     * point is more precise, but it can also jump to a look-alike neighbor.
+     * the structure of the scene, only that close points in the image move alike. The corners are
+     * followed from frame to frame, and new ones are detected only when too many are lost. The
+     * flow of the feature itself takes over only if it agrees with that motion, since the flow of
+     * a single point is more precise, but it can also jump to a look-alike neighbor.
      *
      * frame    New frame
      */
@@ -55,8 +56,15 @@ class FlowTracker
     void remove(const std::vector<std::size_t>& features);
 
   private:
-    cv::Mat1b frame_;                 // Last frame
-    std::vector<cv::Point2f> seeds_;  // Feature positions in the last frame
+    /*
+     * Detects new generic corners in the last frame, away from those still tracked, up to the
+     * maximum number.
+     */
+    void detectCorners();
+
+    cv::Mat1b frame_;                   // Last frame
+    std::vector<cv::Point2f> seeds_;    // Feature positions in the last frame
+    std::vector<cv::Point2f> corners_;  // Generic corners in the last frame, whose motion the seeds follow
 };
 
 /*
@@ -85,8 +93,10 @@ findPatch(const cv::Mat1b& frame,
 
 /*
  * Searches the features in view in a frame, each in a small region around its seed, or around its
- * predicted measurement if its seed is not in view. Telling the right matches from the wrong ones
- * is left to the filter. Returns the pixel of each feature of o, if it was found.
+ * predicted measurement if its seed is not in view. A feature that comes back into view after a
+ * while is searched around its prediction instead, within three standard deviations of its
+ * innovation, as in the active search of Davison et al. Telling the right matches from the wrong
+ * ones is left to the filter. Returns the pixel of each feature of o, if it was found.
  *
  * frame       Current frame
  * features    All the features

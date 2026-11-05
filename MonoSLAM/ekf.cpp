@@ -522,45 +522,6 @@ monoslam::EKF::update(const Observation& o,
     return used;
 }
 
-std::vector<std::size_t>
-monoslam::EKF::measure(const std::vector<std::size_t>& features, const std::vector<cv::Point2d>& pixels, double maxNIS)
-{
-    const Observation o = observe();
-
-    std::vector<std::size_t> measured;
-    Indices rows;
-    cv::Mat1d z;
-
-    for (std::size_t k = 0; k < o.features.size(); ++k) {
-        const auto it = std::find(features.begin(), features.end(), o.features[k]);
-
-        if (it == features.end()) {
-            continue;
-        }
-
-        const cv::Point2d& pixel = pixels[static_cast<std::size_t>(it - features.begin())];
-
-        const Indices featureRows = { 2 * k, 2 * k + 1 };
-        const cv::Vec2d innovation(pixel.x - o.h(static_cast<int>(2 * k)), pixel.y - o.h(static_cast<int>(2 * k + 1)));
-        const cv::Matx22d S = selectRowsCols(o.S, featureRows, featureRows);
-
-        if (innovation.dot(S.inv() * innovation) > maxNIS) {
-            continue;
-        }
-
-        measured.push_back(o.features[k]);
-        rows.insert(rows.end(), featureRows.begin(), featureRows.end());
-        z.push_back(pixel.x);
-        z.push_back(pixel.y);
-    }
-
-    if (!measured.empty()) {
-        correct(o, rows, z);
-    }
-
-    return measured;
-}
-
 void
 monoslam::EKF::addFeature(const cv::Point2d& pixel, double inverseDepth, double inverseDepthStd)
 {

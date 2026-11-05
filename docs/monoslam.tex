@@ -47,10 +47,9 @@ Every frame goes through the same steps, in \texttt{main.cpp}:
         seeds of the features found to where they were found, and the others to the projections
         of their features.
   \item \texttt{ekf.observe()} predicts the features in view, \texttt{matchFeatures} searches each
-        of them around its seed (section~\ref{sec:search}), and \texttt{ekf.update} decides which
-        matches to use, with 1-point RANSAC (section~\ref{sec:update}).
-  \item Every ten frames, the features found by their appearance that the update did not use are
-        measured too, if their innovation is plausible.
+        of them around its seed, or around its prediction if it is coming back into view
+        (section~\ref{sec:search}), and \texttt{ekf.update} decides which matches to use, with
+        1-point RANSAC (section~\ref{sec:update}).
   \item If at least four features were used, the seeds move to the projections of their features
         from the updated state, and otherwise they keep following the images.
   \item Unless the frame is weak, the map is kept: the features rarely matched are removed, and new
@@ -58,7 +57,7 @@ Every frame goes through the same steps, in \texttt{main.cpp}:
 \end{enumerate}
 
 The information flows in a loop: images $\to$ seeds $\to$ where to search $\to$ matches $\to$
-filter $\to$ projections $\to$ seeds. The filter closes it in step 6, which keeps the seeds from
+filter $\to$ projections $\to$ seeds. The filter closes it in step 5, which keeps the seeds from
 drifting, and the flow keeps it going in step 2 when the filter cannot.
 
 \begin{center}
@@ -344,11 +343,14 @@ The motion model cannot predict that, but the images can.
 of the filter. It keeps the previous image and one seed per feature, including those out of view,
 and every frame (\texttt{predict}):
 \begin{enumerate}
-  \item \emph{Tracks generic corners.} Up to $150$ corners are detected in the previous image
-        (\texttt{goodFeaturesToTrack}, quality $0.01$, at least $8$~px apart), and tracked to the
-        new image and back with pyramidal Lucas--Kanade~\cite{lucas1981}, six levels and a $21 \times 21$ window. A
-        corner is kept if it comes back within $1$~px of where it started, which removes most of
-        those lost to blur or occlusion. The six levels matter: with four, the second sequence is
+  \item \emph{Tracks generic corners.} The corners of the previous image are tracked to the new
+        image and back with pyramidal Lucas--Kanade~\cite{lucas1981}, six levels and a
+        $21 \times 21$ window. A corner is kept if it comes back within $1$~px of where it started,
+        which removes most of those lost to blur or occlusion. The corners are kept from frame to
+        frame, and only when fewer than $120$ are left are new ones detected
+        (\texttt{goodFeaturesToTrack}, quality $0.01$, at least $8$~px apart from each other and
+        from those left), up to $150$. Detecting them anew in every frame made the flow $40\%$
+        slower. The six levels matter: with four, the second sequence is
         lost, because the flow cannot follow jumps of more than $100$~px.
   \item \emph{Moves each seed with its neighbors.} An affine map is fitted with RANSAC to the
         motion of the $24$ tracked corners closest to the seed (inliers within $3$~px), and the
@@ -387,6 +389,17 @@ away, scores within $0.05$ of it: two near-equal peaks are a repeated texture or
 one wins then depends on tiny differences of the prediction. The peak is refined to subpixel
 precision with a parabola. Every feature found is returned, and the update decides which ones to
 use.
+
+\paragraph{Returning features.}
+A feature that was out of view for at least $10$ frames is \emph{returning} until the update uses
+it again. Its seed is no use: the flow could not follow it while it was away. It is searched around
+its prediction instead, within $3\sigma$ of the larger standard deviation of its innovation, as in
+the active search of Davison et al.~\cite{davison2007}, but no closer than $\pm 15$~px and no
+wider than $\pm 40$~px. While the camera is away its uncertainty grows, and so does the region, so
+the feature is found even if the map has drifted. The cap keeps a large uncertainty from inviting
+look-alikes: without it, at $\pm 60$~px, some runs of sequence~6 end more than $3$~m off. Over
+$15$ runs, searching the returning features this way recovers $17$ of the $30$ kidnaps, against
+$9$ when they were searched around their seeds.
 
 \section{The update}
 \label{sec:update}
@@ -447,12 +460,6 @@ its curvature. Without a line search it oscillates on this cost, and with the si
 matches of the second stage, which do not fix a pose, it wanders through the directions they leave
 free. The curvature it would correct is small for the innovations that 1-point RANSAC lets through.
 
-\paragraph{Gated measurements.}
-\texttt{EKF::measure} updates the state with features found by other means, the global matching of
-section~\ref{sec:global}, those whose normalized innovation squared is below the same $9.21$.
-Without the gate, a few features found $100$~px away from their predictions can move the camera by
-meters: an EKF cannot absorb an innovation that large in one linearized step.
-
 \section{The map}
 \label{sec:map}
 
@@ -495,14 +502,16 @@ After $10$ attempts, a feature used in less than half of its last $20$ is remove
 the covariance (\texttt{EKF::removeFeatures}), the feature list and the tracker. Only the recent
 attempts count, so a feature that stops being matched goes within a third of a second, however
 long it was good. That removes occluded features, features on the edges of objects, whose patch
-changes with the point of view, and features on things that move.
+changes with the point of view, and features on things that move. A feature that comes back into
+view after at least $10$ frames away starts its count anew: its failures from before tell little
+about it now, and a single bad frame on its return would otherwise remove it.
 
 \section{Finding the map again}
 \label{sec:global}
 
-The seeds only look where the features were in the previous frame. When the camera gets somewhere
-else without the images following it (a kidnap, simulated by cutting frames out of a sequence), or
-comes back to a place after a long excursion, nothing near the seeds is right. As in Williams et
+The search only looks near the seeds and the predictions. When the camera gets somewhere else
+without the images or the filter following it (a kidnap, simulated by cutting frames out of a
+sequence), nothing there is right. As in Williams et
 al.~\cite{williams2011}, the features are then looked for by their appearance alone, anywhere in the frame
 (\texttt{matchGlobally}).
 
@@ -538,9 +547,6 @@ after a kidnap, 1-point RANSAC can keep finding a few look-alikes that agree wit
         moves the camera there, with no velocity and a large uncertainty ($2$~cm, $0.2$~rad,
         $30$~cm/s, $1.5$~rad/s) and no correlation with the features, and the seeds move to their
         projections.
-  \item While tracking, every ten frames, the features it finds that the update did not use are
-        measured with \texttt{EKF::measure}, through its gate: a tracked state is more likely to
-        be right than a few features found far from their predictions.
   \item While tracking is weak, the map is left alone: no feature is added, since it would be
         placed with a wrong pose, and no failed match is counted, since the failures are the
         state's.
@@ -567,14 +573,14 @@ chessboard corners, each with three negligible changes of the pixel noise.
 \begin{tabular}{ll}
   sequence & result over $15$ runs \\
   \hline
-  1 & median $1$ frame over $10$~px, at most $3$ \\
-  2 & median $5$ frames over $10$~px, at most $13$ \\
-  3 & median $3$ frames over $10$~px, lost in $2$ runs \\
-  5, back on the board at frames 336, 514, 566 & median errors $4.0$, $5.9$, $7.6$~cm \\
-  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $4$ and $5$ runs \\
-  6, board visits at frames 359, 411 & median errors $4.3$, $4.2$~cm \\
-  6, board visits at frames 771, 836 & median errors $18$, $25$~cm \\
-  6, board visits at frames 1413, 1549 & median errors $103$, $119$~cm \\
+  1 & median $0$ frames over $10$~px, at most $3$ \\
+  2 & median $4$ frames over $10$~px, at most $9$ \\
+  3 & median $3$ frames over $10$~px, lost in $3$ runs \\
+  5, back on the board at frames 336, 514, 566 & median errors $1.4$, $4.9$, $5.4$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $10$ and $7$ runs \\
+  6, board visits at frames 359, 411 & median errors $3.9$, $4.7$~cm \\
+  6, board visits at frames 771, 836 & median errors $18$, $29$~cm \\
+  6, board visits at frames 1413, 1549 & median errors $75$, $94$~cm \\
 \end{tabular}
 \end{center}
 
@@ -582,13 +588,15 @@ Sequences 1 to 3 look at the board most of the time. Sequences 4 and 5 leave it 
 initialization and track natural features, a table, a bowl, a cable, chairs, pictures, with $5$ to
 $20$ features per frame, and sequence~5 comes back to the board twice. Sequence~6 is a minute long and
 comes back three times: the map holds the first time, and drifts by tens of cm over the next
-excursions. The two losses of sequence~3 come from the same set of initial corners, where the
+excursions, up to a meter by the end. The three losses of sequence~3 come from the same set of initial corners, where the
 camera swings fast and the board is blurred.
 
 \paragraph{Speed.}
-On sequence~6, about $23$~ms per frame. The optical flow of the seeds takes about half of it, the
-global matching while lost and the patch search most of the rest, and the filter itself about $1$~ms.
-Most of the flow is the Lucas--Kanade tracking of the corners, whose cost is proportional to their
+On sequence~6, while tracking, $12$ to $25$~ms per frame, more as the map grows, of which the
+optical flow of the seeds takes about $7$~ms. After a weak frame the global matching runs, so while
+the camera is lost it runs every frame, and a frame takes $40$ to $70$~ms. Live, the frames that
+take longer than the frame period drop the next one, and the interval of the prediction doubles,
+and with it the uncertainty of the predictions. Most of the flow is the Lucas--Kanade tracking of the corners, whose cost is proportional to their
 number, the area of the window and the iterations: $150$ corners track as well as $300$, but a
 $15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in every run.
 
@@ -597,8 +605,8 @@ $15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in ev
   \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
         Keeping both predictions, its own flow and the motion of its neighbors, and letting the
         update choose would fix it.
-  \item Most kidnaps are not recovered, and why the descriptors fail on them is not established
-        yet.
+  \item About half the kidnaps are not recovered, and why the descriptors fail on them is not
+        established yet.
   \item Over long excursions the map drifts, as an EKF without loop closure does.
 \end{itemize}
 
@@ -613,14 +621,13 @@ $15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in ev
   prediction & \texttt{EKF::predict} \\
   $h$, $H$, $S$ & \texttt{EKF::observe} \\
   update, 1-point RANSAC & \texttt{EKF::update}, \texttt{EKF::correct} \\
-  gated update & \texttt{EKF::measure} \\
   state augmentation, removal & \texttt{EKF::addFeature}, \texttt{EKF::removeFeatures} \\
   relocalization of the camera & \texttt{EKF::resetCamera} \\
   inverse depth & \texttt{inverse\_depth::toCamera}, \texttt{fromPixel}, \texttt{fromPoint}, \texttt{toPoint} \\
   projection & \texttt{CameraModel::projectCameraPoint} \\
   initialization & \texttt{initializeFromPattern} \\
   seeds & \texttt{FlowTracker} in \texttt{tracking.h} \\
-  patch warping and search & \texttt{findPatch}, \texttt{matchFeatures} \\
+  patch search, returning features & \texttt{findPatch}, \texttt{matchFeatures} \\
   adding, removing features & \texttt{Mapper::addFeatures}, \texttt{Mapper::removeUnreliable} \\
   descriptors & \texttt{describe}, \texttt{Mapper::recordAppearance} \\
   global matching & \texttt{matchGlobally} in \texttt{relocalization.h} \\

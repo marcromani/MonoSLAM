@@ -12,7 +12,8 @@
 namespace {
 
 // Seeds
-constexpr int maxCorners = 150;  // Generic corners whose motion the seeds follow
+constexpr int maxCorners = 150;                 // Generic corners whose motion the seeds follow
+constexpr std::size_t minTrackedCorners = 120;  // New ones are only detected when fewer are tracked
 constexpr double cornerQuality = 0.01;
 constexpr double minCornerDistance = 8.0;  // Pixels
 constexpr std::size_t numNeighbors = 24;   // Corners that move a seed
@@ -27,7 +28,9 @@ constexpr double motionInlierThreshold = 3.0;    // Pixels
 constexpr double maxFlowDisagreement = 6.0;      // Pixels
 
 // Patch search
-constexpr int searchRadius = 15;  // Around the seeds, in pixels
+constexpr int searchRadius = 15;         // Around the seeds, in pixels
+constexpr double returningSigmas = 3.0;  // Of the innovation, around the prediction of a returning feature
+constexpr int maxReturningRadius = 40;   // Pixels, so that a large uncertainty does not invite look-alikes
 constexpr int minPatchPixels = 25;
 constexpr double minScore = 0.6;     // Of the correlation
 constexpr double minPeakGap = 0.05;  // Between the best peak and any other, of the correlation
@@ -187,26 +190,28 @@ monoslam::FlowTracker::FlowTracker(const cv::Mat1b& frame, const std::vector<cv:
   : frame_(frame.clone())
   , seeds_(positions)
 {
+    detectCorners();
 }
 
 std::vector<cv::Point2f>&
 monoslam::FlowTracker::predict(const cv::Mat1b& frame)
 {
-    // The generic corners of the last frame that the flow follows forwards and backwards alike
-    std::vector<cv::Point2f> corners, from, to;
-    cv::goodFeaturesToTrack(frame_, corners, maxCorners, cornerQuality, minCornerDistance);
+    // The generic corners that the flow follows forwards and backwards alike
+    std::vector<cv::Point2f> from, to;
 
-    if (!corners.empty()) {
+    if (!corners_.empty()) {
         std::vector<cv::Point2f> forward, backward;
         std::vector<uchar> forwardStatus, backwardStatus;
         std::vector<float> error;
 
-        cv::calcOpticalFlowPyrLK(frame_, frame, corners, forward, forwardStatus, error, cornerWindow, pyramidLevels);
+        cv::calcOpticalFlowPyrLK(frame_, frame, corners_, forward, forwardStatus, error, cornerWindow, pyramidLevels);
         cv::calcOpticalFlowPyrLK(frame, frame_, forward, backward, backwardStatus, error, cornerWindow, pyramidLevels);
 
-        for (std::size_t i = 0; i < corners.size(); ++i) {
-            if (forwardStatus[i] && backwardStatus[i] && cv::norm(corners[i] - backward[i]) < maxForwardBackwardError) {
-                from.push_back(corners[i]);
+        for (std::size_t i = 0; i < corners_.size(); ++i) {
+            if (forwardStatus[i] &&
+                backwardStatus[i] &&
+                cv::norm(corners_[i] - backward[i]) < maxForwardBackwardError) {
+                from.push_back(corners_[i]);
                 to.push_back(forward[i]);
             }
         }
@@ -250,7 +255,33 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
     seeds_ = moved;
     frame_ = frame.clone();
 
+    // The corners followed are kept for the next frame, and replaced only when too many are lost
+    corners_ = to;
+
+    if (corners_.size() < minTrackedCorners) {
+        detectCorners();
+    }
+
     return seeds_;
+}
+
+void
+monoslam::FlowTracker::detectCorners()
+{
+    // Away from the corners still tracked, so that they are not detected twice
+    cv::Mat1b mask(frame_.size(), 255);
+
+    for (const cv::Point2f& corner : corners_) {
+        cv::circle(mask, corner, static_cast<int>(minCornerDistance), cv::Scalar(0), cv::FILLED);
+    }
+
+    std::vector<cv::Point2f> corners;
+    const int missing = maxCorners - static_cast<int>(corners_.size());
+
+    if (missing > 0) {
+        cv::goodFeaturesToTrack(frame_, corners, missing, cornerQuality, minCornerDistance, mask);
+        corners_.insert(corners_.end(), corners.begin(), corners.end());
+    }
 }
 
 void
@@ -374,10 +405,23 @@ monoslam::matchFeatures(const cv::Mat1b& frame,
     for (std::size_t k = 0; k < o.features.size(); ++k) {
         const std::size_t i = o.features[k];
 
-        // Without a seed in view, the prediction is the best guess
         const int row = static_cast<int>(2 * k);
-        const cv::Point2d center =
-          camera.inView(seeds[i]) ? cv::Point2d(seeds[i]) : cv::Point2d(o.h(row), o.h(row + 1));
+        const cv::Point2d prediction(o.h(row), o.h(row + 1));
+
+        // A returning feature has no seed worth the name: the flow could not follow it while it was
+        // away. Where it is comes from the filter alone, within the uncertainty of its prediction,
+        // which grew with the drift of the camera while it was away
+        if (features[i].returning) {
+            const double sigma = std::sqrt(std::max(o.S(row, row), o.S(row + 1, row + 1)));
+            const int radius =
+              std::clamp(static_cast<int>(std::ceil(returningSigmas * sigma)), searchRadius, maxReturningRadius);
+
+            matches.push_back(findPatch(frame, features[i], featurePosition(x, i), camera, pose, prediction, radius));
+            continue;
+        }
+
+        // Without a seed in view, the prediction is the best guess
+        const cv::Point2d center = camera.inView(seeds[i]) ? cv::Point2d(seeds[i]) : prediction;
 
         matches.push_back(findPatch(frame, features[i], featurePosition(x, i), camera, pose, center, searchRadius));
     }

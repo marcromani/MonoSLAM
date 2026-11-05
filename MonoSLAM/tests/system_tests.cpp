@@ -376,7 +376,8 @@ runSyntheticSequence(const cv::Vec3d& point, double inverseDepth, cv::Mat1d& x, 
 
     for (int k = 1; k <= 60; ++k) {
         ekf.predict(dt);
-        ekf.measure({ 0 }, { project(velocity * dt * k) }, std::numeric_limits<double>::infinity());
+        constexpr double infinity = std::numeric_limits<double>::infinity();
+        ekf.update(ekf.observe(), { project(velocity * dt * k) }, infinity, infinity);
     }
 
     x = ekf.state().clone();

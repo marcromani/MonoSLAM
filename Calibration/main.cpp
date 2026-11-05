@@ -97,8 +97,7 @@ try {
 
     std::cout << "Press Escape to finish capturing views\n";
 
-    // The camera on the left, and the last view captured on the right, in gray with the pattern
-    // found in color
+    // The camera on the left, and the last view captured on the right, in gray with the pattern found in color
     cv::Mat3b display(frameSize.height, 2 * frameSize.width, cv::Vec3b::zeros());
     cv::Mat3b live = display(cv::Rect(0, 0, frameSize.width, frameSize.height));
     cv::Mat3b captured = display(cv::Rect(frameSize.width, 0, frameSize.width, frameSize.height));

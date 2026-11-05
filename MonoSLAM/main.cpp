@@ -6,11 +6,11 @@
  *      seed, with the optical flow (tracking.h).
  *   2. After a weak frame, look for the map anywhere in the frame by its appearance, and move the
  *      camera where it says (relocalization.h).
- *   3. Search the features in view around their seeds, and update the filter with the matches that
- *      1-point RANSAC accepts (tracking.h, ekf.h).
- *   4. Every few frames, look for the features the seeds cannot reach, after a long excursion.
- *   5. Let the seeds follow the updated state.
- *   6. Keep the map: remove the features that are rarely matched, and add new ones where the frame
+ *   3. Search the features in view around their seeds, and those the camera comes back to around
+ *      their prediction, and update the filter with the matches that 1-point RANSAC accepts
+ *      (tracking.h, ekf.h).
+ *   4. Let the seeds follow the updated state.
+ *   5. Keep the map: remove the features that are rarely matched, and add new ones where the frame
  *      has none (mapper.h).
  */
 
@@ -58,8 +58,7 @@ constexpr double pixelStd = 3.0;              // Standard deviation of a pixel m
 constexpr double maxInlierDistance = 6.0;     // Pixels, for 1-point RANSAC
 constexpr double maxNIS = 9.210340371976184;  // Chi-squared, 2 degrees of freedom, 99%
 
-constexpr std::size_t minConstrained = 4;       // Measurements needed to fix a pose beyond doubt
-constexpr std::size_t globalSearchPeriod = 10;  // Frames between searches of the map by appearance
+constexpr std::size_t minConstrained = 4;  // Measurements needed to fix a pose beyond doubt
 
 struct Options
 {
@@ -95,8 +94,9 @@ std::optional<Options>
 parseOptions(int argc, char* argv[]);
 
 /*
- * Draws the features whose matches the filter used: the predicted measurement (green) with the 99%
- * ellipse of its innovation covariance, the seed (blue), and the match (red).
+ * Draws the features whose matches the filter used: the predicted measurement (cyan) with the 99%
+ * ellipse of its innovation covariance, the seed (magenta), the match (amber), and the innovation
+ * from the prediction to the match (white).
  *
  * image      Image to draw on
  * o          Features in view, and their predicted measurements
@@ -245,8 +245,8 @@ main(int argc, char* argv[])
             }
         }
 
-        // 3. Search the features in view around their seeds, and let the filter decide which
-        //    matches to use
+        // 3. Search the features in view around their seeds, and those the camera comes back to
+        //    around their prediction, and let the filter decide which matches to use
         const monoslam::Observation observation = ekf.observe();
         const std::vector<std::size_t>& searched = observation.features;
 
@@ -257,29 +257,9 @@ main(int argc, char* argv[])
 
         drawUsedMatches(frame, observation, seeds, matches, used);
 
-        // 4. After a long excursion, the features the camera comes back to may be too far from their
-        //    seeds, but not from their descriptors. While tracking, they are ordinary measurements,
-        //    gated by their innovation as the rescued matches are
-        if (!weak && index % globalSearchPeriod == 0) {
-            if (const auto found = monoslam::matchGlobally(gray, features, camera, ekf)) {
-                std::vector<std::size_t> refound;
-                std::vector<cv::Point2d> pixels;
-
-                for (std::size_t k = 0; k < found->features.size(); ++k) {
-                    if (std::find(used.begin(), used.end(), found->features[k]) == used.end()) {
-                        refound.push_back(found->features[k]);
-                        pixels.push_back(found->pixels[k]);
-                    }
-                }
-
-                refound = ekf.measure(refound, pixels, maxNIS);
-                used.insert(used.end(), refound.begin(), refound.end());
-            }
-        }
-
         const std::size_t numMeasured = used.size();
 
-        // 5. The seeds follow the state if it is well constrained, and the images otherwise
+        // 4. The seeds follow the state if it is well constrained, and the images otherwise
         const std::vector<cv::Point2f> projections = ekf.project(seeds);
 
         if (numMeasured >= minConstrained) {
@@ -290,7 +270,7 @@ main(int argc, char* argv[])
             stream.write(index, ekf, features, searched, used);
         }
 
-        // 6. Keep the map: remove the features rarely matched, and add new ones where too few are in
+        // 5. Keep the map: remove the features rarely matched, and add new ones where too few are in
         //    view. Not while tracking is weak, though: the state may be wrong, and then the features
         //    would be blamed for it, and the new ones placed where they are not
         weak = numMeasured < minConstrained || 2 * numMeasured < searched.size();
@@ -402,8 +382,23 @@ drawUsedMatches(cv::Mat3b& image,
                 const std::vector<std::optional<cv::Point2d>>& matches,
                 const std::vector<std::size_t>& used)
 {
-    const cv::Scalar green(0.0, 255.0, 0.0);
+    const cv::Scalar cyan(230.0, 200.0, 60.0);  // BGR
+    const cv::Scalar amber(0.0, 170.0, 255.0);
+    const cv::Scalar magenta(200.0, 60.0, 230.0);
+    const cv::Scalar dark(30.0, 30.0, 30.0);
+
     constexpr double numSigmas = 3.035;  // The 99% region of a 2D Gaussian
+    constexpr double fillOpacity = 0.2;
+
+    struct Drawn
+    {
+        cv::RotatedRect ellipse;
+        cv::Point2d prediction;
+        cv::Point2d seed;
+        cv::Point2d match;
+    };
+
+    std::vector<Drawn> drawn;
 
     for (std::size_t k = 0; k < o.features.size(); ++k) {
         const std::size_t feature = o.features[k];
@@ -415,23 +410,53 @@ drawUsedMatches(cv::Mat3b& image,
         const int row = static_cast<int>(2 * k);
         const cv::Point2d prediction(o.h(row), o.h(row + 1));
 
-        cv::circle(image, prediction, 3, green);
-
         // The axes of the ellipse are the eigenvectors of the innovation covariance
         cv::Vec2d eigenvalues;
         cv::Matx22d eigenvectors;
         cv::eigen(cv::Matx22d(o.S(cv::Rect(row, row, 2, 2))), eigenvalues, eigenvectors);
 
-        const cv::Size2d axes(numSigmas * std::sqrt(eigenvalues[0]), numSigmas * std::sqrt(eigenvalues[1]));
+        const cv::Size2d size(2.0 * numSigmas * std::sqrt(eigenvalues[0]), 2.0 * numSigmas * std::sqrt(eigenvalues[1]));
         const double angle = std::atan2(eigenvectors(0, 1), eigenvectors(0, 0)) * 180.0 / CV_PI;
 
-        // Ellipses much larger than the image say nothing, and are expensive to draw
-        if (std::isfinite(axes.width) && axes.width < 10.0 * image.cols) {
-            cv::ellipse(image, prediction, axes, angle, 0.0, 360.0, green);
+        drawn.push_back({ cv::RotatedRect(prediction, size, static_cast<float>(angle)),
+                          prediction,
+                          seeds[feature],
+                          matches[k].value() });
+    }
+
+    // Ellipses much larger than the image say nothing, and are expensive to draw
+    const auto drawable = [&](const cv::RotatedRect& e) {
+        return std::isfinite(e.size.width) && e.size.width < 20.0F * static_cast<float>(image.cols);
+    };
+
+    // The regions, translucent, so that the image shows through them
+    cv::Mat3b filled = image.clone();
+
+    for (const Drawn& d : drawn) {
+        if (drawable(d.ellipse)) {
+            cv::ellipse(filled, d.ellipse, cyan, cv::FILLED, cv::LINE_AA);
+        }
+    }
+
+    cv::addWeighted(filled, fillOpacity, image, 1.0 - fillOpacity, 0.0, image);
+
+    // A dot with a dark rim, visible on any background
+    const auto dot = [&](const cv::Point2d& p, const cv::Scalar& color) {
+        cv::circle(image, p, 4, dark, cv::FILLED, cv::LINE_AA);
+        cv::circle(image, p, 3, color, cv::FILLED, cv::LINE_AA);
+    };
+
+    for (const Drawn& d : drawn) {
+        if (drawable(d.ellipse)) {
+            cv::ellipse(image, d.ellipse, cyan, 1, cv::LINE_AA);
         }
 
-        cv::circle(image, seeds[feature], 3, cv::Scalar(255.0, 0.0, 0.0));
-        cv::circle(image, matches[k].value(), 3, cv::Scalar(0.0, 0.0, 255.0));
+        // The innovation, from the prediction to the match
+        cv::line(image, d.prediction, d.match, cv::Scalar::all(255.0), 1, cv::LINE_AA);
+
+        dot(d.seed, magenta);
+        dot(d.prediction, cyan);
+        dot(d.match, amber);
     }
 }
 

@@ -28,6 +28,8 @@ class Feature
 
     int matchingAttempts = 0;        // Number of times the feature was searched
     std::uint32_t matchHistory = 0;  // Whether the filter used it in each of its last attempts, the last in bit 0
+    int framesAway = 0;              // Frames since it was last searched
+    bool returning = false;          // Back in view after a while, and not used by the filter since
 
     /*
      * Constructor of a feature, which keeps the frame where it was first seen to take its patch

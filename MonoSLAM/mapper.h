@@ -27,7 +27,9 @@ class Mapper
     explicit Mapper(std::size_t firstId);
 
     /*
-     * Counts, for every feature that was searched, whether the filter used its match.
+     * Counts, for every feature that was searched, whether the filter used its match. A feature
+     * that comes back into view after a while starts its count anew, and is returning until the
+     * filter uses it again.
      *
      * features    All the features
      * searched    Features that were searched in this frame
