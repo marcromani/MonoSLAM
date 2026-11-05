@@ -1,0 +1,93 @@
+#ifndef MONOSLAM_MAPPER_H
+#define MONOSLAM_MAPPER_H
+
+#include <cstddef>
+#include <vector>
+
+#include <opencv2/core.hpp>
+
+#include "camera.h"
+#include "ekf.h"
+#include "feature.h"
+#include "tracking.h"
+
+namespace monoslam {
+
+/*
+ * Decides which features the map has: it adds new ones where too few are in view, and removes
+ * those that are rarely matched. The state of the filter, the features and the seeds of the flow
+ * tracker are kept in the same order.
+ */
+class Mapper
+{
+  public:
+    /*
+     * firstId    Identifier of the first feature the mapper adds
+     */
+    explicit Mapper(std::size_t firstId);
+
+    /*
+     * Counts, for every feature that was searched, whether the filter used its match.
+     *
+     * features    All the features
+     * searched    Features that were searched in this frame
+     * used        Features whose matches the filter used
+     */
+    void recordMatches(std::vector<Feature>& features,
+                       const std::vector<std::size_t>& searched,
+                       const std::vector<std::size_t>& used) const;
+
+    /*
+     * Keeps the descriptors of the features used in this frame, if they look different enough from
+     * how they have looked so far, so that they can be found from other points of view.
+     *
+     * frame        Current frame
+     * features     All the features
+     * used         Features whose matches the filter used
+     * positions    Image position of all the features
+     */
+    void recordAppearance(const cv::Mat1b& frame,
+                          std::vector<Feature>& features,
+                          const std::vector<std::size_t>& used,
+                          const std::vector<cv::Point2f>& positions) const;
+
+    /*
+     * Removes the features used in less than half of their recent attempts, once they have had a
+     * few, as in Davison et al. but over the last attempts only, so that a feature that stops being
+     * matched goes within a third of a second however long it was good. Such features are usually
+     * not salient enough, occluded, on the edge of an object, or on something that moves.
+     *
+     * ekf         Filter
+     * features    All the features
+     * tracker     Flow tracker
+     */
+    void removeUnreliable(EKF& ekf, std::vector<Feature>& features, FlowTracker& tracker) const;
+
+    /*
+     * Adds new features while fewer than a dozen are in view, where the frame has none, to keep
+     * their density about constant over it, as Davison et al. do: a box a quarter of the size of the
+     * frame is placed where it has no feature inside, and the most salient corner in it is added,
+     * away from the border of the frame and from the features near the box. Corners must also be
+     * textured enough to be located, which a blank wall is not, and distinctive: a corner that
+     * looks like something within the region where it will be searched would be confused with it,
+     * as happens on any repeated texture.
+     *
+     * frame       Current frame
+     * camera      Camera model
+     * ekf         Filter
+     * features    All the features
+     * tracker     Flow tracker
+     */
+    void addFeatures(const cv::Mat1b& frame,
+                     const CameraModel& camera,
+                     EKF& ekf,
+                     std::vector<Feature>& features,
+                     FlowTracker& tracker);
+
+  private:
+    std::size_t nextId_;  // Identifier of the next feature to add
+};
+
+}
+
+#endif

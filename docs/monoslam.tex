@@ -1,0 +1,679 @@
+%!TEX program = lualatex
+
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% Paragraphs without indent, separated by a little space instead
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt plus 1pt minus 1pt}
+
+% Long code names cannot be hyphenated: stretch the spaces of their lines rather than overflow
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dt}{\Delta t}
+
+\title{MonoSLAM}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+MonoSLAM is a monocular EKF SLAM, after Davison et al.~\cite{davison2007}: one camera, no other
+sensor, and a single extended Kalman filter for the camera and the map. It is initialized from a chessboard, which fixes the scale, and then
+runs on the natural features of the scene. This note describes the system as it is: the frame loop
+(section~\ref{sec:loop}), the state (section~\ref{sec:state}), the motion model
+(section~\ref{sec:motion}), the features (section~\ref{sec:idp}), how they are found
+(sections~\ref{sec:flow} and \ref{sec:search}), the update (section~\ref{sec:update}), the map
+(section~\ref{sec:map}), how it is found again when tracking fails (section~\ref{sec:global}), and
+how well it works (section~\ref{sec:results}).
+
+\section{The frame loop}
+\label{sec:loop}
+
+Every frame goes through the same steps, in \texttt{main.cpp}:
+\begin{enumerate}
+  \item \texttt{ekf.predict(dt)} moves the camera with the motion model, over the real interval
+        between the frames, from their capture times. Live, frames are dropped while one is
+        processed, so the interval can be several frame periods.
+  \item \texttt{tracker.predict(gray)} moves the \emph{seed} of every feature, where it is
+        expected in the new image, with the optical flow (section~\ref{sec:flow}).
+  \item After a weak frame (section~\ref{sec:global}), \texttt{matchGlobally} looks for the map
+        anywhere in the frame by its appearance. If it finds it, the camera is moved there, the
+        seeds of the features found to where they were found, and the others to the projections
+        of their features.
+  \item \texttt{ekf.observe()} predicts the features in view, \texttt{matchFeatures} searches each
+        of them around its seed (section~\ref{sec:search}), and \texttt{ekf.update} decides which
+        matches to use, with 1-point RANSAC (section~\ref{sec:update}).
+  \item Every ten frames, the features found by their appearance that the update did not use are
+        measured too, if their innovation is plausible.
+  \item If at least four features were used, the seeds move to the projections of their features
+        from the updated state; otherwise they keep following the images.
+  \item Unless the frame is weak, the map is kept: the features rarely matched are removed, and new
+        ones are added where the frame has none (section~\ref{sec:map}).
+\end{enumerate}
+
+The information flows in a loop: images $\to$ seeds $\to$ where to search $\to$ matches $\to$
+filter $\to$ projections $\to$ seeds. The filter closes it in step 6, which keeps the seeds from
+drifting, and the flow keeps it going in step 2 when the filter cannot.
+
+\begin{center}
+\begin{tabular}{lll}
+  step & reads & writes \\
+  \hline
+  \texttt{ekf.predict} & state & state \\
+  \texttt{tracker.predict} & images, seeds & seeds \\
+  \texttt{matchGlobally} & image, state & state, seeds \\
+  \texttt{matchFeatures} & image, predicted state, seeds & matches \\
+  \texttt{ekf.update} & state, matches & state \\
+  \texttt{tracker.correct} & state & seeds \\
+  \texttt{Mapper} & image, state & state, seeds \\
+\end{tabular}
+\end{center}
+
+Everything the filter knows comes through its own models and its own update. The seeds only decide
+where to look, and the only step that sets the camera without an update is the relocalization of
+step 3.
+
+\section{State and conventions}
+\label{sec:state}
+
+The state is
+\begin{equation}
+  x = \begin{pmatrix} r \\ e \\ v \\ \omega \\ y_1 \\ \vdots \\ y_N \end{pmatrix} \in \R^{12 + 6N},
+\end{equation}
+where $r \in \R^3$ is the camera position in world coordinates, $e \in \R^3$ an orientation error
+(below), $v$ the linear velocity in world coordinates, $\omega$ the angular velocity in camera
+coordinates, and $y_i \in \R^6$ the features in inverse depth (section~\ref{sec:idp}). The world is
+the frame of the chessboard, which lies on the plane $z = 0$. Lengths are in cm, angles in rad.
+
+\paragraph{The orientation.}
+The orientation is a rotation matrix $R$, the change of basis from camera to world coordinates:
+a point with camera coordinates $X_c$ has world coordinates
+\begin{equation}
+  X_w = R\, X_c + r,
+\end{equation}
+so the columns of $R$ are the camera axes in world coordinates, and $R_{cw} = R^\top$ goes from
+world to camera. $R$ is not in the state vector: the filter keeps it next to it, and the state
+holds a small rotation $e$ of the camera on top of it, the orientation being
+\begin{equation}
+  R\, \exp([e]_\times),
+\end{equation}
+with $\exp([e]_\times)$ the rotation by $\|e\|$ radians about $e$ (Rodrigues' formula,
+\texttt{rotation}) and $[e]_\times$ the matrix of the cross product (\texttt{skew}). $P$ is the
+uncertainty of $e$, not of $R$. After every update $R$ absorbs $e$, $R \leftarrow R \exp([e]_\times)$,
+and $e$ goes back to zero, so all the Jacobians are taken at $e = 0$, where
+$\exp([e]_\times) \approx I + [e]_\times$. This is the error-state, or multiplicative, EKF~\cite{lefferts1982}.
+
+When $R$ absorbs $e$, the uncertainty of the error moves to the new reference too: an error $d$
+about $R \exp([e]_\times)$ is one of $G\, d$ about $R$, with $G = I - \frac{1}{2} [e]_\times$, so
+the orientation rows and columns of $P$ are multiplied by $G$. It looks negligible for the small
+$e$ of one update, but it is first order in $e$, and without it the runs drift apart within ten
+frames from those of a quaternion, which does it implicitly.
+
+Unlike a quaternion, $e$ has as many entries as the orientation has degrees of freedom, so there
+is no unit norm to keep and $P$ is not singular. Unlike a rotation vector of the whole orientation,
+$e$ stays small, far from the angle of $\pi$ where that wraps around and its covariance means
+nothing.
+
+\paragraph{Composing rotations.}
+When the camera rotates there are two camera frames, the previous one $C$ and the new one $C'$.
+The new orientation $R' = R \exp([w]_\times)$ gives
+\begin{equation}
+  X_w = R'\, X_{c'} + r = R\, \exp([w]_\times)\, X_{c'} + r,
+\end{equation}
+a chain of two changes of basis: $\exp([w]_\times)$ maps coordinates in $C'$ to coordinates in
+$C$, and $R$ maps those to the world. The axis $w$ has the same coordinates in $C$ and $C'$, since
+the rotation fixes it, so $w$ is a rotation in camera coordinates; in the world it is $R\, w$, and
+$R \exp([w]_\times) = \exp([R w]_\times) R$. The motion model composes on the right, so $\omega$
+is in camera coordinates, and so is $e$.
+
+\paragraph{The right Jacobian.}
+A small change $d$ of the rotation vector of $\exp([\theta]_\times)$ is, to first order, a small
+rotation in its own frame,
+\begin{equation}
+  \exp([\theta + d]_\times) \approx \exp([\theta]_\times) \exp([J_r(\theta)\, d]_\times),
+  \qquad
+  J_r(\theta) = I - \frac{1 - \cos\varphi}{\varphi^2} [\theta]_\times
+              + \frac{\varphi - \sin\varphi}{\varphi^3} [\theta]_\times^2,
+\end{equation}
+with $\varphi = \|\theta\|$ (\texttt{rightJacobian}). $J_r(0) = I$, and for the rotation of one
+frame, $\varphi \approx 0.05$, it differs from $I$ by a few percent.
+
+\section{The motion model}
+\label{sec:motion}
+
+Between two frames the velocities change by an unknown amount, the result of a random acceleration
+that is constant during the step: $V = a\, \dt$ and $\Omega = \alpha\, \dt$, with
+$a \sim \mathcal{N}(0, \sigma_a^2 I_3)$ and $\alpha \sim \mathcal{N}(0, \sigma_\alpha^2 I_3)$. The
+velocities also decay towards zero, with time constants $\tau_v$ and $\tau_\omega$. With
+$e_v = e^{-\dt/\tau_v}$ and $h_v = \tau_v (1 - e_v)$, and likewise $e_\omega$ and $h_\omega$,
+\begin{equation}
+  \begin{aligned}
+    r_{k+1} &= r_k + h_v\, v_k + \tfrac{1}{2} V\, \dt, \\
+    R_{k+1} &= R_k \exp\big(\big[h_\omega\, \omega_k + \tfrac{1}{2} \Omega\, \dt\big]_\times\big), \\
+    v_{k+1} &= e_v\, v_k + V, \\
+    \omega_{k+1} &= e_\omega\, \omega_k + \Omega, \\
+    y_{i,k+1} &= y_{i,k},
+  \end{aligned}
+  \qquad
+  Q = \dt^2
+  \begin{pmatrix} \sigma_a^2 I_3 & 0 \\ 0 & \sigma_\alpha^2 I_3 \end{pmatrix},
+  \label{eq:motion}
+\end{equation}
+where $Q$ is the covariance of $(V, \Omega)$ (\texttt{MotionModel}).
+
+\paragraph{The decay.}
+$h$ is the distance a decaying velocity covers in a step, divided by the velocity at its start.
+For $\tau \to \infty$, $e \to 1$ and $h \to \dt$, which is the constant velocity model of Davison
+et al.~\cite{davison2007}, and for $\tau \to 0$ the velocity is forgotten at once and the camera is predicted to stay
+where it is. A hand-held camera keeps moving from one frame to the next, but not for long in the
+same way, and the decay also bounds how far the prediction drifts when nothing is measured.
+
+\paragraph{The factor $\frac{1}{2}$.}
+With an acceleration that is constant during the step, the velocity changes linearly from $v_k$ to
+$v_k + V$, and the position moves by the mean velocity of the step,
+$r_{k+1} = r_k + (v_k + \frac{1}{2} V)\, \dt$. The model of Davison et al.~\cite{davison2007} uses $(v_k + V)\, \dt$,
+an impulse at the start of the step. Both give the same predicted mean, and differ in how the noise
+reaches the position: a variance of $\frac{1}{4} \sigma_a^2 \dt^4$ instead of $\sigma_a^2 \dt^4$.
+The same factor is applied to the rotation, which is exact about a fixed axis and correct to first
+order otherwise.
+
+\paragraph{Linearization.}
+The prediction is linearized at the mean angular velocity, which is not zero. With
+$\theta = h_\omega\, \omega_k$, the orientation becomes $R_{k+1} = R_k \exp([\theta]_\times)$, and the
+error after the step is $e_{k+1}$ with
+\begin{equation}
+  R_{k+1} \exp([e_{k+1}]_\times) = R_k \exp([e_k]_\times) \exp([\theta + h_\omega\, d\omega]_\times),
+\end{equation}
+for an error $d\omega$ of the angular velocity. With the right Jacobian, and moving
+$\exp([e_k]_\times)$ across $\exp([\theta]_\times)$ as above,
+$e_{k+1} \approx \exp(-[\theta]_\times)\, e_k + h_\omega J_r(\theta)\, d\omega$, so the Jacobian
+$F$ of the camera part is the identity but for
+\begin{equation}
+  \frac{\partial r_{k+1}}{\partial v_k} = h_v I_3,
+  \quad
+  \frac{\partial e_{k+1}}{\partial e_k} = \exp([\theta]_\times)^\top,
+  \quad
+  \frac{\partial e_{k+1}}{\partial \omega_k} = h_\omega J_r(\theta),
+  \quad
+  \frac{\partial v_{k+1}}{\partial v_k} = e_v I_3,
+  \quad
+  \frac{\partial \omega_{k+1}}{\partial \omega_k} = e_\omega I_3.
+\end{equation}
+The noise enters through the velocities, so $W = \partial f / \partial (V, \Omega)$ is
+$12 \times 6$: $\frac{1}{2} \dt\, I_3$ and $I_3$ in the rows of $r$ and $v$, and
+$\frac{1}{2} \dt\, J_r(\theta)$ and $I_3$ in those of $e$ and $\omega$. Only the camera moves, so
+$P$ becomes
+\begin{equation}
+  \begin{pmatrix} F P_{cc} F^\top + W Q W^\top & F P_{cf} \\ P_{fc} F^\top & P_{ff} \end{pmatrix},
+\end{equation}
+with $c$ the camera and $f$ the features, and is symmetrized to keep the rounding errors of
+thousands of steps from adding up. The tests \emph{Process Jacobian} and \emph{Process noise
+Jacobian} check $F$ and the orientation block of $W$ against finite differences of the
+prediction, with the error measured from the nominal prediction.
+
+\paragraph{Values.}
+$\sigma_a = 1000$~cm/s$^2$, $\sigma_\alpha = 15$~rad/s$^2$, $\tau_v = 0.3$~s and
+$\tau_\omega = 0.2$~s. In one frame the velocities can change by about $33$~cm/s and $0.5$~rad/s,
+and without measurements they halve in about $0.2$ and $0.14$~s. The intervals come from the
+capture times of the frames, or are $1/30$~s for recordings without them.
+
+\paragraph{Why this model.}
+The ground truth of the chessboard (section~\ref{sec:results}) gives the camera pose in every
+frame where the whole board is detected. A Kalman filter run on it with each candidate model, with
+the noise fitted by maximum likelihood over three sequences, scores how well the model predicts
+the next frame (negative log-likelihood, lower is better):
+
+\begin{center}
+\begin{tabular}{lrr}
+  model & position & orientation \\
+  \hline
+  no velocity, a random displacement & $1827$ & $-10565$ \\
+  impulse~\cite{davison2007} & $674$ & $-11655$ \\
+  constant acceleration during the step & $649$ & $-11710$ \\
+  same, with decay, $\tau = 10$~s & $639$ & $-11718$ \\
+  same, with decay, $\tau = 0.3$~s & $595$ & $-11858$ \\
+\end{tabular}
+\end{center}
+
+Having the velocities matters most, by more than a thousand units: the motion of the camera
+persists from one frame to the next. How the noise enters them matters little, and a decay of
+about $0.3$~s fits best, for one more parameter. The motion itself needs about $90$~cm/s$^2$ and
+$5.5$~rad/s$^2$; the filter needs more, since it also has to absorb its own errors, and since the
+fastest frames, the most blurred, are those where the board is not detected and that this fit does
+not score.
+
+\section{Inverse depth features}
+\label{sec:idp}
+
+A feature is the inverse depth parametrization of Civera et al.~\cite{civera2008}:
+\begin{equation}
+  y = (a, \theta, \phi, \rho) \in \R^6,
+  \qquad
+  p = a + \frac{1}{\rho}\, m(\theta, \phi),
+  \qquad
+  m(\theta, \phi) = \begin{pmatrix} \cos\phi \sin\theta \\ -\sin\phi \\ \cos\phi \cos\theta \end{pmatrix},
+\end{equation}
+where $a$ is the anchor, the position of the camera when the feature was first seen, $\theta$ and
+$\phi$ the azimuth and elevation of the ray from $a$ to the point, in world coordinates, and $\rho$
+the inverse of the distance along it.
+
+\paragraph{Why.}
+A point seen once is a ray: its depth is unknown until the camera has moved enough. Along the ray
+the uncertainty of the depth is very asymmetric (a point at $50$~cm may be at $25$~cm or at
+infinity), which a Gaussian on $p$ cannot describe, but a Gaussian on $\rho$ can: $\rho \in
+[0, 0.04]$ covers everything from $25$~cm to infinity. The projection is also much closer to linear
+in $\rho$ than in the depth. So a feature can be added to the filter at its first frame, with a
+large $\sigma_\rho$, and it constrains the orientation of the camera from then on, before its depth
+is known.
+
+\paragraph{Observation.}
+\begin{equation}
+  h_c = R^\top \big( \rho\, (a - r) + m(\theta, \phi) \big)
+\end{equation}
+is the point in camera coordinates scaled by $\rho$, which does not change its pixel, and is well
+defined at $\rho = 0$, for points at infinity. The pixel is the projection of $h_c$ with the lens
+distortion of the camera, and the Jacobians are those of $h_c$ with respect to $r$, $e$ and $y$,
+times that of the projection. Rotating the camera by $e$ turns $h_c$ into
+$\exp(-[e]_\times) h_c \approx h_c + [h_c]_\times e$, so $\partial h_c / \partial e = [h_c]_\times$
+(\texttt{inverse\_depth::toCamera}, \texttt{CameraModel::projectCameraPoint}). A feature is in view
+if $h_c$ is in front of the camera and its pixel inside the image.
+
+\paragraph{No conversion to points.}
+Civera et al.~\cite{civera2008} convert a feature to a point $p \in \R^3$ once its depth is known well enough, to
+save three entries of the state. Here every feature keeps the same six parameters all the time,
+which keeps the observation model, the map and the code uniform, at the price of a slightly larger
+state. \texttt{EKF::isWellLocated} tells the features whose depth is known, $\rho > 0$ and
+$\sigma_\rho < 0.1\, \rho$, which is where Civera et al.\ would convert them.
+\texttt{inverse\_depth::toPoint} gives the point when one is needed, for drawing or warping
+patches; a feature with $\rho \le 10^{-3}$ is placed at $10$~m along its ray.
+
+\paragraph{Initialization.}
+The camera pose comes from the whole chessboard, with PnP, if it explains all its corners within
+$6$~px and $2$~px RMS. Five of its corners, the four outermost and the one closest to the center,
+become the first features, at their known positions $p_i$, written with the anchor at the initial
+camera position, $y_i = (r_0, \theta_i, \phi_i, \rho_i)$ (\texttt{fromPoint}). The covariance of
+$(\theta_i, \phi_i, \rho_i)$ is $J\, (0.05\, I_3)\, J^\top$, with $J$ the Jacobian of
+\texttt{fromPointJacobian}: a variance of $0.05$~cm$^2$ per axis of the point. The anchor has no
+uncertainty: it is a constant, not something measured. The camera starts with standard deviations
+of $0.22$~cm, $0.02$~rad, $30$~cm/s and $1.5$~rad/s, and no velocity. This is where the scale of
+the map comes from; the chessboard is not used afterwards.
+
+\paragraph{New features.}
+A feature first seen at pixel $u$ from the pose $(r, R)$, with an inverse depth $\rho_0$, is
+\begin{equation}
+  y = \big(r,\; \theta(d),\; \phi(d),\; \rho_0\big), \qquad d = R\, \pi^{-1}(u),
+\end{equation}
+where $\pi^{-1}(u)$ is the ray of the pixel in camera coordinates, found by undistorting it.
+Rotating the camera by $e$ turns $d$ into $R \exp([e]_\times) \pi^{-1}(u) \approx d - R\,
+[\pi^{-1}(u)]_\times e$. With $J = \partial y / \partial (r, e, u, \rho_0)$, of size $6 \times 9$
+(\texttt{inverse\_depth::fromPixel}), the state is augmented as
+\begin{equation}
+  x \leftarrow \begin{pmatrix} x \\ y \end{pmatrix},
+  \qquad
+  P \leftarrow
+  \begin{pmatrix}
+    P & P_{:, c}\, J_c^\top \\
+    J_c\, P_{c, :} & J_c\, P_{cc}\, J_c^\top + J_u\, \sigma_u^2\, J_u^\top + J_\rho\, \sigma_\rho^2\, J_\rho^\top
+  \end{pmatrix},
+\end{equation}
+where $c$ are the six entries of the camera position and orientation error, $\sigma_u$ the pixel
+noise and $\sigma_\rho$ that of the inverse depth (\texttt{EKF::addFeature}). The correlation with
+the pose is what makes the feature move with the camera when a later update corrects the pose at
+which it was added.
+
+\section{The seeds}
+\label{sec:flow}
+
+The features have to be found in every new image, and the question is where to look. In EKF SLAM
+the search region is the $3\sigma$ ellipse of the innovation covariance around the prediction, the
+active search of Davison et al.~\cite{davison2007}. That only works if the ellipse holds the feature and nothing that
+looks like it, and a hand-held camera jerks: on the first sequence the chessboard corners move up
+to $38$~px between frames, and a constant velocity only reduces the median prediction error from
+$10$ to $6$~px, with $22$~px at the $99$th percentile. Searched as the active search does, the
+first two sequences are lost, in the frames where the motion changes by $20$~px from one frame to
+the next.
+The motion model cannot predict that, but the images can.
+
+\texttt{FlowTracker} follows the image motion of every feature, its \emph{seed}, with no knowledge
+of the filter. It keeps the previous image and one seed per feature, including those out of view,
+and every frame (\texttt{predict}):
+\begin{enumerate}
+  \item \emph{Tracks generic corners.} Up to $150$ corners are detected in the previous image
+        (\texttt{goodFeaturesToTrack}, quality $0.01$, at least $8$~px apart), and tracked to the
+        new image and back with pyramidal Lucas--Kanade~\cite{lucas1981}, six levels and a $21 \times 21$ window. A
+        corner is kept if it comes back within $1$~px of where it started, which removes most of
+        those lost to blur or occlusion. The six levels matter: with four, the second sequence is
+        lost, because the flow cannot follow jumps of more than $100$~px.
+  \item \emph{Moves each seed with its neighbors.} An affine map is fitted with RANSAC to the
+        motion of the $24$ tracked corners closest to the seed (inliers within $3$~px), and the
+        seed is moved with it. With fewer than $6$ corners, or if the fit fails, it stays. Seeds
+        out of the image are moved the same way, by the corners closest to them.
+  \item \emph{Lets the seed's own flow take over.} The seeds in view are also tracked themselves,
+        with a $31 \times 31$ window. If that lands within $6$~px of the affine position, it
+        replaces it, since the flow of a single point is more precise; if not, it has probably
+        slipped to a look-alike neighbor, and the affine position is kept.
+\end{enumerate}
+An affine map is the first-order approximation of the image motion around a point, so this assumes
+that the seed moves like the corners around it, which holds for a locally smooth surface, and for
+any scene when the camera mostly rotates. At a depth discontinuity, with the camera translating,
+the fit follows whichever surface has more corners. The test \emph{Flow follows depth layers}
+checks that two regions moving apart each carry their own seeds.
+
+After the update, \texttt{correct} moves the seeds to the projections of their features from the
+updated state, if at least four features were used, so that a seed that slipped is brought back by
+the others, through the pose. With fewer the pose is not well constrained, and the seeds keep
+following the images.
+
+\section{The patch search}
+\label{sec:search}
+
+Each feature keeps the patch, $23 \times 23$~px, of the frame where it was first seen. To find it
+in a new frame (\texttt{findPatch}), the patch is warped to how it would look from the predicted
+pose, taking it as a piece of the plane through the feature with its normal: the pattern's for the
+five chessboard corners, and facing the first camera for the others. The corners of the patch are
+mapped through the whole camera model, distortion included, and the homography is the one that
+maps them.
+
+The warped patch is searched within $\pm 15$~px of the seed, or of the prediction if the seed is
+out of view, by zero-mean normalized cross-correlation with the mask of the warped patch. The best
+peak is kept if it scores at least $0.6$, and if no other peak, a local maximum more than $2$~px
+away, scores within $0.05$ of it: two near-equal peaks are a repeated texture or an edge, and which
+one wins then depends on tiny differences of the prediction. The peak is refined to subpixel
+precision with a parabola. Every feature found is returned, and the update decides which ones to
+use.
+
+\section{The update}
+\label{sec:update}
+
+\texttt{EKF::observe} predicts the pixels $h$ of the features in view, two rows per feature, their
+Jacobian $H$, which only has the columns of the camera and of the features in view, the innovation
+covariance $S = H P H^\top + \sigma^2 I$, with $\sigma = 3$~px, and the columns of $P$ that $H$
+acts on. A pixel only depends on the camera and on its own feature, so most of $H$ is zero, and
+$P H^\top$ skips those zeros.
+
+\paragraph{One EKF step.}
+\texttt{correct} applies the ordinary EKF update with some rows of the observation,
+\begin{equation}
+  x = x_0 + K \big(z - h(x_0)\big),
+  \qquad
+  K = P H^\top S^{-1},
+  \qquad
+  P \leftarrow P - K H P,
+\end{equation}
+with $K^\top$ solved from $S K^\top = (P H^\top)^\top$ by Cholesky; nothing is updated if $S$ is not
+positive definite. Then $R$ absorbs the orientation error (section~\ref{sec:state}).
+
+\paragraph{1-point RANSAC.}
+The matches of a frame come with no guarantee, and \texttt{EKF::update} decides which to use, as
+in Civera et al.~\cite{civera2010}:
+\begin{enumerate}
+  \item \emph{Hypotheses.} For every match $j$, a copy of the state is updated with that match
+        alone,
+        \begin{equation}
+          x^{(j)} = x_0 + K_j \big( z_j - h_j(x_0) \big),
+          \qquad
+          K_j = P H_j^\top S_{jj}^{-1}.
+        \end{equation}
+        One pixel only fixes two degrees of freedom of the pose; the others move according to
+        their correlations with those two in $P$, the most likely way given the prediction, which
+        is enough to tell which other matches agree. The hypotheses are states with $e \neq 0$,
+        projected with $R \exp([e]_\times)$.
+  \item \emph{Support.} The prediction $h(x^{(j)})$ is computed with the full nonlinear model, and
+        every match within $6$~px of it supports the hypothesis. The features in view at $x^{(j)}$
+        need not be those in view at $x_0$, so rows are paired through the feature they belong to,
+        not by position, and a match whose feature leaves the image does not support it. The
+        largest support wins, ties broken by the smallest sum of distances.
+  \item \emph{Low innovation inliers.} The state is updated with the winning support.
+  \item \emph{High innovation inliers.} A match can be right and disagree with every
+        single-match hypothesis, if the prediction was far off. After the first update the
+        prediction is much better, so $h$, $H$ and $S$ are computed again, and every other match
+        with a normalized innovation squared below $9.21$, the $99\%$ quantile of $\chi^2_2$, is
+        rescued and used in a second update. Updating in two steps is equivalent to updating with
+        both sets at once, up to the linearization.
+\end{enumerate}
+Since everything goes through $h$, $H$, $P$ and $\sigma$, nothing in the update knows about poses
+or images. Each hypothesis costs one evaluation of the observation model, which is fine for a
+dozen features; with hundreds, a random subset of hypotheses would do, as in Civera et al.~\cite{civera2010}.
+
+\paragraph{The plain update is enough.}
+The projection is not linear, and an iterated EKF, Gauss--Newton on the same cost, would follow
+its curvature. Without a line search it oscillates on this cost, and with the single rescued
+matches of the second stage, which do not fix a pose, it wanders through the directions they leave
+free; the curvature it would correct is small for the innovations that 1-point RANSAC lets through.
+
+\paragraph{Gated measurements.}
+\texttt{EKF::measure} updates the state with features found by other means, the global matching of
+section~\ref{sec:global}, those whose normalized innovation squared is below the same $9.21$.
+Without the gate, a few features found $100$~px away from their predictions can move the camera by
+meters: an EKF cannot absorb an innovation that large in one linearized step.
+
+\section{The map}
+\label{sec:map}
+
+\texttt{Mapper} keeps the map, at the end of every frame that is not weak.
+
+\paragraph{Adding.}
+While fewer than $12$ features are in view, at most two are added per frame:
+\begin{enumerate}
+  \item \emph{Where.} A box a quarter of the frame in each dimension is slid over it by half its
+        size, $20$~px away from the border, and the positions with no feature in view inside are
+        tried, the farthest from the features first, so that the features keep a roughly constant
+        density over the frame, as in Davison et al.~\cite{davison2007} (who place the box at random; a fixed order
+        keeps the runs repeatable). A box can be empty because there is nothing to track in it,
+        and then the next one is tried.
+  \item \emph{Salient.} \texttt{goodFeaturesToTrack} proposes up to $10$ corners in the box
+        (Shi--Tomasi~\cite{shi1994}, quality $0.01$, at least $10$~px apart), $30$~px away from the features in
+        view, strongest first.
+  \item \emph{Textured.} The quality of \texttt{goodFeaturesToTrack} is relative to the best
+        corner of the box, so on a blank wall the least blank point passes. A candidate also needs
+        an absolute texture: the root mean square of the gradient of its patch along its least
+        textured direction, the smaller eigenvalue of the gradient matrix of the patch, as in Shi
+        and Tomasi, must be at least $2$ gray levels per pixel. On the six sequences, the features
+        below $1$, $31\%$ of them, lived a median of $11$ frames and were used in $21\%$ of their
+        searches; those above $2$ were used in about $70\%$. The correlation of the next test
+        cannot tell a blank patch: it divides by its contrast, and what is left is camera noise.
+  \item \emph{Distinctive.} A candidate is rejected if its patch correlates with some other place
+        within $\pm 40$~px, outside $\pm 4$~px of itself, with a score of $0.8$ or more. That keeps
+        the new features off the inner corners of the chessboard, and off repeated texture in
+        general, which the search could not tell apart within its region.
+  \item \emph{Initial depth.} $\rho_0$ is the inverse of the median distance of the well located
+        features in view, or $0.02$~cm$^{-1}$ ($50$~cm) if there are none, and
+        $\sigma_\rho = \rho_0$, so the $2\sigma$ interval covers everything from a third of that
+        distance to infinity.
+  \item The feature gets its patch, a descriptor (section~\ref{sec:global}) and a seed.
+\end{enumerate}
+
+\paragraph{Removing.}
+Every frame, each feature searched counts as an attempt, and as a match if the update used it.
+After $10$ attempts, a feature used in less than half of its last $20$ is removed from the state,
+the covariance (\texttt{EKF::removeFeatures}), the feature list and the tracker. Only the recent
+attempts count, so a feature that stops being matched goes within a third of a second, however
+long it was good. That removes occluded features, features on the edges of objects, whose patch
+changes with the point of view, and features on things that move.
+
+\section{Finding the map again}
+\label{sec:global}
+
+The seeds only look where the features were in the previous frame. When the camera gets somewhere
+else without the images following it (a kidnap, simulated by cutting frames out of a sequence), or
+comes back to a place after a long excursion, nothing near the seeds is right. As in Williams et
+al.~\cite{williams2011}, the features are then looked for by their appearance alone, anywhere in the frame
+(\texttt{matchGlobally}).
+
+\paragraph{Descriptors.}
+Every feature gets an ORB descriptor~\cite{rublee2011} when it is created (\texttt{describe}): $256$ binary
+comparisons of pixel pairs in the $31 \times 31$ patch around it, rotated by the orientation of the
+patch, the direction to the centroid of its intensities, which turns with the image. ORB only
+computes that orientation for the corners it detects itself, so it is computed here. Seen from the
+side, a feature can be $60$ bits away from how it looked when it was created, so while it is
+tracked its descriptor in the current frame is kept as well if it is more than $30$ bits away from
+all those it has, up to eight (\texttt{Mapper::recordAppearance}).
+
+\paragraph{Matching.}
+Up to $1500$ corners of the frame are detected as the features were, with
+\texttt{goodFeaturesToTrack}, since ORB's own corners rarely fall on them, and described in the
+same way. Each descriptor of each well located feature, except the five chessboard corners, which
+all look alike, is matched to its nearest corner, if it is within $64$ bits and clearly nearer, by
+a ratio of $0.8$, than the best corner more than $10$~px away from it: corners around the same
+structure look alike, but are not an ambiguity. A pose is fitted to the matches with P3P and
+RANSAC, $1000$ iterations, inliers within $4$~px, and at least six must agree.
+
+\paragraph{Verification.}
+A wrong pose can agree with six descriptors by chance. So the pose is verified with the patches:
+the features are projected with it and searched, warped to it, within $8$~px of their projections,
+and at least six must be found within $3$~px.
+
+\paragraph{When it is used.}
+A frame is \emph{weak} when fewer than four features, or fewer than half of those searched, were
+used by the update. That means the state may be wrong, even if some matches still agree with it:
+after a kidnap, 1-point RANSAC can keep finding a few look-alikes that agree with a wrong pose.
+\begin{itemize}
+  \item After a weak frame, the global match decides: if it finds a pose, \texttt{resetCamera}
+        moves the camera there, with no velocity and a large uncertainty ($2$~cm, $0.2$~rad,
+        $30$~cm/s, $1.5$~rad/s) and no correlation with the features, and the seeds move to their
+        projections.
+  \item While tracking, every ten frames, the features it finds that the update did not use are
+        measured with \texttt{EKF::measure}, through its gate: a tracked state is more likely to
+        be right than a few features found far from their predictions.
+  \item While tracking is weak, the map is left alone: no feature is added, since it would be
+        placed with a wrong pose, and no failed match is counted, since the failures are the
+        state's.
+\end{itemize}
+
+\section{Results}
+\label{sec:results}
+
+\paragraph{Ground truth.}
+The sequences start on the chessboard, and some come back to it. \texttt{analyze\_pattern} finds
+the whole board in every frame where it can, and fits the camera pose to its $54$ corners. A run
+is scored in pixels, the distance from the detected corners to the projections of the five
+chessboard features from the estimated pose (\texttt{evaluate\_tracking.py}), and by the error of
+the camera position when the board is seen again. The detector misses the blurriest frames, the
+fastest ones, so the annotated frames are checked as well.
+
+\paragraph{The runs are chaotic.}
+A tiny difference, such as changing the pixel noise by one part in a billion, can flip a borderline
+decision, a match accepted or a feature added, and the two runs then diverge. A single run cannot
+tell a better system from a lucky one. Every number below pools $15$ runs: five sets of initial
+chessboard corners, each with three negligible changes of the pixel noise.
+
+\begin{center}
+\begin{tabular}{ll}
+  sequence & result over $15$ runs \\
+  \hline
+  1 & median $1$ frame over $10$~px, at most $3$ \\
+  2 & median $5$ frames over $10$~px, at most $13$ \\
+  3 & median $3$ frames over $10$~px; lost in $2$ runs \\
+  5, back on the board at frames 336, 514, 566 & median errors $4.0$, $5.9$, $7.6$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $4$ and $5$ runs \\
+  6, board visits at frames 359, 411 & median errors $4.3$, $4.2$~cm \\
+  6, board visits at frames 771, 836 & median errors $18$, $25$~cm \\
+  6, board visits at frames 1413, 1549 & median errors $103$, $119$~cm \\
+\end{tabular}
+\end{center}
+
+Sequences 1 to 3 look at the board most of the time. Sequences 4 and 5 leave it after the
+initialization and track natural features, a table, a bowl, a cable, chairs, pictures, with $5$ to
+$20$ features per frame; sequence~5 comes back to the board twice. Sequence~6 is a minute long and
+comes back three times: the map holds the first time, and drifts by tens of cm over the next
+excursions. The two losses of sequence~3 come from the same set of initial corners, where the
+camera swings fast and the board is blurred.
+
+\paragraph{Speed.}
+On sequence~6, about $23$~ms per frame. The optical flow of the seeds takes about half of it, the
+global matching while lost and the patch search most of the rest; the filter itself, about $1$~ms.
+Most of the flow is the Lucas--Kanade tracking of the corners, whose cost is proportional to their
+number, the area of the window and the iterations: $150$ corners track as well as $300$, but a
+$15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in every run.
+
+\paragraph{Limitations.}
+\begin{itemize}
+  \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
+        Keeping both predictions, its own flow and the motion of its neighbors, and letting the
+        update choose would fix it.
+  \item Most kidnaps are not recovered, and why the descriptors fail on them is not established
+        yet.
+  \item Over long excursions the map drifts, as an EKF without loop closure does.
+\end{itemize}
+
+\section{Correspondence with the code}
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+  frame loop, parameters of the filter & \texttt{main.cpp} \\
+  $R$, $\exp$, $[\cdot]_\times$ & \texttt{EKF::orientation}, \texttt{rotation}, \texttt{skew} in \texttt{camera.h} \\
+  $f$, $F$, $W$, $Q$, $J_r$ & \texttt{MotionModel} in \texttt{ekf.h}, \texttt{rightJacobian} \\
+  prediction & \texttt{EKF::predict} \\
+  $h$, $H$, $S$ & \texttt{EKF::observe} \\
+  update, 1-point RANSAC & \texttt{EKF::update}, \texttt{EKF::correct} \\
+  gated update & \texttt{EKF::measure} \\
+  state augmentation, removal & \texttt{EKF::addFeature}, \texttt{EKF::removeFeatures} \\
+  relocalization of the camera & \texttt{EKF::resetCamera} \\
+  inverse depth & \texttt{inverse\_depth::toCamera}, \texttt{fromPixel}, \texttt{fromPoint}, \texttt{toPoint} \\
+  projection & \texttt{CameraModel::projectCameraPoint} \\
+  initialization & \texttt{initializeFromPattern} \\
+  seeds & \texttt{FlowTracker} in \texttt{tracking.h} \\
+  patch warping and search & \texttt{findPatch}, \texttt{matchFeatures} \\
+  adding, removing features & \texttt{Mapper::addFeatures}, \texttt{Mapper::removeUnreliable} \\
+  descriptors & \texttt{describe}, \texttt{Mapper::recordAppearance} \\
+  global matching & \texttt{matchGlobally} in \texttt{relocalization.h} \\
+  input, output & \texttt{FrameSource}, \texttt{StateStream} \\
+\end{tabular}
+\end{center}
+
+\begin{thebibliography}{8}
+
+\bibitem{civera2008}
+J.~Civera, A.~J.~Davison and J.~M.~M.~Montiel.
+Inverse depth parametrization for monocular SLAM.
+\emph{IEEE Transactions on Robotics}, 24(5):932--945, 2008.
+
+\bibitem{civera2010}
+J.~Civera, O.~G.~Grasa, A.~J.~Davison and J.~M.~M.~Montiel.
+1-point RANSAC for extended Kalman filtering: application to real-time structure from motion and
+visual odometry.
+\emph{Journal of Field Robotics}, 27(5):609--631, 2010.
+
+\bibitem{davison2007}
+A.~J.~Davison, I.~D.~Reid, N.~D.~Molton and O.~Stasse.
+MonoSLAM: real-time single camera SLAM.
+\emph{IEEE Transactions on Pattern Analysis and Machine Intelligence}, 29(6):1052--1067, 2007.
+
+\bibitem{lefferts1982}
+E.~J.~Lefferts, F.~L.~Markley and M.~D.~Shuster.
+Kalman filtering for spacecraft attitude estimation.
+\emph{Journal of Guidance, Control, and Dynamics}, 5(5):417--429, 1982.
+
+\bibitem{lucas1981}
+B.~D.~Lucas and T.~Kanade.
+An iterative image registration technique with an application to stereo vision.
+In \emph{Proceedings of the 7th International Joint Conference on Artificial Intelligence}, pages
+674--679, 1981.
+
+\bibitem{rublee2011}
+E.~Rublee, V.~Rabaud, K.~Konolige and G.~Bradski.
+ORB: an efficient alternative to SIFT or SURF.
+In \emph{Proceedings of the IEEE International Conference on Computer Vision}, pages 2564--2571,
+2011.
+
+\bibitem{shi1994}
+J.~Shi and C.~Tomasi.
+Good features to track.
+In \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition}, pages
+593--600, 1994.
+
+\bibitem{williams2011}
+B.~Williams, G.~Klein and I.~Reid.
+Automatic relocalization and loop closing for real-time monocular SLAM.
+\emph{IEEE Transactions on Pattern Analysis and Machine Intelligence}, 33(9):1699--1712, 2011.
+
+\end{thebibliography}
+
+\end{document}

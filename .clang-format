@@ -1,0 +1,44 @@
+---
+BasedOnStyle: Mozilla
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AlignArrayOfStructures: Left
+InsertNewlineAtEOF: true
+KeepEmptyLines:
+  AtStartOfBlock: false
+#   AtEndOfBlock: true  # Not yet available in clang-format 23.1.4
+  AtEndOfFile: false
+WrapNamespaceBodyWithEmptyLines: Always
+AlignTrailingComments:
+  Kind: Always
+ColumnLimit: 120
+SpacesBeforeTrailingComments: 2
+
+IndentPPDirectives: AfterHash
+AlignEscapedNewlines: Left
+
+# AlignAfterOpenBracket: Align
+# BinPackArguments: false
+# AlignOperands: Align
+# BreakBeforeBinaryOperators: None
+
+BreakBinaryOperations:
+  Default: Never
+  PerOperator:
+    - Operators: ['&&', '||']
+      Style: OnePerLine
+
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:    '^<[a-z_]+>$'  # C++ standard lib
+    Priority: 1
+  - Regex:    '^<[^>]+>$'    # Third-party libs (OpenCV, etc.)
+    Priority: 2
+  - Regex:    '^".*"$'       # Local project headers
+    Priority: 3

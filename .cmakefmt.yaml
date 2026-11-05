@@ -1,0 +1,8 @@
+---
+format:
+  line_width: 100
+  tab_size: 4
+  dangle_parens: false
+  dangle_align: prefix
+  max_hanging_wrap_positional_args: 0
+  max_hanging_wrap_groups: 3
