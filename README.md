@@ -9,8 +9,7 @@ It runs at 30 Hz on commodity hardware, check the [sample videos](https://www.yo
 ## The code
 
 A small monocular EKF SLAM: one camera, no IMU, initialized from a chessboard and then tracking
-the natural features of the scene. The whole system is in `MonoSLAM/`, about 2,400 lines of C++,
-meant to be read from top to bottom:
+the natural features of the scene. The whole system is in `MonoSLAM/`, about 2,400 lines of C++:
 
 | File | What it does |
 |---|---|
