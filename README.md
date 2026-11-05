@@ -25,22 +25,26 @@ the natural features of the scene. The whole system is in `MonoSLAM/`:
 | `frame_source.h/.cpp`, `state_stream.h/.cpp` | Input from a camera or a directory, and output of the state |
 
 The EKF state is `[r, e, v, w, y_0, ..., y_N]`: camera position, orientation error, linear and
-angular velocity, and stationary features in inverse depth (Civera, Davison and Montiel,
-2008), `y = (anchor, azimuth, elevation, inverse depth)`, which every feature keeps for its whole
+angular velocity, and stationary features in inverse depth
+([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)),
+`y = (anchor, azimuth, elevation, inverse depth)`, which every feature keeps for its whole
 life. The orientation is a rotation matrix kept next to the state, which only holds a small
 rotation `e` on top of it, absorbed after every update (an error-state EKF): no quaternion to
 normalize. The motion model is a constant velocity model whose velocities decay towards zero, which
 fits a hand-held camera better than velocities that persist. The wrong matches are found with
-1-point RANSAC (Civera et al., 2010), using only the filter's own models and covariances, and a
-match is not even proposed if another place in its search region looks almost as alike.
+1-point RANSAC
+([Civera et al., 2010](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf)), using
+only the filter's own models and covariances, and a match is not even proposed if another place in
+its search region looks almost as alike.
 
 Every feature is searched in a small region around its seed, which follows the image motion of the
 corners around it: the motion model cannot predict a jerk of the hand, but the images can. New
-features are added, as in Davison et al., 2007, where the frame has none, if they are textured
-enough to be located and do not look like anything around them, and removed when they stop being
-matched. Every feature keeps ORB
-descriptors of how it has looked, so that after a weak frame, or a long excursion, the map can be
-found anywhere in the frame (Williams, Klein and Reid, 2011).
+features are added, as in
+[Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf), where
+the frame has none, if they are textured enough to be located and do not look like anything around
+them, and removed when they stop being matched. Every feature keeps ORB descriptors of how it has
+looked, so that after a weak frame, or a long excursion, the map can be found anywhere in the frame
+([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
 `docs/monoslam.tex` describes the system in detail: the frame loop, the derivation of the
 models, every step with its parameters and the evidence behind them, and the current results.
