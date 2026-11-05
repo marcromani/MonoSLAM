@@ -3,7 +3,7 @@
 --stream (see state_stream.h). It reads the state from a file given as its argument, or from its
 standard input, so that it can be fed while monoslam runs, through a process substitution:
 
-    monoslam 7 10 2.5 camera --stream >(.venv/bin/python MonoSLAM/tools/viewer.py)
+    monoslam 7 10 2.5 camera --stream >(python3 MonoSLAM/tools/viewer.py)
 
 The world is the frame of the calibration pattern, which lies on the plane z = 0. Shown are the
 camera and its trajectory, and the features: red if the last update used them, yellow if they were
@@ -110,9 +110,10 @@ def main():
 
     rr.init("monoslam")
 
-    # The viewer is installed next to this Python, which may not be in PATH
+    # In a virtual environment the viewer is installed next to its Python, which may not be in PATH
     if save is None:
-        rr.spawn(executable_path=str(Path(sys.executable).parent / "rerun"))
+        viewer = Path(sys.executable).parent / "rerun"
+        rr.spawn(executable_path=str(viewer) if viewer.exists() else None)
     else:
         rr.save(save)
 

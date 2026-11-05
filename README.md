@@ -121,20 +121,23 @@ them, yellow if they were in view but not used, gray otherwise, each with the se
 within two standard deviations of its inverse depth. Every frame stays on the timeline, so any of
 them can be looked at again, next to plots of the features used and the position uncertainty.
 
-Rerun is installed once in a virtual environment of the repository:
+The viewer needs Rerun and NumPy. Recent Ubuntu releases do not let `pip` install into the system
+Python, so install them in a virtual environment, anywhere, and activate it before using the
+viewer:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install rerun-sdk numpy
+python3 -m venv ~/rerun-env
+source ~/rerun-env/bin/activate
+pip install rerun-sdk numpy
 ```
 
 Feed the viewer while MonoSLAM runs, through a process substitution of bash, or give it a stream
-saved to a file. With `--save` it writes a recording instead, to open later with `.venv/bin/rerun`:
+saved to a file. With `--save` it writes a recording instead, to open later with `rerun`:
 
 ```bash
-./build/MonoSLAM/monoslam 7 10 2.5 camera --stream >(.venv/bin/python MonoSLAM/tools/viewer.py)
-.venv/bin/python MonoSLAM/tools/viewer.py state.txt
-.venv/bin/python MonoSLAM/tools/viewer.py state.txt --save scene.rrd
+./build/MonoSLAM/monoslam 7 10 2.5 camera --stream >(python3 MonoSLAM/tools/viewer.py)
+python3 MonoSLAM/tools/viewer.py state.txt
+python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 ```
 
 ## Recording a replay sequence
@@ -163,7 +166,7 @@ Replay the sequence through the EKF:
 
 `analyze_pattern` detects the whole chessboard in every frame where it can and fits the camera
 pose to it, and `MonoSLAM/tools/evaluate_tracking.py` scores a state stream against that, in
-pixels first:
+pixels first. It needs NumPy, which the environment of the viewer already has:
 
 ```bash
 ./build/MonoSLAM/analyze_pattern /path/to/sequence > ground_truth.txt
