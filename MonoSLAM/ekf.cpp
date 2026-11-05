@@ -256,7 +256,8 @@ monoslam::EKF::predict(double dt)
     cv::Matx<double, c, 6> W;
     x_ = motion_.predict(x_, R_, dt, &F, &W);
 
-    // Only the camera moves: P becomes [F Pcc F^T + W Q W^T, F Pcf; Pfc F^T, Pff]
+    // Only the camera moves: its block of P becomes F Pcc F^T + W Q W^T, its correlations with the
+    // features F Pcf, and the block of the features does not change
     const int n = x_.rows;
 
     cv::Matx<double, c, c> Pcc;

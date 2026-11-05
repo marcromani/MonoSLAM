@@ -324,7 +324,7 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
 
     while (inView.size() < minVisible && added < maxNewPerFrame) {
         // The most salient distinctive corner of the emptiest box that has one, away from the
-        // features near it; a box can be empty because there is nothing to track there
+        // features near it. A box can be empty because there is nothing to track there
         std::optional<cv::Point2f> found;
 
         for (const cv::Rect& box : findEmptyBoxes(inside, inView)) {

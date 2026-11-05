@@ -52,7 +52,7 @@ Every frame goes through the same steps, in \texttt{main.cpp}:
   \item Every ten frames, the features found by their appearance that the update did not use are
         measured too, if their innovation is plausible.
   \item If at least four features were used, the seeds move to the projections of their features
-        from the updated state; otherwise they keep following the images.
+        from the updated state, and otherwise they keep following the images.
   \item Unless the frame is weak, the map is kept: the features rarely matched are removed, and new
         ones are added where the frame has none (section~\ref{sec:map}).
 \end{enumerate}
@@ -128,7 +128,7 @@ The new orientation $R' = R \exp([w]_\times)$ gives
 \end{equation}
 a chain of two changes of basis: $\exp([w]_\times)$ maps coordinates in $C'$ to coordinates in
 $C$, and $R$ maps those to the world. The axis $w$ has the same coordinates in $C$ and $C'$, since
-the rotation fixes it, so $w$ is a rotation in camera coordinates; in the world it is $R\, w$, and
+the rotation fixes it, so $w$ is a rotation in camera coordinates. In the world it is $R\, w$, and
 $R \exp([w]_\times) = \exp([R w]_\times) R$. The motion model composes on the right, so $\omega$
 is in camera coordinates, and so is $e$.
 
@@ -244,7 +244,7 @@ the next frame (negative log-likelihood, lower is better):
 Having the velocities matters most, by more than a thousand units: the motion of the camera
 persists from one frame to the next. How the noise enters them matters little, and a decay of
 about $0.3$~s fits best, for one more parameter. The motion itself needs about $90$~cm/s$^2$ and
-$5.5$~rad/s$^2$; the filter needs more, since it also has to absorb its own errors, and since the
+$5.5$~rad/s$^2$, but the filter needs more, since it also has to absorb its own errors, and since the
 fastest frames, the most blurred, are those where the board is not detected and that this fit does
 not score.
 
@@ -291,7 +291,7 @@ which keeps the observation model, the map and the code uniform, at the price of
 state. \texttt{EKF::isWellLocated} tells the features whose depth is known, $\rho > 0$ and
 $\sigma_\rho < 0.1\, \rho$, which is where Civera et al.\ would convert them.
 \texttt{inverse\_depth::toPoint} gives the point when one is needed, for drawing or warping
-patches; a feature with $\rho \le 10^{-3}$ is placed at $10$~m along its ray.
+patches. A feature with $\rho \le 10^{-3}$ is placed at $10$~m along its ray.
 
 \paragraph{Initialization.}
 The camera pose comes from the whole chessboard, with PnP, if it explains all its corners within
@@ -302,7 +302,7 @@ $(\theta_i, \phi_i, \rho_i)$ is $J\, (0.05\, I_3)\, J^\top$, with $J$ the Jacobi
 \texttt{fromPointJacobian}: a variance of $0.05$~cm$^2$ per axis of the point. The anchor has no
 uncertainty: it is a constant, not something measured. The camera starts with standard deviations
 of $0.22$~cm, $0.02$~rad, $30$~cm/s and $1.5$~rad/s, and no velocity. This is where the scale of
-the map comes from; the chessboard is not used afterwards.
+the map comes from, and the chessboard is not used afterwards.
 
 \paragraph{New features.}
 A feature first seen at pixel $u$ from the pose $(r, R)$, with an inverse depth $\rho_0$, is
@@ -356,7 +356,7 @@ and every frame (\texttt{predict}):
         out of the image are moved the same way, by the corners closest to them.
   \item \emph{Lets the seed's own flow take over.} The seeds in view are also tracked themselves,
         with a $31 \times 31$ window. If that lands within $6$~px of the affine position, it
-        replaces it, since the flow of a single point is more precise; if not, it has probably
+        replaces it, since the flow of a single point is more precise. If not, it has probably
         slipped to a look-alike neighbor, and the affine position is kept.
 \end{enumerate}
 An affine map is the first-order approximation of the image motion around a point, so this assumes
@@ -406,7 +406,7 @@ $P H^\top$ skips those zeros.
   \qquad
   P \leftarrow P - K H P,
 \end{equation}
-with $K^\top$ solved from $S K^\top = (P H^\top)^\top$ by Cholesky; nothing is updated if $S$ is not
+with $K^\top$ solved from $S K^\top = (P H^\top)^\top$ by Cholesky, and nothing is updated if $S$ is not
 positive definite. Then $R$ absorbs the orientation error (section~\ref{sec:state}).
 
 \paragraph{1-point RANSAC.}
@@ -420,7 +420,7 @@ in Civera et al.~\cite{civera2010}:
           \qquad
           K_j = P H_j^\top S_{jj}^{-1}.
         \end{equation}
-        One pixel only fixes two degrees of freedom of the pose; the others move according to
+        One pixel only fixes two degrees of freedom of the pose, and the others move according to
         their correlations with those two in $P$, the most likely way given the prediction, which
         is enough to tell which other matches agree. The hypotheses are states with $e \neq 0$,
         projected with $R \exp([e]_\times)$.
@@ -439,13 +439,13 @@ in Civera et al.~\cite{civera2010}:
 \end{enumerate}
 Since everything goes through $h$, $H$, $P$ and $\sigma$, nothing in the update knows about poses
 or images. Each hypothesis costs one evaluation of the observation model, which is fine for a
-dozen features; with hundreds, a random subset of hypotheses would do, as in Civera et al.~\cite{civera2010}.
+dozen features. With hundreds, a random subset of hypotheses would do, as in Civera et al.~\cite{civera2010}.
 
 \paragraph{The plain update is enough.}
 The projection is not linear, and an iterated EKF, Gauss--Newton on the same cost, would follow
 its curvature. Without a line search it oscillates on this cost, and with the single rescued
 matches of the second stage, which do not fix a pose, it wanders through the directions they leave
-free; the curvature it would correct is small for the innovations that 1-point RANSAC lets through.
+free. The curvature it would correct is small for the innovations that 1-point RANSAC lets through.
 
 \paragraph{Gated measurements.}
 \texttt{EKF::measure} updates the state with features found by other means, the global matching of
@@ -464,8 +464,8 @@ While fewer than $12$ features are in view, at most two are added per frame:
   \item \emph{Where.} A box a quarter of the frame in each dimension is slid over it by half its
         size, $20$~px away from the border, and the positions with no feature in view inside are
         tried, the farthest from the features first, so that the features keep a roughly constant
-        density over the frame, as in Davison et al.~\cite{davison2007} (who place the box at random; a fixed order
-        keeps the runs repeatable). A box can be empty because there is nothing to track in it,
+        density over the frame, as in Davison et al.~\cite{davison2007}, who place the box at random. A
+        fixed order keeps the runs repeatable. A box can be empty because there is nothing to track in it,
         and then the next one is tried.
   \item \emph{Salient.} \texttt{goodFeaturesToTrack} proposes up to $10$ corners in the box
         (Shi--Tomasi~\cite{shi1994}, quality $0.01$, at least $10$~px apart), $30$~px away from the features in
@@ -476,7 +476,7 @@ While fewer than $12$ features are in view, at most two are added per frame:
         textured direction, the smaller eigenvalue of the gradient matrix of the patch, as in Shi
         and Tomasi, must be at least $2$ gray levels per pixel. On the six sequences, the features
         below $1$, $31\%$ of them, lived a median of $11$ frames and were used in $21\%$ of their
-        searches; those above $2$ were used in about $70\%$. The correlation of the next test
+        searches, and those above $2$ were used in about $70\%$. The correlation of the next test
         cannot tell a blank patch: it divides by its contrast, and what is left is camera noise.
   \item \emph{Distinctive.} A candidate is rejected if its patch correlates with some other place
         within $\pm 40$~px, outside $\pm 4$~px of itself, with a score of $0.8$ or more. That keeps
@@ -569,7 +569,7 @@ chessboard corners, each with three negligible changes of the pixel noise.
   \hline
   1 & median $1$ frame over $10$~px, at most $3$ \\
   2 & median $5$ frames over $10$~px, at most $13$ \\
-  3 & median $3$ frames over $10$~px; lost in $2$ runs \\
+  3 & median $3$ frames over $10$~px, lost in $2$ runs \\
   5, back on the board at frames 336, 514, 566 & median errors $4.0$, $5.9$, $7.6$~cm \\
   5, kidnaps: frames 141--249 and 421--479 cut & recovered in $4$ and $5$ runs \\
   6, board visits at frames 359, 411 & median errors $4.3$, $4.2$~cm \\
@@ -580,14 +580,14 @@ chessboard corners, each with three negligible changes of the pixel noise.
 
 Sequences 1 to 3 look at the board most of the time. Sequences 4 and 5 leave it after the
 initialization and track natural features, a table, a bowl, a cable, chairs, pictures, with $5$ to
-$20$ features per frame; sequence~5 comes back to the board twice. Sequence~6 is a minute long and
+$20$ features per frame, and sequence~5 comes back to the board twice. Sequence~6 is a minute long and
 comes back three times: the map holds the first time, and drifts by tens of cm over the next
 excursions. The two losses of sequence~3 come from the same set of initial corners, where the
 camera swings fast and the board is blurred.
 
 \paragraph{Speed.}
 On sequence~6, about $23$~ms per frame. The optical flow of the seeds takes about half of it, the
-global matching while lost and the patch search most of the rest; the filter itself, about $1$~ms.
+global matching while lost and the patch search most of the rest, and the filter itself about $1$~ms.
 Most of the flow is the Lucas--Kanade tracking of the corners, whose cost is proportional to their
 number, the area of the window and the iterations: $150$ corners track as well as $300$, but a
 $15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in every run.

@@ -9,7 +9,7 @@ It runs at 30 Hz on commodity hardware, check the [sample videos](https://www.yo
 ## The code
 
 A small monocular EKF SLAM: one camera, no IMU, initialized from a chessboard and then tracking
-the natural features of the scene. The whole system is in `MonoSLAM/`, about 2,400 lines of C++:
+the natural features of the scene. The whole system is in `MonoSLAM/`:
 
 | File | What it does |
 |---|---|
@@ -143,8 +143,7 @@ Use the standalone recorder to capture timestamped grayscale frames:
 
 This writes `frame_*.png`, `timestamps.csv` with the capture time of every frame, and a copy of
 `camera.json` into the output directory, which must be empty or not exist yet. With `--frames` or
-`--seconds` recording starts right away; otherwise it starts when you press Space in the preview
-window. Escape stops it. `--fps F` sets the frame rate to ask the camera for, and `--headless`
+`--seconds` recording starts right away, and otherwise when you press Space in the preview window. Escape stops it. `--fps F` sets the frame rate to ask the camera for, and `--headless`
 records without the preview window, with `--frames` or `--seconds`.
 
 Replay the sequence through the EKF:

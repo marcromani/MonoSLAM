@@ -5,7 +5,6 @@ build-release/
 .cache/
 debug/
 *.log
-*.pdf
 __pycache__/
 .venv/
 .vscode/

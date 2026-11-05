@@ -177,7 +177,7 @@ monoslam::matchGlobally(const cv::Mat1b& frame,
     }
 
     // Each feature is matched to its nearest corner, if it is clearly nearer than any corner
-    // elsewhere; the corners around the same structure look alike, but are not an ambiguity
+    // elsewhere. The corners around the same structure look alike, but are not an ambiguity
     std::vector<std::vector<cv::DMatch>> nearest;
     cv::BFMatcher(cv::NORM_HAMMING).knnMatch(descriptors, frameDescriptors, nearest, numNearest);
 
