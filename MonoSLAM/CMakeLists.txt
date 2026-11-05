@@ -1,71 +1,42 @@
-cmake_minimum_required(VERSION 4.2)
-
-add_executable(
-    monoslam
-    camera.cpp
-    feature.cpp
-    filter/ekf.cpp
-    geometry.cpp
-    logging.h
-    main.cpp
-    matcher.cpp
-    quaternion.cpp
-    sanitizer.cpp
-    system_observation_model.cpp
-    system_process_model.cpp
-    util.cpp)
-
-set_target_properties(
-    monoslam
-    PROPERTIES
-        CXX_STANDARD
-        17
-        CXX_STANDARD_REQUIRED
-        YES
-        CXX_EXTENSIONS
-        NO)
-
-target_include_directories(monoslam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-# OpenCV's installed configuration still uses the legacy FindCUDA module
-cmake_policy(PUSH)
-cmake_policy(SET CMP0146 OLD)
-
-find_package(OpenCV 5 REQUIRED COMPONENTS core calib highgui imgproc objdetect videoio video)
-
-cmake_policy(POP)
-
-target_include_directories(monoslam SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
-
-target_link_libraries(monoslam PRIVATE ${OpenCV_LIBS})
-
+# The sanitizers, in debug builds. The calibration program goes without: its window, which OpenCV
+# never frees, would be reported as a leak, and only monoslam suppresses that
 if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
-    target_compile_definitions(
-        monoslam
-        PRIVATE
-            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:MONOSLAM_SANITIZERS_ENABLED>)
-
-    target_compile_options(
-        monoslam
-        PRIVATE
-            -Wall
-            -Wextra
-            -pedantic-errors
-            -Wconversion
-            -Wsign-conversion
-            -Wshadow
-            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fsanitize=address,undefined>)
-
-    target_link_options(
-        monoslam
-        PRIVATE
-            $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fsanitize=address,undefined>)
+    add_compile_definitions($<$<CONFIG:Debug,RelWithDebInfo>:MONOSLAM_SANITIZERS_ENABLED>)
+    add_compile_options($<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address,undefined>)
+    add_link_options($<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address,undefined>)
 endif()
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(
-        monoslam
-        PRIVATE
-            $<$<CONFIG:Release>:-march=native>
-            $<$<CONFIG:Release>:-funroll-loops>)
+# Everything but the programs, which share it
+add_library(
+    monoslam_core
+    STATIC
+        camera.cpp
+        ekf.cpp
+        feature.cpp
+        frame_source.cpp
+        initialization.cpp
+        inverse_depth.cpp
+        mapper.cpp
+        relocalization.cpp
+        state_stream.cpp
+        tracking.cpp)
+
+target_include_directories(monoslam_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(monoslam_core PUBLIC ${OpenCV_LIBS})
+
+add_executable(analyze_pattern tools/analyze_pattern.cpp)
+target_link_libraries(analyze_pattern PRIVATE monoslam_core)
+
+add_executable(monoslam main.cpp)
+target_link_libraries(monoslam PRIVATE monoslam_core)
+
+add_executable(record_sequence tools/record_sequence.cpp)
+target_link_libraries(record_sequence PRIVATE monoslam_core)
+
+if(BUILD_TESTING)
+    add_executable(monoslam_tests tests/system_tests.cpp)
+    target_link_libraries(monoslam_tests PRIVATE monoslam_core)
+
+    add_test(NAME monoslam_tests COMMAND monoslam_tests)
+    set_tests_properties(monoslam_tests PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()

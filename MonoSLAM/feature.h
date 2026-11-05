@@ -1,7 +1,12 @@
 #ifndef MONOSLAM_FEATURE_H
 #define MONOSLAM_FEATURE_H
 
+#include <cstddef>
+#include <cstdint>
+
 #include <opencv2/core.hpp>
+
+#include "camera.h"
 
 namespace monoslam {
 
@@ -12,59 +17,33 @@ class Feature
     cv::Point2d position;  // Pixel position in the original frame
     cv::Rect roi;          // Patch region in the original frame
 
-    cv::Vec3d normal;  // Patch normal vector, in world coordinates
+    cv::Mat1b descriptors;  // Descriptors of the feature as it has looked so far, one per row
 
-    cv::Matx33d R;  // Camera rotation in the original frame (world to camera)
-    cv::Vec3d t;    // Camera location in the original frame, in world coordinates
+    cv::Vec3d normal;           // Patch normal vector, in world coordinates
+    bool knownSurface = false;  // Whether the normal is known, rather than assumed to face the camera
 
-    int matchingFailures;  // Number of matching failures
-    int matchingAttempts;  // Number of matching attempts
+    CameraPose pose;  // Camera pose in the original frame
 
-    cv::Vec3d initDirection;              // Pre-initialization unit vector from camera to feature, in world coordinates
-    cv::Vec<double, 100> initDepths;      // Pre-initialization depth hypotheses
-    cv::Vec<double, 100> initDepthProbs;  // Pre-initialization depth probabilities
+    std::size_t id = 0;  // Unique identifier, which does not change when other features are removed
 
-    bool initialized;  // Whether the feature is fully initialized or not
-
-    Feature() = default;  // Needs to be default-constructible for the monoslam::Buffer
+    int matchingAttempts = 0;        // Number of times the feature was searched
+    std::uint32_t matchHistory = 0;  // Whether the filter used it in each of its last attempts, the last in bit 0
 
     /*
-     * Constructor for a fully initialized feature. It is a convenient method used only
-     * during map initialization, when manually initialized features are added with zero
-     * position uncertainty.
+     * Constructor of a feature, which keeps the frame where it was first seen to take its patch
+     * from it.
      *
-     * frame        Grayscale camera frame at the time the feature is initialized
-     * position     Feature pixel position
-     * patchSize    Feature patch size
-     * normal       Patch normal vector, in world coordinates
-     * R            Camera rotation at feature initialization (world to camera)
-     * t            Camera position at feature initialization, in world coordinates
+     * image          Grayscale camera frame at the time the feature is initialized
+     * pixel          Feature pixel position
+     * patchSize      Feature patch size
+     * patchNormal    Patch normal vector, in world coordinates
+     * firstPose      Camera pose at feature initialization
      */
-    Feature(const cv::Mat1b& frame,
-            const cv::Point2d& position,
+    Feature(const cv::Mat1b& image,
+            const cv::Point2d& pixel,
             int patchSize,
-            const cv::Vec3d& normal,
-            const cv::Matx33d& R,
-            const cv::Vec3d& t);
-
-    /*
-     * Constructor for a pre-initialized (candidate) feature.
-     *
-     * frame             Grayscale camera frame at the time the feature is initialized
-     * position          Feature pixel position
-     * patchSize         Feature patch size
-     * R                 Camera rotation at feature initialization (world to camera)
-     * t                 Camera position at feature initialization, in world coordinates
-     * initDirection     Unit vector from camera to feature, in world coordinates
-     * initDepthRange    Interval for the uniformly distributed depth hypotheses
-     */
-    Feature(const cv::Mat1b& frame,
-            const cv::Point2d& position,
-            int patchSize,
-            const cv::Matx33d& R,
-            const cv::Vec3d& t,
-            const cv::Vec3d& initDirection,
-            const cv::Point2d& initDepthRange);
+            const cv::Vec3d& patchNormal,
+            const CameraPose& firstPose);
 };
 
 }

@@ -1,199 +1,334 @@
+/*
+ * MonoSLAM: monocular EKF SLAM, initialized from a chessboard and then run on the natural features
+ * of the scene. Every frame goes through the same steps:
+ *
+ *   1. Predict the camera with the motion model, and the image position of every feature, its
+ *      seed, with the optical flow (tracking.h).
+ *   2. After a weak frame, look for the map anywhere in the frame by its appearance, and move the
+ *      camera where it says (relocalization.h).
+ *   3. Search the features in view around their seeds, and update the filter with the matches that
+ *      1-point RANSAC accepts (tracking.h, ekf.h).
+ *   4. Every few frames, look for the features the seeds cannot reach, after a long excursion.
+ *   5. Let the seeds follow the updated state.
+ *   6. Keep the map: remove the features that are rarely matched, and add new ones where the frame
+ *      has none (mapper.h).
+ */
+
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
-#include <memory>
+#include <filesystem>
+#include <iomanip>
+#include <iostream>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <opencv2/core.hpp>
-#include <opencv2/geometry.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/objdetect.hpp>
-#include <opencv2/videoio.hpp>
 
 #include "camera.h"
+#include "ekf.h"
 #include "feature.h"
-#include "filter/ekf.h"
-#include "filter/observation_model.h"
-#include "logging.h"
-#include "matcher.h"
-#include "quaternion.h"
-#include "system_observation_model.h"
-#include "system_process_model.h"
-#include "util.h"
+#include "frame_source.h"
+#include "initialization.h"
+#include "mapper.h"
+#include "relocalization.h"
+#include "state_stream.h"
+#include "tracking.h"
 
-bool
-parseInt(std::string_view text, int& value);
+namespace {
 
-bool
-parsePositiveDouble(std::string_view text, double& value);
+// Motion model
+constexpr double FPS = 30.0;              // Assumed when the frames have no timestamps
+constexpr double linearAccStd = 1000.0;   // Linear acceleration standard deviation, in cm/s^2
+constexpr double angularAccStd = 15.0;    // Angular acceleration standard deviation, in rad/s^2
+constexpr double linearDecayTime = 0.3;   // Time constant of the decay of the linear velocity, in s
+constexpr double angularDecayTime = 0.2;  // Time constant of the decay of the angular velocity, in s
 
-bool
-getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, std::string& filename);
+// Measurements
+constexpr double pixelStd = 3.0;              // Standard deviation of a pixel measurement
+constexpr double maxInlierDistance = 6.0;     // Pixels, for 1-point RANSAC
+constexpr double maxNIS = 9.210340371976184;  // Chi-squared, 2 degrees of freedom, 99%
 
-template<monoslam::logging::LogLevel level>
+constexpr std::size_t minConstrained = 4;       // Measurements needed to fix a pose beyond doubt
+constexpr std::size_t globalSearchPeriod = 10;  // Frames between searches of the map by appearance
+
+struct Options
+{
+    cv::Size patternSize;     // Inner corners of the calibration pattern
+    double squareSize = 0.0;  // Side of a square of the calibration pattern, in cm
+    std::string cameraFile;   // Camera intrinsics
+    std::string device = "/dev/video5";
+    std::string imagesDir;      // Replay the images of this directory instead of using the camera
+    std::string streamFile;     // Write the state of every frame here, for tools/viewer.py
+    std::string annotateDir;    // Save the annotated frames here
+    std::size_t maxFrames = 0;  // Stop after this frame, 0 to never stop
+    bool headless = false;      // Do not open any window
+    bool timing = false;        // Report the frame intervals, the processing time and the dropped frames
+};
+
+constexpr const char* usage =
+  "Usage: monoslam rows cols square_size camera [options]\n"
+  "   rows, cols: Number of squares of the calibration pattern\n"
+  "  square_size: Side of a square, in cm\n"
+  "       camera: Camera intrinsics file, \".json\" is appended\n"
+  "  --device D    Camera device (default /dev/video5)\n"
+  "  --images D    Replay the sorted images of directory D instead of a camera\n"
+  "  --frames N    Stop after N frames\n"
+  "  --stream F    Write the state of every frame to F, for tools/viewer.py and evaluate_tracking.py\n"
+  "  --annotate D  Save the annotated frames to directory D\n"
+  "  --headless    Do not open any window\n"
+  "  --timing      Report every second the frame interval, processing time and dropped frames\n";
+
+/*
+ * Parses the command line. Returns nothing if it is not valid.
+ */
+std::optional<Options>
+parseOptions(int argc, char* argv[]);
+
+/*
+ * Draws the features whose matches the filter used: the predicted measurement (green) with the 99%
+ * ellipse of its innovation covariance, the seed (blue), and the match (red).
+ *
+ * image      Image to draw on
+ * o          Features in view, and their predicted measurements
+ * seeds      Seeds of all the features
+ * matches    Pixel of each feature of o, if it was found
+ * used       Features the filter used
+ */
 void
-printUsage(const char* execName);
+drawUsedMatches(cv::Mat3b& image,
+                const monoslam::Observation& o,
+                const std::vector<cv::Point2f>& seeds,
+                const std::vector<std::optional<cv::Point2d>>& matches,
+                const std::vector<std::size_t>& used);
 
+/*
+ * Shows a frame, unless running headless, and saves it if asked to. Returns false if the user
+ * pressed escape.
+ */
 bool
-readCameraFile(const std::string& filename, cv::Matx33d& K, cv::Vec<double, 5>& distCoeffs, cv::Size& frameSize);
+showFrame(const cv::Mat& frame, std::size_t index, const Options& options);
 
-bool
-initSystem(const cv::Mat1b& frame,
-           const cv::Size& patternSize,
-           double squareSize,
-           const monoslam::CameraModel& camera,
-           cv::Mat1d& x,
-           cv::Mat1d& P,
-           std::vector<monoslam::Feature>& features);
-
-bool
-addInitialFeature(const cv::Mat1b& frame,
-                  const cv::Point2f& point2D,
-                  const cv::Matx33d& R,
-                  const cv::Vec3d& t,
-                  std::vector<monoslam::Feature>& features);
+}
 
 int
 main(int argc, char* argv[])
 {
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view arg(argv[i]);
-        if (arg == "-h" || arg == "--help") {
-            printUsage<monoslam::logging::LogLevel::INFO>(argv[0]);
-            return EXIT_SUCCESS;
-        }
-    }
+    const std::optional<Options> parsed = parseOptions(argc, argv);
 
-    int rows = 0, cols = 0;
-    double squareSize = 0.0;
-    std::string filename;
-
-    if (!getOptions(argc, argv, rows, cols, squareSize, filename)) {
-        printUsage<monoslam::logging::LogLevel::ERROR>(argv[0]);
+    if (!parsed.has_value()) {
+        std::cerr << usage;
         return EXIT_FAILURE;
     }
 
-    const cv::Size patternSize(cols - 1, rows - 1);
+    const Options& options = parsed.value();
 
-    cv::Matx33d K;
-    cv::Vec<double, 5> distCoeffs;
-    cv::Size frameSize;
+    const std::optional<monoslam::CameraModel> calibration = monoslam::CameraModel::load(options.cameraFile);
 
-    if (!readCameraFile(filename, K, distCoeffs, frameSize)) {
-        MONOSLAM_LOG(monoslam::logging::LogLevel::ERROR, "Could not open ", filename, '\n');
+    if (!calibration.has_value()) {
+        std::cerr << "Could not read " << options.cameraFile << '\n';
         return EXIT_FAILURE;
     }
 
-    cv::VideoCapture device("/dev/video4");
+    const monoslam::CameraModel& camera = calibration.value();
 
-    if (!device.isOpened()) {
-        MONOSLAM_LOG(monoslam::logging::LogLevel::ERROR, "Could not open /dev/video4\n");
+    // The work is split into very small patches: threads cost more than they save
+    cv::setNumThreads(1);
+
+    // INPUT //
+
+    monoslam::FrameSource source;
+
+    if (options.imagesDir.empty() ? !source.openCamera(options.device, camera.frameSize(), FPS)
+                                  : !source.openImages(options.imagesDir, camera.frameSize(), FPS)) {
+        std::cerr << "Could not open the input\n";
         return EXIT_FAILURE;
     }
 
-    const double FPS = device.get(cv::CAP_PROP_FPS);
+    if (!options.headless) {
+        cv::namedWindow("MonoSLAM", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
+    }
 
-    MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG,
-                 " Camera reported FPS: ",
-                 FPS,
-                 '\n',
-                 "Camera reported size: ",
-                 device.get(cv::CAP_PROP_FRAME_WIDTH),
-                 'x',
-                 device.get(cv::CAP_PROP_FRAME_HEIGHT),
-                 '\n');
+    // INITIALIZATION //
 
-    cv::namedWindow("MonoSLAM", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
-
+    cv::Mat1b gray;
     cv::Mat1d x;
+    cv::Matx33d R;
     cv::Mat1d P;
 
     std::vector<monoslam::Feature> features;
 
-    const monoslam::CameraModel camera(K, distCoeffs, frameSize);
-
-    cv::Mat3b frame;
-    cv::Mat1b gray;
-
     do {
-        if (!device.read(frame)) {
-            MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG, "Could not read a camera frame\n");
-            continue;
+        if (!source.read(gray)) {
+            std::cerr << "The pattern was not found in the sequence\n";
+            return EXIT_FAILURE;
         }
 
-        cv::resize(frame, frame, frameSize);
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        if (!options.headless) {
+            cv::imshow("MonoSLAM", gray);
 
-        cv::imshow("MonoSLAM", gray);
-
-        if (cv::waitKey(1) == 27) {
-            return EXIT_SUCCESS;
-        }
-
-    } while (!initSystem(gray, patternSize, squareSize, camera, x, P, features));
-
-    MONOSLAM_LOG(monoslam::logging::LogLevel::INFO, "Initialization succeeded\n");
-
-    constexpr double linearAccStd = 100.0;  // Linear acceleration standard deviation, in cm / s²
-    constexpr double angularAccStd = 1.57;  // Angular acceleration standard deviation, in rad / s²
-
-    const auto processModel = std::make_shared<monoslam::SystemProcessModel>(linearAccStd, angularAccStd);
-
-    constexpr double pixelStd = 3.0;
-
-    const auto observationModel = std::make_shared<monoslam::SystemObservationModel>(camera, pixelStd);
-
-    monoslam::filter::EKF ekf(processModel, observationModel);
-    ekf.init(x, P);
-
-    monoslam::Matcher matcher;
-
-    while (true) {
-        if (!device.read(frame)) {
-            MONOSLAM_LOG(monoslam::logging::LogLevel::DEBUG, "Could not read a camera frame\n");
-            continue;
-        }
-
-        cv::resize(frame, frame, frameSize);
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);  // The single-channel frame is used in the filter
-        cv::cvtColor(gray, frame, cv::COLOR_GRAY2BGR);  // The original frame is reused for the GUI
-
-        ekf.predict(1.0 / FPS);
-
-        ekf.update([&](const cv::Mat1d& x_, const monoslam::filter::ObservationPrediction& p_, const cv::Mat1d& S_) {
-            for (int i = 0; i < p_.h.rows; i += 2) {
-                const cv::Point position(static_cast<int>(p_.h(i)), static_cast<int>(p_.h(i + 1)));
-
-                const cv::Mat1d S = S_(cv::Rect(i, i, 2, 2));
-
-                // TODO: Ellipses should be passed to the matcher, since we already compute them here for the GUI
-                const std::vector<cv::RotatedRect> ellipses =
-                  monoslam::util::computeEllipses(p_.h.rowRange(i, i + 2).reshape(2, 1), S);
-
-                monoslam::util::drawCircle(frame, position, 3, cv::Scalar(0.0, 255.0, 0.0));
-                monoslam::util::drawEllipse(frame, ellipses[0], cv::Scalar(0.0, 255.0, 0.0));
+            if (cv::waitKey(1) == 27) {
+                return EXIT_SUCCESS;
             }
+        }
+    } while (
+      !monoslam::initializeFromPattern(gray, options.patternSize, options.squareSize, camera, x, R, P, features));
 
-            const monoslam::filter::Measurement measurement = matcher.match(gray, features, K, x_, p_, S_);
+    std::cout << "Initialization succeeded\n";
 
-            for (int i = 0; i < measurement.z.rows; i += 2) {
-                const double u = measurement.z(i);
-                const double v = measurement.z(i + 1);
+    const monoslam::MotionModel motion{ linearAccStd, angularAccStd, linearDecayTime, angularDecayTime };
+    monoslam::EKF ekf(motion, camera, pixelStd, x, R, P);
 
-                const cv::Point position(static_cast<int>(u), static_cast<int>(v));
+    std::vector<cv::Point2f> initialPositions;
 
-                monoslam::util::drawCircle(frame, position, 3, cv::Scalar(0.0, 0.0, 255.0));
+    for (const monoslam::Feature& feature : features) {
+        initialPositions.emplace_back(feature.position);
+    }
+
+    monoslam::FlowTracker tracker(gray, initialPositions);
+    monoslam::Mapper mapper(features.size());
+
+    monoslam::StateStream stream;
+
+    if (!options.streamFile.empty() && !stream.open(options.streamFile)) {
+        std::cerr << "Could not open " << options.streamFile << '\n';
+        return EXIT_FAILURE;
+    }
+
+    // TRACKING //
+
+    bool weak = false;  // Whether too few of the features searched were used, which can mean the state is wrong
+    double previousTime = source.time();
+
+    // Live timing, reported every second with --timing
+    constexpr std::size_t timingPeriod = 30;  // Frames
+    double sumInterval = 0.0, maxInterval = 0.0, sumProcessing = 0.0, maxProcessing = 0.0;
+    std::size_t numDropped = 0;
+
+    while (source.read(gray)) {
+        const std::size_t index = source.index();
+
+        cv::Mat3b frame;
+        cv::cvtColor(gray, frame, cv::COLOR_GRAY2BGR);  // To draw on
+
+        const auto processingStart = std::chrono::steady_clock::now();
+
+        // 1. Predict the state, and the position of the features in the image. Live, frames are
+        //    dropped while one is processed, so the interval is the real one
+        const double dt = source.time() > previousTime ? source.time() - previousTime : 1.0 / FPS;
+        previousTime = source.time();
+
+        ekf.predict(dt);
+
+        std::vector<cv::Point2f>& seeds = tracker.predict(gray);
+
+        // 2. After a weak frame the state may be wrong: the features are looked for anywhere in the
+        //    frame by their descriptors, and the camera is moved where they say
+        if (weak) {
+            if (const auto found = monoslam::matchGlobally(gray, features, camera, ekf)) {
+                ekf.resetCamera(found->r, found->R);
+
+                seeds = ekf.project(seeds);
+
+                for (std::size_t k = 0; k < found->features.size(); ++k) {
+                    seeds[found->features[k]] = cv::Point2f(found->pixels[k]);
+                }
             }
+        }
 
-            return measurement;
-        });
+        // 3. Search the features in view around their seeds, and let the filter decide which
+        //    matches to use
+        const monoslam::Observation observation = ekf.observe();
+        const std::vector<std::size_t>& searched = observation.features;
 
-        cv::imshow("MonoSLAM", frame);
+        const std::vector<std::optional<cv::Point2d>> matches =
+          monoslam::matchFeatures(gray, features, camera, ekf, observation, seeds);
 
-        if (cv::waitKey(1) == 27) {
+        std::vector<std::size_t> used = ekf.update(observation, matches, maxInlierDistance, maxNIS);
+
+        drawUsedMatches(frame, observation, seeds, matches, used);
+
+        // 4. After a long excursion, the features the camera comes back to may be too far from their
+        //    seeds, but not from their descriptors. While tracking, they are ordinary measurements,
+        //    gated by their innovation as the rescued matches are
+        if (!weak && index % globalSearchPeriod == 0) {
+            if (const auto found = monoslam::matchGlobally(gray, features, camera, ekf)) {
+                std::vector<std::size_t> refound;
+                std::vector<cv::Point2d> pixels;
+
+                for (std::size_t k = 0; k < found->features.size(); ++k) {
+                    if (std::find(used.begin(), used.end(), found->features[k]) == used.end()) {
+                        refound.push_back(found->features[k]);
+                        pixels.push_back(found->pixels[k]);
+                    }
+                }
+
+                refound = ekf.measure(refound, pixels, maxNIS);
+                used.insert(used.end(), refound.begin(), refound.end());
+            }
+        }
+
+        const std::size_t numMeasured = used.size();
+
+        // 5. The seeds follow the state if it is well constrained, and the images otherwise
+        const std::vector<cv::Point2f> projections = ekf.project(seeds);
+
+        if (numMeasured >= minConstrained) {
+            tracker.correct(projections);
+        }
+
+        if (stream.isOpen()) {
+            stream.write(index, ekf, features, searched, used);
+        }
+
+        // 6. Keep the map: remove the features rarely matched, and add new ones where too few are in
+        //    view. Not while tracking is weak, though: the state may be wrong, and then the features
+        //    would be blamed for it, and the new ones placed where they are not
+        weak = numMeasured < minConstrained || 2 * numMeasured < searched.size();
+
+        if (!weak) {
+            mapper.recordMatches(features, searched, used);
+            mapper.recordAppearance(gray, features, used, projections);
+            mapper.removeUnreliable(ekf, features, tracker);
+            mapper.addFeatures(gray, camera, ekf, features, tracker);
+        }
+
+        if (options.timing) {
+            const double processing =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - processingStart).count();
+
+            sumInterval += dt;
+            maxInterval = std::max(maxInterval, dt);
+            sumProcessing += processing;
+            maxProcessing = std::max(maxProcessing, processing);
+            numDropped += static_cast<std::size_t>(std::max(0L, std::lround(dt * FPS) - 1));
+
+            if (index % timingPeriod == 0) {
+                std::cout << "Frame " << index << ": interval " << std::lround(1000.0 * sumInterval / timingPeriod)
+                          << " ms (max " << std::lround(1000.0 * maxInterval) << "), processing "
+                          << std::lround(1000.0 * sumProcessing / timingPeriod) << " ms (max "
+                          << std::lround(1000.0 * maxProcessing) << "), " << numDropped << " frames dropped, "
+                          << features.size() << " features\n";
+
+                sumInterval = maxInterval = sumProcessing = maxProcessing = 0.0;
+                numDropped = 0;
+            }
+        }
+
+        if (!showFrame(frame, index, options)) {
+            break;
+        }
+
+        if (options.maxFrames > 0 && index + 1 >= options.maxFrames) {
             break;
         }
     }
@@ -201,336 +336,135 @@ main(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-bool
-parseInt(std::string_view text, int& value)
-{
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    return error == std::errc() && end == text.data() + text.size();
-}
+namespace {
 
-bool
-parsePositiveDouble(std::string_view text, double& value)
+std::optional<Options>
+parseOptions(int argc, char* argv[])
 {
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    return error == std::errc() && end == text.data() + text.size() && std::isfinite(value) && value > 0.0;
-}
+    const auto parse = [](std::string_view text, auto& value) {
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+        return error == std::errc() && end == text.data() + text.size() && value > 0;
+    };
 
-bool
-getOptions(int argc, char* argv[], int& rows, int& cols, double& squareSize, std::string& filename)
-{
-    if (argc != 5) {
-        return false;
+    Options options;
+    int rows = 0, cols = 0, maxFrames = 0;
+
+    if (argc < 5 || !parse(argv[1], rows) || !parse(argv[2], cols) || !parse(argv[3], options.squareSize)) {
+        return std::nullopt;
     }
 
-    if (!parseInt(argv[1], rows) || !parseInt(argv[2], cols)) {
-        return false;
-    }
+    options.patternSize = cv::Size(cols - 1, rows - 1);
+    options.cameraFile = std::string(argv[4]) + ".json";
 
-    if (!parsePositiveDouble(argv[3], squareSize)) {
-        return false;
-    }
+    for (int i = 5; i < argc; ++i) {
+        const std::string_view option(argv[i]);
 
-    filename = argv[argc - 1];
-    filename += ".json";
+        if (option == "--headless") {
+            options.headless = true;
 
-    return true;
-}
+        } else if (option == "--timing") {
+            options.timing = true;
 
-template<monoslam::logging::LogLevel level>
-void
-printUsage(const char* execName)
-{
-    MONOSLAM_LOG(level,
-                 "Usage: ",
-                 execName,
-                 " rows cols square_size filename\n",
-                 "   rows, cols: Number of squares of the calibration pattern\n",
-                 "  square_size: Size of the square, in cm\n",
-                 "     filename: Camera intrinsics filename, \".json\" is appended\n",
-                 "   -h, --help: Show this message\n");
-}
+        } else if (i + 1 == argc) {
+            return std::nullopt;
 
-bool
-readCameraFile(const std::string& filename, cv::Matx33d& K, cv::Vec<double, 5>& distCoeffs, cv::Size& frameSize)
-{
-    cv::FileStorage fs(filename, cv::FileStorage::READ);
+        } else if (option == "--frames") {
+            if (!parse(argv[++i], maxFrames)) {
+                return std::nullopt;
+            }
 
-    if (!fs.isOpened()) {
-        return false;
-    }
+            options.maxFrames = static_cast<std::size_t>(maxFrames);
 
-    cv::FileNode node = fs["fx"];
-    CV_Assert(!node.empty());
+        } else if (option == "--device") {
+            options.device = argv[++i];
 
-    double fx;
-    node >> fx;
+        } else if (option == "--images") {
+            options.imagesDir = argv[++i];
 
-    node = fs["fy"];
-    CV_Assert(!node.empty());
+        } else if (option == "--stream") {
+            options.streamFile = argv[++i];
 
-    double fy;
-    node >> fy;
+        } else if (option == "--annotate") {
+            options.annotateDir = argv[++i];
 
-    node = fs["cx"];
-    CV_Assert(!node.empty());
-
-    double cx;
-    node >> cx;
-
-    node = fs["cy"];
-    CV_Assert(!node.empty());
-
-    double cy;
-    node >> cy;
-
-    node = fs["k1"];
-    CV_Assert(!node.empty());
-
-    double k1;
-    node >> k1;
-
-    node = fs["k2"];
-    CV_Assert(!node.empty());
-
-    double k2;
-    node >> k2;
-
-    node = fs["p1"];
-    CV_Assert(!node.empty());
-
-    double p1;
-    node >> p1;
-
-    node = fs["p2"];
-    CV_Assert(!node.empty());
-
-    double p2;
-    node >> p2;
-
-    node = fs["k3"];
-    CV_Assert(!node.empty());
-
-    double k3;
-    node >> k3;
-
-    node = fs["Frame size"];
-    CV_Assert(!node.empty());
-
-    node >> frameSize;
-
-    fs.release();
-
-    K = cv::Matx33d(fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0);
-    distCoeffs = cv::Vec<double, 5>(k1, k2, p1, p2, k3);
-
-    return true;
-}
-
-bool
-initSystem(const cv::Mat1b& frame,
-           const cv::Size& patternSize,
-           double squareSize,
-           const monoslam::CameraModel& camera,
-           cv::Mat1d& x,
-           cv::Mat1d& P,
-           std::vector<monoslam::Feature>& features)
-{
-    std::vector<cv::Point2f> points2D;
-
-    const bool patternFound = cv::findChessboardCorners(frame,
-                                                        patternSize,
-                                                        points2D,
-                                                        cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_NORMALIZE_IMAGE |
-                                                          cv::CALIB_CB_FILTER_QUADS | cv::CALIB_CB_FAST_CHECK);
-
-    if (patternFound) {
-        cv::cornerSubPix(frame, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(100, 0.1));
-
-    } else {
-        return false;
-    }
-
-    std::vector<cv::Point3f> points3D;
-    points3D.reserve(static_cast<std::size_t>(patternSize.width * patternSize.height));
-
-    for (int i = 0; i < patternSize.height; ++i) {
-        for (int j = 0; j < patternSize.width; ++j) {
-            points3D.emplace_back(static_cast<float>(squareSize * i), static_cast<float>(squareSize * j), 0.0f);
+        } else {
+            return std::nullopt;
         }
     }
 
-    cv::Vec3d rotationVec, translationVec;
+    return options;
+}
 
-    const bool poseFound = cv::solvePnP(
-      points3D, points2D, camera.K(), camera.distCoeffs(), rotationVec, translationVec, false, cv::SOLVEPNP_ITERATIVE);
+void
+drawUsedMatches(cv::Mat3b& image,
+                const monoslam::Observation& o,
+                const std::vector<cv::Point2f>& seeds,
+                const std::vector<std::optional<cv::Point2d>>& matches,
+                const std::vector<std::size_t>& used)
+{
+    const cv::Scalar green(0.0, 255.0, 0.0);
+    constexpr double numSigmas = 3.035;  // The 99% region of a 2D Gaussian
 
-    if (!poseFound) {
-        return false;
+    for (std::size_t k = 0; k < o.features.size(); ++k) {
+        const std::size_t feature = o.features[k];
+
+        if (!matches[k].has_value() || std::find(used.begin(), used.end(), feature) == used.end()) {
+            continue;
+        }
+
+        const int row = static_cast<int>(2 * k);
+        const cv::Point2d prediction(o.h(row), o.h(row + 1));
+
+        cv::circle(image, prediction, 3, green);
+
+        // The axes of the ellipse are the eigenvectors of the innovation covariance
+        cv::Vec2d eigenvalues;
+        cv::Matx22d eigenvectors;
+        cv::eigen(cv::Matx22d(o.S(cv::Rect(row, row, 2, 2))), eigenvalues, eigenvectors);
+
+        const cv::Size2d axes(numSigmas * std::sqrt(eigenvalues[0]), numSigmas * std::sqrt(eigenvalues[1]));
+        const double angle = std::atan2(eigenvectors(0, 1), eigenvectors(0, 0)) * 180.0 / CV_PI;
+
+        // Ellipses much larger than the image say nothing, and are expensive to draw
+        if (std::isfinite(axes.width) && axes.width < 10.0 * image.cols) {
+            cv::ellipse(image, prediction, axes, angle, 0.0, 360.0, green);
+        }
+
+        cv::circle(image, seeds[feature], 3, cv::Scalar(255.0, 0.0, 0.0));
+        cv::circle(image, matches[k].value(), 3, cv::Scalar(0.0, 0.0, 255.0));
     }
-
-    cv::solvePnPRefineLM(
-      points3D, points2D, camera.K(), camera.distCoeffs(), rotationVec, translationVec, cv::TermCriteria(100, 1e-8));
-
-    std::vector<cv::Point2f> reprojected;
-    cv::projectPoints(points3D, rotationVec, translationVec, camera.K(), camera.distCoeffs(), reprojected);
-
-    double reprojectionRMS = 0.0;
-    double reprojectionMax = 0.0;
-
-    for (std::size_t i = 0; i < points2D.size(); ++i) {
-        const double error = cv::norm(points2D[i] - reprojected[i]);
-        reprojectionRMS += error * error;
-        reprojectionMax = std::max(reprojectionMax, error);
-    }
-
-    reprojectionRMS = std::sqrt(reprojectionRMS / static_cast<double>(points2D.size()));
-
-    MONOSLAM_LOG(monoslam::logging::LogLevel::INFO,
-                 "Initialization reprojection error: ",
-                 reprojectionRMS,
-                 " pixels (RMS), ",
-                 reprojectionMax,
-                 " pixels (Max)\n");
-
-    cv::Matx33d R;
-    cv::Vec3d t;
-
-    // Convert to rotation R (from world to camera) and translation t (in world coordinates)
-    cv::Rodrigues(rotationVec, R);
-    t = -R.t() * translationVec;
-
-    // Compute the camera orientation quaternion
-    const cv::Vec4d q = monoslam::quaternion::conjugate(monoslam::quaternion::fromVector(rotationVec));
-
-    // ADD CAMERA //
-
-    // Update the camera state (zero linear and angular velocities)
-    x = cv::Mat1d::zeros(13 + 3 * 5, 1);
-
-    t.copyTo(x(cv::Rect(0, 0, 1, 3)));
-    q.copyTo(x(cv::Rect(0, 3, 1, 4)));
-
-    // Update the camera covariance
-    P = cv::Mat1d::zeros(13 + 3 * 5, 13 + 3 * 5);
-
-    P(0, 0) = 0.05;
-    P(1, 1) = 0.05;
-    P(2, 2) = 0.05;
-
-    P(3, 3) = 1e-4;
-    P(4, 4) = 1e-4;
-    P(5, 5) = 1e-4;
-    P(6, 6) = 1e-4;
-
-    P(7, 7) = 25.0;
-    P(8, 8) = 25.0;
-    P(9, 9) = 25.0;
-
-    P(10, 10) = 0.008;
-    P(11, 11) = 0.008;
-    P(12, 12) = 0.008;
-
-    // ADD INITIAL FEATURES //
-
-    features.clear();
-
-    const size_t w = static_cast<size_t>(patternSize.width);
-    const size_t h = static_cast<size_t>(patternSize.height);
-
-    size_t idx = 0;
-
-    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
-        return false;
-    }
-
-    x(13) = points3D[idx].x;
-    x(14) = points3D[idx].y;
-    x(15) = points3D[idx].z;
-
-    P(13, 13) = 0.05;
-    P(14, 14) = 0.05;
-    P(15, 15) = 0.05;
-
-    idx = w - 1;
-
-    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
-        return false;
-    }
-
-    x(16) = points3D[idx].x;
-    x(17) = points3D[idx].y;
-    x(18) = points3D[idx].z;
-
-    P(16, 16) = 0.05;
-    P(17, 17) = 0.05;
-    P(18, 18) = 0.05;
-
-    idx = (h - 1) * w;
-
-    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
-        return false;
-    }
-
-    x(19) = points3D[idx].x;
-    x(20) = points3D[idx].y;
-    x(21) = points3D[idx].z;
-
-    P(19, 19) = 0.05;
-    P(20, 20) = 0.05;
-    P(21, 21) = 0.05;
-
-    idx = w * h - 1;
-
-    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
-        return false;
-    }
-
-    x(22) = points3D[idx].x;
-    x(23) = points3D[idx].y;
-    x(24) = points3D[idx].z;
-
-    P(22, 22) = 0.05;
-    P(23, 23) = 0.05;
-    P(24, 24) = 0.05;
-
-    idx = w * ((h - 1) / 2) + (w + 1) / 2 - 1;
-
-    if (!addInitialFeature(frame, points2D[idx], R, t, features)) {
-        return false;
-    }
-
-    x(25) = points3D[idx].x;
-    x(26) = points3D[idx].y;
-    x(27) = points3D[idx].z;
-
-    P(25, 25) = 0.05;
-    P(26, 26) = 0.05;
-    P(27, 27) = 0.05;
-
-    return true;
 }
 
 bool
-addInitialFeature(const cv::Mat1b& frame,
-                  const cv::Point2f& point2D,
-                  const cv::Matx33d& R,
-                  const cv::Vec3d& t,
-                  std::vector<monoslam::Feature>& features)
+showFrame(const cv::Mat& frame, std::size_t index, const Options& options)
 {
-    constexpr int patchSize = 23;
+    if (!options.annotateDir.empty()) {
+        std::filesystem::create_directories(options.annotateDir);
 
-    const cv::Vec3d normal(0.0, 0.0, 1.0);
+        std::ostringstream name;
+        name << options.annotateDir << "/frame_" << std::setw(6) << std::setfill('0') << index << ".png";
 
-    const monoslam::Feature feature(frame, point2D, patchSize, normal, R, t);
-
-    const cv::Rect& roi = feature.roi;
-    const bool overflow = roi.x < 0 || roi.y < 0 || roi.x + roi.width > frame.cols || roi.y + roi.height > frame.rows;
-
-    if (overflow) {
-        return false;
+        cv::imwrite(name.str(), frame);
     }
 
-    features.push_back(feature);
+    if (!options.headless) {
+        cv::imshow("MonoSLAM", frame);
+
+        return cv::waitKey(1) != 27;
+    }
 
     return true;
 }
+
+}
+
+#if defined(MONOSLAM_SANITIZERS_ENABLED)
+#    include <sanitizer/lsan_interface.h>
+
+// OpenCV's GUI keeps an object alive until the process ends, which the leak sanitizer reports
+extern "C" __attribute__((used)) const char*
+__lsan_default_suppressions()
+{
+    return "leak:GuiReceiver::GuiReceiver\n";
+}
+#endif

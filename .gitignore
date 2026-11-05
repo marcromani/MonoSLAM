@@ -1,7 +1,11 @@
-.cache/
-.vscode/
+*.aux
 build/
 build-debug/
 build-release/
+.cache/
 debug/
 *.log
+*.pdf
+__pycache__/
+.venv/
+.vscode/
