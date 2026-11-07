@@ -33,7 +33,8 @@ class FlowTracker
      * the structure of the scene, only that close points in the image move alike. The corners are
      * followed from frame to frame, and new ones are detected only when too many are lost. The
      * flow of the feature itself takes over only if it agrees with that motion, since the flow of
-     * a single point is more precise, but it can also jump to a look-alike neighbor.
+     * a single point is more precise, but it can also jump to a look-alike neighbor. Seeds more
+     * than 50 pixels out of the frame stay where they are.
      *
      * frame    New frame
      */
@@ -63,6 +64,7 @@ class FlowTracker
     void detectCorners();
 
     cv::Mat1b frame_;                   // Last frame
+    std::vector<cv::Mat> pyramid_;      // Of the last frame, for the flow of the corners
     std::vector<cv::Point2f> seeds_;    // Feature positions in the last frame
     std::vector<cv::Point2f> corners_;  // Generic corners in the last frame, whose motion the seeds follow
 };

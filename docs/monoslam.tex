@@ -610,41 +610,73 @@ chessboard corners, each with three negligible changes of the pixel noise.
 \begin{tabular}{ll}
   sequence & result over $15$ runs \\
   \hline
-  1 & median $0$ frames over $10$~px, at most $3$ \\
-  2 & median $4$ frames over $10$~px, at most $9$ \\
-  3 & median $3$ frames over $10$~px, lost in $3$ runs \\
-  5, back on the board at frames 336, 514, 566 & median errors $1.4$, $4.9$, $5.4$~cm \\
-  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $10$ and $7$ runs \\
-  6, board visits at frames 359, 411 & median errors $3.9$, $4.7$~cm \\
-  6, board visits at frames 771, 836 & median errors $18$, $29$~cm \\
-  6, board visits at frames 1413, 1549 & median errors $75$, $94$~cm \\
+  1 & median $1$ frame over $10$~px, at most $3$ \\
+  2 & median $5$ frames over $10$~px, at most $8$ \\
+  3 & median $2$ frames over $10$~px, never lost \\
+  5, back on the board at frames 336, 514, 566 & median errors $1.3$, $1.6$, $1.9$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $9$ and $11$ runs \\
+  6, board visits at frames 359, 411 & median errors $4.3$, $1.9$~cm \\
+  6, board visits at frames 771, 836 & median errors $12$, $1.4$~cm \\
+  6, board visits at frames 1413, 1549 & lost in every run \\
 \end{tabular}
 \end{center}
 
 Sequences 1 to 3 look at the board most of the time. Sequences 4 and 5 leave it after the
 initialization and track natural features, a table, a bowl, a cable, chairs, pictures, with $5$ to
 $20$ features per frame, and sequence~5 comes back to the board twice. Sequence~6 is a minute long and
-comes back three times: the map holds the first time, and drifts by tens of cm over the next
-excursions, up to a meter by the end. The three losses of sequence~3 come from the same set of initial corners, where the
-camera swings fast and the board is blurred.
+comes back three times. The map holds the first time. The second excursion drifts, often by tens of
+cm when the board comes back into view at frame 771, but the features kept from the first visit
+close the loop: by frame 836, $13$ runs out of $15$ are within $10$~cm. Before the third visit the
+camera sweeps a blurred, almost textureless sofa, and tracking is lost in every run; the global
+match does not find the map again before the end. The losses of sequence~3 come from the same set
+of initial corners, where the camera swings fast and the board is blurred.
 
 \paragraph{Speed.}
-On sequence~6, while tracking, $12$ to $25$~ms per frame, more as the map grows, of which the
-optical flow of the seeds takes about $7$~ms. After a weak frame the global matching runs, so while
-the camera is lost it runs every frame, and a frame takes $40$ to $70$~ms. Live, the frames that
-take longer than the frame period drop the next one, and the interval of the prediction doubles,
-and with it the uncertainty of the predictions. Most of the flow is the Lucas--Kanade tracking of the corners, whose cost is proportional to their
-number, the area of the window and the iterations: $150$ corners track as well as $300$, but a
-$15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in every run.
+On sequence~6, while tracking, $12$~ms per frame on average, from $7$~ms with $15$ features to
+$16$~ms with $70$. The filter takes $1$ to $3$~ms of it: most of the time goes to the images. The
+optical flow takes $6$ to $10$~ms, of which $4$~ms is the Lucas--Kanade tracking of the $150$
+corners forwards and backwards, and up to $3$~ms the affine motion fitted around each seed. The
+search of the patches takes $2$ to $6$~ms. Three things keep it there:
+\begin{itemize}
+  \item The masked correlation of the patches is computed from three plain correlations
+        (\texttt{maskedCorrelation}), the same score that OpenCV's masked \texttt{matchTemplate}
+        gives, $2.7$ times faster.
+  \item The pyramid of each frame for the flow of the corners is built once, and used forwards,
+        backwards and again as the previous frame. It is built with the window of the corners: with
+        the larger window of the features it would have one level less, and the corners lose fast
+        motions, sequence~3 in $11$ runs out of $15$.
+  \item When new features are added, the candidate corners are checked once: the boxes overlap,
+        and are searched again for each feature added, and checking every candidate each time took
+        up to $40$~ms in one frame out of $14$.
+\end{itemize}
+After a weak frame the keyframes and the global matching run, so while the camera is lost a frame
+takes $30$ to $50$~ms. Live, a frame that takes longer than the frame period drops the next one, and
+the interval of the prediction doubles, and with it the uncertainty of the predictions. With
+\texttt{--timing} the decoding of the camera frames and the display are reported too, about $3$~ms
+each. $150$ corners track as well as $300$, but a $15 \times 15$ window with at most $10$
+iterations loses sequences 2 and 3 in every run.
 
 \paragraph{Limitations.}
 \begin{itemize}
   \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
         Keeping both predictions, its own flow and the motion of its neighbors, and letting the
         update choose would fix it.
-  \item About half the kidnaps are not recovered, and why the descriptors fail on them is not
-        established yet.
-  \item Over long excursions the map drifts, as an EKF without loop closure does.
+  \item A third of the kidnaps are not recovered in time, mostly the first one, where the camera
+        sees, after the cut, a part of the scene it had not seen before. Which ones are recovered
+        changes a lot from run to run: the float rounding of the faster correlation alone moves the
+        first kidnap from $13$ recoveries to $9$, and the second from $10$ to $11$, out of $15$.
+  \item Over long excursions the map drifts, and the filter does not know: the uncertainty it
+        reports grows far less than the error. A simulation of the filter with exact data
+        association shows the same, so it is the filter and not the matching: new features enter
+        with a very uncertain depth, and every update with them gives the camera information that
+        it does not have. With features entering at their true depth the filter is consistent.
+  \item The features used for long are never removed, so the map, and the cost of the filter,
+        grow with the explored scene.
+  \item The global match describes only detected corners, a few pixels away from where the
+        descriptor of a feature matches best, and ORB descriptors change a lot over a few pixels.
+        On the return to the board at the end of sequence~6, most visible features match their
+        descriptors well within $8$~pixels of their true position, but only one or two at the
+        corners described.
 \end{itemize}
 
 \section{Correspondence with the code}

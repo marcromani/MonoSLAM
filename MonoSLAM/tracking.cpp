@@ -20,6 +20,7 @@ constexpr std::size_t numNeighbors = 24;   // Corners that move a seed
 constexpr std::size_t minNeighbors = 6;
 
 constexpr int pyramidLevels = 5;
+constexpr int seedMargin = 50;  // Pixels out of the frame within which seeds still follow the corners
 const cv::Size cornerWindow(21, 21);
 const cv::Size featureWindow(31, 31);
 
@@ -81,6 +82,78 @@ moveWithNeighbors(const cv::Point2f& point, const std::vector<cv::Point2f>& from
 
     return cv::Point2f(static_cast<float>(A(0, 0) * point.x + A(0, 1) * point.y + A(0, 2)),
                        static_cast<float>(A(1, 0) * point.x + A(1, 1) * point.y + A(1, 2)));
+}
+
+/*
+ * Returns the normalized correlation of a patch with every position of it in an image, over the
+ * nonzero pixels of a mask, each counted in full, as matchTemplate with TM_CCOEFF_NORMED and a mask,
+ * or -1 where the image under the mask is flat. It is the same score from three plain
+ * correlations, which OpenCV computes much faster than its masked one: of the patch with its mean
+ * removed, zero out of the mask, and of the mask with the image and with its square, which give the
+ * mean and variance under the mask.
+ *
+ * image    Grayscale image
+ * patch    Grayscale patch
+ * mask     Pixels of the patch that count
+ */
+cv::Mat1f
+maskedCorrelation(const cv::Mat1b& image, const cv::Mat1b& patch, const cv::Mat1b& mask)
+{
+    cv::Mat1f inside, values, squares, centered;
+    cv::Mat1b binary;
+    cv::threshold(mask, binary, 0, 1, cv::THRESH_BINARY);
+    binary.convertTo(inside, CV_32F);
+    patch.convertTo(centered, CV_32F);
+    image.convertTo(values, CV_32F);
+    cv::multiply(values, values, squares);
+
+    const double count = cv::sum(inside)[0];
+    const double mean = centered.dot(inside) / count;
+
+    cv::subtract(centered, mean, centered);
+    cv::multiply(centered, inside, centered);
+
+    const double patchNorm = std::sqrt(centered.dot(centered));
+
+    cv::Mat1f products, sums, squareSums;
+    cv::matchTemplate(values, centered, products, cv::TM_CCORR);
+    cv::matchTemplate(values, inside, sums, cv::TM_CCORR);
+    cv::matchTemplate(squares, inside, squareSums, cv::TM_CCORR);
+
+    cv::Mat1f result(products.size());
+
+    for (int y = 0; y < result.rows; ++y) {
+        for (int x = 0; x < result.cols; ++x) {
+            const double variance = squareSums(y, x) - sums(y, x) * sums(y, x) / count;
+
+            result(y, x) = variance > 1e-6 && patchNorm > 0.0
+                             ? static_cast<float>(products(y, x) / (std::sqrt(variance) * patchNorm))
+                             : -1.0f;
+        }
+    }
+
+    return result;
+}
+
+/*
+ * Builds the pyramid of a frame for the flow of the corners, with its own copy of the frame. It is
+ * built with the window of the corners, since its coarsest levels are those still larger than the
+ * window: with that of the features it would have one level less.
+ *
+ * frame      Frame
+ * pyramid    Its pyramid, for calcOpticalFlowPyrLK
+ */
+void
+buildPyramid(const cv::Mat1b& frame, std::vector<cv::Mat>& pyramid)
+{
+    cv::buildOpticalFlowPyramid(frame,
+                                pyramid,
+                                cornerWindow,
+                                pyramidLevels,
+                                true,
+                                cv::BORDER_REFLECT_101,
+                                cv::BORDER_CONSTANT,
+                                false);
 }
 
 /*
@@ -190,12 +263,19 @@ monoslam::FlowTracker::FlowTracker(const cv::Mat1b& frame, const std::vector<cv:
   : frame_(frame.clone())
   , seeds_(positions)
 {
+    buildPyramid(frame_, pyramid_);
     detectCorners();
 }
 
 std::vector<cv::Point2f>&
 monoslam::FlowTracker::predict(const cv::Mat1b& frame)
 {
+    // The pyramid of each frame is built once for the corners, forwards and backwards, and again as
+    // the previous frame. Its first level must be a copy: by default it is the frame itself, which
+    // the caller overwrites with the next one
+    std::vector<cv::Mat> pyramid;
+    buildPyramid(frame, pyramid);
+
     // The generic corners that the flow follows forwards and backwards alike
     std::vector<cv::Point2f> from, to;
 
@@ -204,8 +284,8 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
         std::vector<uchar> forwardStatus, backwardStatus;
         std::vector<float> error;
 
-        cv::calcOpticalFlowPyrLK(frame_, frame, corners_, forward, forwardStatus, error, cornerWindow, pyramidLevels);
-        cv::calcOpticalFlowPyrLK(frame, frame_, forward, backward, backwardStatus, error, cornerWindow, pyramidLevels);
+        cv::calcOpticalFlowPyrLK(pyramid_, pyramid, corners_, forward, forwardStatus, error, cornerWindow, pyramidLevels);
+        cv::calcOpticalFlowPyrLK(pyramid, pyramid_, forward, backward, backwardStatus, error, cornerWindow, pyramidLevels);
 
         for (std::size_t i = 0; i < corners_.size(); ++i) {
             if (forwardStatus[i] &&
@@ -217,10 +297,14 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
         }
     }
 
+    // A seed far out of the frame stays where it is: the corners tell little about its motion, and
+    // while tracking is good it moves to the projection of its feature anyway
+    const cv::Rect nearFrame(-seedMargin, -seedMargin, frame.cols + 2 * seedMargin, frame.rows + 2 * seedMargin);
+
     std::vector<cv::Point2f> moved;
 
     for (const cv::Point2f& seed : seeds_) {
-        moved.push_back(moveWithNeighbors(seed, from, to));
+        moved.push_back(nearFrame.contains(seed) ? moveWithNeighbors(seed, from, to) : seed);
     }
 
     // The flow of each seed itself, which only exists for those in view
@@ -254,6 +338,7 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
 
     seeds_ = moved;
     frame_ = frame.clone();
+    pyramid_ = pyramid;
 
     // The corners followed are kept for the next frame, and replaced only when too many are lost
     corners_ = to;
@@ -334,7 +419,7 @@ monoslam::findPatch(const cv::Mat1b& frame,
     const cv::Rect inFrame =
       cv::Rect(cv::Point(x0, y0), cv::Point(x1 + 1, y1 + 1)) & cv::Rect(0, 0, frame.cols, frame.rows);
 
-    cv::Mat image;
+    cv::Mat1b image;
     cv::copyMakeBorder(frame(inFrame),
                        image,
                        inFrame.y - y0,
@@ -344,9 +429,7 @@ monoslam::findPatch(const cv::Mat1b& frame,
                        cv::BORDER_CONSTANT,
                        cv::Scalar::all(0.0));
 
-    cv::Mat1f result;
-    cv::matchTemplate(image, patch, result, cv::TM_CCOEFF_NORMED, mask);
-    cv::patchNaNs(result, -1.0);
+    const cv::Mat1f result = maskedCorrelation(image, patch, mask);
 
     // The best peak
     double score;

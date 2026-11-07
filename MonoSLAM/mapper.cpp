@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 
 #include <opencv2/features.hpp>
@@ -349,6 +350,20 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
 
     std::size_t added = 0;
 
+    // The boxes overlap, and are searched again for every feature added, so the same corner can be
+    // a candidate many times: whether it is good enough is only computed once
+    std::map<std::pair<float, float>, bool> isGood;
+
+    const auto good = [&](const cv::Point2f& pixel) {
+        const auto [known, inserted] = isGood.try_emplace({ pixel.x, pixel.y }, false);
+
+        if (inserted) {
+            known->second = texture(frame, pixel) >= minTexture && isDistinctive(frame, pixel);
+        }
+
+        return known->second;
+    };
+
     while (inView.size() < minVisible && added < maxNewPerFrame) {
         // The most salient distinctive corner of the emptiest box that has one, away from the
         // features near it. A box can be empty because there is nothing to track there
@@ -374,9 +389,7 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
                 candidate += cv::Point2f(region.tl());
             }
 
-            const auto candidate = std::find_if(candidates.begin(), candidates.end(), [&](const cv::Point2f& pixel) {
-                return texture(frame, pixel) >= minTexture && isDistinctive(frame, pixel);
-            });
+            const auto candidate = std::find_if(candidates.begin(), candidates.end(), good);
 
             if (candidate != candidates.end()) {
                 found = *candidate;

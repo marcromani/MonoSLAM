@@ -59,12 +59,19 @@ class FrameSource
      */
     double time() const { return time_; }
 
+    /*
+     * Returns how long the last frame took to decode and convert, in seconds, without the wait for
+     * the camera to deliver it.
+     */
+    double decodeTime() const { return decodeTime_; }
+
   private:
     cv::VideoCapture device_;
     std::vector<std::string> files_;  // Images to read, empty with a camera
     std::size_t nextFile_ = 0;
     std::size_t numRead_ = 0;
     double time_ = 0.0;
+    double decodeTime_ = 0.0;
     std::vector<double> times_;  // Of the images, in seconds
     cv::Size frameSize_;
 };

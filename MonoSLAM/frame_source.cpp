@@ -118,8 +118,17 @@ monoslam::FrameSource::read(cv::Mat1b& frame)
 {
     cv::Mat3b color;
 
+    auto start = std::chrono::steady_clock::now();
+
     if (files_.empty()) {
-        while (!device_.read(color)) {
+        // The wait for the next frame is in grab, the decoding in retrieve
+        while (!device_.grab()) {
+        }
+
+        start = std::chrono::steady_clock::now();
+
+        if (!device_.retrieve(color)) {
+            return false;
         }
 
         // The timestamp of the driver, in milliseconds, or the time of reading if there is none
@@ -145,6 +154,7 @@ monoslam::FrameSource::read(cv::Mat1b& frame)
     cv::resize(color, color, frameSize_);
     cv::cvtColor(color, frame, cv::COLOR_BGR2GRAY);
 
+    decodeTime_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     ++numRead_;
 
     return true;

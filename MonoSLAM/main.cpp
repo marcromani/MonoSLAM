@@ -85,7 +85,8 @@ constexpr const char* usage =
   "  --stream F    Write the state of every frame to F, for tools/viewer.py and evaluate_tracking.py\n"
   "  --annotate D  Save the annotated frames to directory D\n"
   "  --headless    Do not open any window\n"
-  "  --timing      Report every second the frame interval, processing time and dropped frames\n";
+  "  --timing      Report every second the frame interval, the decoding, processing and display times, and the\n"
+  "                frames dropped\n";
 
 /*
  * Parses the command line. Returns nothing if it is not valid.
@@ -213,6 +214,7 @@ main(int argc, char* argv[])
     // Live timing, reported every second with --timing
     constexpr std::size_t timingPeriod = 30;  // Frames
     double sumInterval = 0.0, maxInterval = 0.0, sumProcessing = 0.0, maxProcessing = 0.0;
+    double sumDecode = 0.0, sumDisplay = 0.0, previousDisplay = 0.0;
     std::size_t numDropped = 0;
 
     while (source.read(gray)) {
@@ -304,23 +306,31 @@ main(int argc, char* argv[])
             maxInterval = std::max(maxInterval, dt);
             sumProcessing += processing;
             maxProcessing = std::max(maxProcessing, processing);
+            sumDecode += source.decodeTime();
+            sumDisplay += previousDisplay;
             numDropped += static_cast<std::size_t>(std::max(0L, std::lround(dt * FPS) - 1));
 
             if (index % timingPeriod == 0) {
                 std::cout << "Frame " << index << ": interval " << std::lround(1000.0 * sumInterval / timingPeriod)
                           << " ms (max " << std::lround(1000.0 * maxInterval) << "), processing "
                           << std::lround(1000.0 * sumProcessing / timingPeriod) << " ms (max "
-                          << std::lround(1000.0 * maxProcessing) << "), " << numDropped << " frames dropped, "
-                          << features.size() << " features\n";
+                          << std::lround(1000.0 * maxProcessing) << "), decoding "
+                          << std::lround(1000.0 * sumDecode / timingPeriod) << " ms, display "
+                          << std::lround(1000.0 * sumDisplay / timingPeriod) << " ms, " << numDropped
+                          << " frames dropped, " << features.size() << " features\n";
 
-                sumInterval = maxInterval = sumProcessing = maxProcessing = 0.0;
+                sumInterval = maxInterval = sumProcessing = maxProcessing = sumDecode = sumDisplay = 0.0;
                 numDropped = 0;
             }
         }
 
+        const auto displayStart = std::chrono::steady_clock::now();
+
         if (!showFrame(frame, index, options)) {
             break;
         }
+
+        previousDisplay = std::chrono::duration<double>(std::chrono::steady_clock::now() - displayStart).count();
 
         if (options.maxFrames > 0 && index + 1 >= options.maxFrames) {
             break;
