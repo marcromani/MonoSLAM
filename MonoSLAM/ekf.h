@@ -13,7 +13,7 @@
 namespace monoslam {
 
 /*
- * The state is [r, e, v, w, y_0, ..., y_N]: camera position (3), orientation error (3), linear
+ * The state is [r, e, v, w, y_1, ..., y_N]: camera position (3), orientation error (3), linear
  * velocity (3), angular velocity in camera coordinates (3), and the inverse depth parameters of
  * every feature (6 each, see inverse_depth.h). The functions below are the only places that need to
  * know this layout.
@@ -180,11 +180,13 @@ class EKF
      *
      * o              Observation, from observe
      * matches        Pixel of each feature of o, if it was found
+     * noises         Covariance of each match, or nothing for the pixel noise of the constructor
      * maxDistance    Largest distance of a supporting match, in pixels
      * maxNIS         Largest normalized innovation squared of a rescued match
      */
-    std::vector<std::size_t> update(const Observation& o,
+    std::vector<std::size_t> update(Observation o,
                                     const std::vector<std::optional<cv::Point2d>>& matches,
+                                    const std::vector<cv::Matx22d>& noises,
                                     double maxDistance,
                                     double maxNIS);
 
@@ -236,6 +238,18 @@ class EKF
      * orientation is R exp(e), with the error e of the state.
      */
     Observation predictMeasurements(const cv::Mat1d& x) const;
+
+    /*
+     * Gives some features of an observation their own measurement noise in S, instead of the pixel
+     * noise of the constructor.
+     *
+     * o           Observation
+     * features    Features
+     * noises      Covariance of the measurement of each feature
+     */
+    void setNoises(Observation& o,
+                   const std::vector<std::size_t>& features,
+                   const std::vector<cv::Matx22d>& noises) const;
 
     /*
      * Applies the Kalman update with some of the rows of an observation.

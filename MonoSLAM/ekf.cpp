@@ -383,13 +383,43 @@ monoslam::EKF::correct(const Observation& o, const Indices& rows, const cv::Mat1
     x_(cv::Rect(0, 3, 1, 3)).setTo(0.0);
 }
 
+void
+monoslam::EKF::setNoises(Observation& o,
+                         const std::vector<std::size_t>& features,
+                         const std::vector<cv::Matx22d>& noises) const
+{
+    o.S = o.S.clone();
+
+    for (std::size_t k = 0; k < features.size(); ++k) {
+        const std::optional<Indices> rows = rowsOf(o, features[k]);
+
+        if (!rows.has_value()) {
+            continue;
+        }
+
+        const int row = static_cast<int>(rows->front());
+        const cv::Matx22d extra = noises[k] - cv::Matx22d::eye() * (pixelStd_ * pixelStd_);
+
+        cv::Mat1d block = o.S(cv::Rect(row, row, 2, 2));
+        block += cv::Mat1d(extra);
+    }
+}
+
 std::vector<std::size_t>
-monoslam::EKF::update(const Observation& o,
+monoslam::EKF::update(Observation o,
                       const std::vector<std::optional<cv::Point2d>>& matches,
+                      const std::vector<cv::Matx22d>& noises,
                       double maxDistance,
                       double maxNIS)
 {
     assert(matches.size() == o.features.size());
+    assert(noises.empty() || noises.size() == o.features.size());
+
+    const std::vector<std::size_t> matched = o.features;  // The features of the matches, in order
+
+    if (!noises.empty()) {
+        setNoises(o, matched, noises);
+    }
 
     // Every match is a group of two rows of the observation
     std::vector<std::size_t> groups;  // Index in o.features of each match
@@ -473,7 +503,11 @@ monoslam::EKF::update(const Observation& o,
     correct(o, rows, z);
 
     // High innovation inliers: the rest of the matches that the updated state can explain
-    const Observation updated = observe();
+    Observation updated = observe();
+
+    if (!noises.empty()) {
+        setNoises(updated, matched, noises);
+    }
 
     Indices rescued;      // Groups
     Indices rescuedRows;  // Their rows in the updated observation

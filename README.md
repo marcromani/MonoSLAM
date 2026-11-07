@@ -24,7 +24,7 @@ the natural features of the scene. The whole system is in `MonoSLAM/`:
 | `feature.h/.cpp` | The patch of a feature |
 | `frame_source.h/.cpp`, `state_stream.h/.cpp` | Input from a camera or a directory, and output of the state |
 
-The EKF state is `[r, e, v, w, y_0, ..., y_N]`: camera position, orientation error, linear and
+The EKF state is `[r, e, v, w, y_1, ..., y_N]`: camera position, orientation error, linear and
 angular velocity, and stationary features in inverse depth
 ([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)),
 `y = (anchor, azimuth, elevation, inverse depth)`, which every feature keeps for its whole
@@ -35,7 +35,11 @@ fits a hand-held camera better than velocities that persist. The wrong matches a
 1-point RANSAC
 ([Civera et al., 2010](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf)), using
 only the filter's own models and covariances, and a match is not even proposed if another place in
-its search region looks almost as alike.
+its search region looks almost as alike. Every match is aligned with the frame to subpixel
+precision by Lucas-Kanade
+([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)), and a match
+aligned worse than usual, as along an edge, gets a larger noise in the directions where it is
+worse.
 
 Every feature is searched in a small region around its seed, which follows the image motion of the
 corners around it: the motion model cannot predict a jerk of the hand, but the images can. A
@@ -80,15 +84,15 @@ Run the Jacobian and filter tests with:
 ctest --test-dir build --output-on-failure
 ```
 
-To build only one target use:
+To build only one target, the calibration, MonoSLAM, the sequence recorder or the ground truth from
+the chessboard, use one of:
 
-`cmake --build build --target calibration --parallel` (Calibration)
-
-`cmake --build build --target monoslam --parallel` (MonoSLAM)
-
-`cmake --build build --target record_sequence --parallel` (Sequence recorder)
-
-`cmake --build build --target analyze_pattern --parallel` (Ground truth from the chessboard)
+```bash
+cmake --build build --target calibration --parallel
+cmake --build build --target monoslam --parallel
+cmake --build build --target record_sequence --parallel
+cmake --build build --target analyze_pattern --parallel
+```
 
 Calibrate the camera with a chessboard of 7 x 10 squares of 2.5 cm, then run MonoSLAM with it:
 
@@ -103,29 +107,33 @@ the cameras, and the first device of each is the one that gives frames.
 The calibration captures a view of the chessboard every two seconds until Escape is pressed, fits
 the camera model on the largest frames the camera gives of the same view, 640 x 480, and saves it
 scaled to the 320 x 240 frames that MonoSLAM works on. A larger mode of the same shape is not
-necessarily the same view: the 1024 x 768 of this camera sees a view 12% wider and taller. MonoSLAM refuses a calibration for another
-size: the lengths in pixels of its code are chosen for 320 x 240. The calibration accepts these
+necessarily the same view: the 1024 x 768 of this camera sees a view 12% wider and taller.
+MonoSLAM refuses a calibration for another size: the lengths in pixels of its code are chosen for
+320 x 240. The calibration accepts these
 options after the camera file:
 
 ```text
 --device D     Camera device, such as /dev/video4 (required)
---tolerance T  Largest RMS reprojection error of a view that is kept, in pixels of the camera
-               frames (default 1.5)
+--tolerance T  Largest RMS reprojection error of a view that is kept, in
+               pixels of the camera frames (default 1.5)
 ```
 
 MonoSLAM accepts these options after the camera file:
 
 ```text
 --device D    Camera device, such as /dev/video4 (required, unless --images)
---exposure E  Exposure time of the camera, in ms (default 5): fixed, so that the frame rate is too
+--exposure E  Exposure time of the camera, in ms (default 5): fixed, so that
+              the frame rate is too
 --images D    Replay the sorted images of directory D instead of a camera
 --frames N    Stop after N frames
---stream F    Write the state of every frame to F, for the viewer and evaluate_tracking.py
---annotate D  Save the frames with the features the filter used: their predictions and 99%
-              ellipses (cyan), their seeds (magenta), and their matches (amber)
+--stream F    Write the state of every frame to F, for the viewer and
+              evaluate_tracking.py
+--annotate D  Save the frames with the features the filter used: their
+              predictions and 99% ellipses (cyan), their seeds (magenta), and
+              their matches (amber)
 --headless    Do not open any window
---timing      Report every second the frame interval, the decoding and processing times, the
-              frames dropped and those shown
+--timing      Report every second the frame interval, the decoding and
+              processing times, the frames dropped and those shown
 ```
 
 MonoSLAM asks the camera for 320 x 240 frames, which it gives at about 100 Hz, with a fixed
@@ -162,7 +170,8 @@ Feed the viewer while MonoSLAM runs, through a process substitution of bash, or 
 saved to a file. With `--save` it writes a recording instead, to open later with `rerun`:
 
 ```bash
-./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4 --stream >(python3 MonoSLAM/tools/viewer.py)
+./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4 \
+  --stream >(python3 MonoSLAM/tools/viewer.py)
 python3 MonoSLAM/tools/viewer.py state.txt
 python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 ```
@@ -172,7 +181,9 @@ python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 Use the standalone recorder to capture timestamped grayscale frames:
 
 ```bash
-./build/MonoSLAM/record_sequence camera /path/to/sequence --device /dev/video4 --frames 300
+./build/MonoSLAM/record_sequence camera /path/to/sequence \
+  --device /dev/video4 \
+  --frames 300
 ```
 
 This writes `frame_*.png`, at the 320 x 240 of the calibration, `timestamps.csv` with the capture
@@ -207,7 +218,9 @@ pixels first. It needs NumPy, which the environment of the viewer already has:
 
 ```bash
 ./build/MonoSLAM/analyze_pattern /path/to/sequence > ground_truth.txt
-python3 MonoSLAM/tools/evaluate_tracking.py /path/to/state.txt ground_truth.txt /path/to/sequence/camera.json
+python3 MonoSLAM/tools/evaluate_tracking.py /path/to/state.txt \
+  ground_truth.txt \
+  /path/to/sequence/camera.json
 ```
 
 The detector misses the blurriest frames, so always check those with `--annotate`. A single run is
@@ -217,7 +230,8 @@ the run elsewhere, so compare several runs, with different initial corners.
 ## Developer dependencies
 
 Source code formatting depends on:
-```
+
+```text
 clang-format 23.1.4
 cmakefmt 2.3.1
 ```
@@ -225,7 +239,10 @@ cmakefmt 2.3.1
 Usage:
 
 ```bash
-clang-format -i Calibration/*.cpp MonoSLAM/*.cpp MonoSLAM/*.h MonoSLAM/tests/*.cpp MonoSLAM/tools/*.cpp
+clang-format -i Calibration/*.cpp \
+  MonoSLAM/*.cpp MonoSLAM/*.h \
+  MonoSLAM/tests/*.cpp \
+  MonoSLAM/tools/*.cpp
 cmakefmt -i .
 ```
 
@@ -233,34 +250,38 @@ cmakefmt -i .
 
 Titles link to a free copy of the paper where there is one, and the DOI to the publisher's version.
 
-1. J. Civera, A. J. Davison and J. M. M. Montiel.
+1. S. Baker and I. Matthews.
+   [Lucas-Kanade 20 years on: a unifying framework](https://doi.org/10.1023/B:VISI.0000011205.11775.fd).
+   *International Journal of Computer Vision*, 56(3):221–255, 2004.
+   DOI: [10.1023/B:VISI.0000011205.11775.fd](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)
+2. J. Civera, A. J. Davison and J. M. M. Montiel.
    [Inverse depth parametrization for monocular SLAM](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf).
    *IEEE Transactions on Robotics*, 24(5):932–945, 2008.
    DOI: [10.1109/TRO.2008.2003276](https://doi.org/10.1109/TRO.2008.2003276)
-2. J. Civera, O. G. Grasa, A. J. Davison and J. M. M. Montiel.
+3. J. Civera, O. G. Grasa, A. J. Davison and J. M. M. Montiel.
    [1-point RANSAC for extended Kalman filtering: application to real-time structure from motion and visual odometry](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf).
    *Journal of Field Robotics*, 27(5):609–631, 2010.
    DOI: [10.1002/rob.20345](https://doi.org/10.1002/rob.20345)
-3. A. J. Davison, I. D. Reid, N. D. Molton and O. Stasse.
+4. A. J. Davison, I. D. Reid, N. D. Molton and O. Stasse.
    [MonoSLAM: real-time single camera SLAM](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 29(6):1052–1067, 2007.
    DOI: [10.1109/TPAMI.2007.1049](https://doi.org/10.1109/TPAMI.2007.1049)
-4. E. J. Lefferts, F. L. Markley and M. D. Shuster.
+5. E. J. Lefferts, F. L. Markley and M. D. Shuster.
    [Kalman filtering for spacecraft attitude estimation](https://doi.org/10.2514/3.56190).
    *Journal of Guidance, Control, and Dynamics*, 5(5):417–429, 1982.
    DOI: [10.2514/3.56190](https://doi.org/10.2514/3.56190)
-5. B. D. Lucas and T. Kanade.
+6. B. D. Lucas and T. Kanade.
    [An iterative image registration technique with an application to stereo vision](https://ijcai.org/Proceedings/81-2/Papers/017.pdf).
    *Proceedings of the 7th International Joint Conference on Artificial Intelligence*, 674–679, 1981.
-6. E. Rublee, V. Rabaud, K. Konolige and G. Bradski.
+7. E. Rublee, V. Rabaud, K. Konolige and G. Bradski.
    [ORB: an efficient alternative to SIFT or SURF](https://web.archive.org/web/20150415004214/http://www.willowgarage.com/sites/default/files/orb_final.pdf).
    *Proceedings of the IEEE International Conference on Computer Vision*, 2564–2571, 2011.
    DOI: [10.1109/ICCV.2011.6126544](https://doi.org/10.1109/ICCV.2011.6126544)
-7. J. Shi and C. Tomasi.
+8. J. Shi and C. Tomasi.
    [Good features to track](https://users.cs.duke.edu/~tomasi/papers/shi/shiCvpr94.pdf).
    *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*, 593–600, 1994.
    DOI: [10.1109/CVPR.1994.323794](https://doi.org/10.1109/CVPR.1994.323794)
-8. B. Williams, G. Klein and I. Reid.
+9. B. Williams, G. Klein and I. Reid.
    [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
    DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)

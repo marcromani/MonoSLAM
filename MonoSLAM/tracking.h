@@ -73,8 +73,8 @@ class FlowTracker
  * Searches a feature around a pixel, and returns where it is found, if anywhere. The patch of the
  * feature is first warped to how it would look from the current pose, with the homography of the
  * plane of the patch between the two views. The search is a zero-mean normalized cross-correlation
- * over the warped patch, and the peak is refined to subpixel precision with a parabola. Returns
- * nothing if the best score is low, or if another peak scores almost as high.
+ * over the warped patch, and its peak is refined to subpixel precision by aligning the patch with
+ * the frame. Returns nothing if the best score is low, or if another peak scores almost as high.
  *
  * frame       Current frame
  * feature     Feature to look for
@@ -83,6 +83,7 @@ class FlowTracker
  * pose        Camera pose
  * center      Center of the search region, in pixels
  * radius      Radius of the search region, in pixels
+ * covariance  Covariance of the match, from the alignment of the patch, if wanted
  */
 std::optional<cv::Point2d>
 findPatch(const cv::Mat1b& frame,
@@ -91,7 +92,8 @@ findPatch(const cv::Mat1b& frame,
           const CameraModel& camera,
           const CameraPose& pose,
           const cv::Point2d& center,
-          int radius);
+          int radius,
+          cv::Matx22d* covariance = nullptr);
 
 /*
  * Searches the features in view in a frame, each in a small region around its seed, or around its
@@ -106,6 +108,7 @@ findPatch(const cv::Mat1b& frame,
  * ekf         Filter, after the prediction
  * o           Features in view, and their predicted measurements
  * seeds       Expected image position of all the features
+ * covariances Covariance of each match, from the alignment of its patch
  */
 std::vector<std::optional<cv::Point2d>>
 matchFeatures(const cv::Mat1b& frame,
@@ -113,7 +116,8 @@ matchFeatures(const cv::Mat1b& frame,
               const CameraModel& camera,
               const EKF& ekf,
               const Observation& o,
-              const std::vector<cv::Point2f>& seeds);
+              const std::vector<cv::Point2f>& seeds,
+              std::vector<cv::Matx22d>& covariances);
 
 }
 

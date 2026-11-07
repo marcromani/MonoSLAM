@@ -400,9 +400,24 @@ The warped patch is searched within $\pm 8$~px of the seed, or of the prediction
 out of view, by zero-mean normalized cross-correlation with the mask of the warped patch. The best
 peak is kept if it scores at least $0.6$, and if no other peak, a local maximum more than $1$~px
 away, scores within $0.05$ of it: two near-equal peaks are a repeated texture or an edge, and which
-one wins then depends on tiny differences of the prediction. The peak is refined to subpixel
-precision with a parabola. Every feature found is returned, and the update decides which ones to
-use.
+one wins then depends on tiny differences of the prediction. Every feature found is returned, and
+the update decides which ones to use.
+
+\paragraph{Subpixel alignment.}
+A parabola through the peak and its neighbors gives a first subpixel position, but it is biased
+towards whole pixels. The warped patch is then aligned with the frame by the inverse compositional
+Lucas--Kanade algorithm~\cite{baker2004} for a translation, at most $10$ iterations (\texttt{alignPatch}), with the
+frame brought to the mean and contrast of the patch at every step, as the correlation does. The
+alignment is abandoned if it wanders more than $1$~px from the peak. It aligns $84$ to $99$\% of the
+matches, and moves them by $0.12$ to $0.18$~px, the median. The fit also says how well the patch was
+aligned: its covariance is the variance of the residuals over the Hessian of the patch gradients,
+\begin{equation}
+  \Sigma_a = \frac{\sum_k e_k^2}{n - 2} \Big(\sum_k \nabla T_k \nabla T_k^\top\Big)^{-1},
+\end{equation}
+large if the patch does not look like the frame, or if it lacks texture in some direction, as along
+an edge. Its larger standard deviation is $0.1$~px for the median match. Alone, the alignment does
+not change the results beyond the spread of the runs: the precision of the matches is not what
+limits them. Its covariance does (section~\ref{sec:update}).
 
 \paragraph{Returning features.}
 A feature that was out of view for at least $10$ frames is \emph{returning} until the update uses
@@ -423,6 +438,22 @@ Jacobian $H$, which only has the columns of the camera and of the features in vi
 covariance $S = H P H^\top + \sigma^2 I$, with $\sigma = 1.5$~px, and the columns of $P$ that $H$
 acts on. A pixel only depends on the camera and on its own feature, so most of $H$ is zero, and
 $P H^\top$ skips those zeros.
+
+\paragraph{The noise of each match.}
+$\sigma$ covers much that the alignment does not see, such as the error of the warp, and it stays
+the noise of a match aligned well. A match aligned worse gets more, in the directions where it was
+worse (\texttt{matchNoise}): with $\Sigma_a = V \operatorname{diag}(\lambda_1, \lambda_2) V^\top$,
+\begin{equation}
+  R = \sigma^2 V \operatorname{diag}\big(\max(1, \lambda_1 / \lambda_0), \max(1, \lambda_2 / \lambda_0)\big) V^\top,
+  \qquad \lambda_0 = 0.04~\text{px}^2,
+\end{equation}
+which replaces the block $\sigma^2 I$ of the match in $S$. About one match in ten has a standard
+deviation of the alignment above $\sqrt{\lambda_0} = 0.2$~px. No match is trusted more than before,
+so this cannot make the filter more confident. Over $15$ runs the kidnaps recovered go from $18$ to
+$22$ of $30$, the returns of sequence~5 are as good or better, and the rest stays within the spread
+of the runs. With $\lambda_0 = 0.01$~px$^2$ the kidnaps were $23$, but the second visit of sequence~6
+was worse, and with $0.0025$~px$^2$, so that most matches get more noise, $15$, and sequence~3 was
+lost once.
 
 \paragraph{One EKF step.}
 \texttt{correct} applies the ordinary EKF update with some rows of the observation,
@@ -622,12 +653,12 @@ chessboard corners, each with three negligible changes of the pixel noise.
   sequence & result over $15$ runs \\
   \hline
   1 & median $0$ frames over $5$~px, at most $3$ \\
-  2 & median $5$ frames over $5$~px, at most $9$ \\
+  2 & median $6$ frames over $5$~px, at most $8$ \\
   3 & median $2$ frames over $5$~px, never lost \\
-  5, back on the board at frames 336, 514, 566 & median errors $2.3$, $2.1$, $2.0$~cm \\
-  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $6$ and $12$ runs \\
-  6, board visits at frames 359, 411 & median errors $4.1$, $1.6$~cm \\
-  6, board visits at frames 771, 836 & median errors $6.2$, $1.1$~cm \\
+  5, back on the board at frames 336, 514, 566 & median errors $1.5$, $1.7$, $1.9$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $9$ and $13$ runs \\
+  6, board visits at frames 359, 411 & median errors $3.7$, $1.4$~cm \\
+  6, board visits at frames 771, 836 & median errors $4.9$, $1.1$~cm \\
   6, board visits at frames 1413, 1549 & lost in every run \\
 \end{tabular}
 \end{center}
@@ -637,7 +668,7 @@ initialization and track natural features, a table, a bowl, a cable, chairs, pic
 $20$ features per frame, and sequence~5 comes back to the board twice. Sequence~6 is a minute long and
 comes back three times. The map holds the first time. The second excursion drifts, often by tens of
 cm when the board comes back into view at frame 771, but the features kept from the first visit
-close the loop: by frame 836, $13$ runs out of $15$ are within $10$~cm. Before the third visit the
+close the loop: by frame 836, $11$ runs out of $15$ are within $10$~cm. Before the third visit the
 camera sweeps a blurred, almost textureless sofa, and tracking is lost in every run; the global
 match does not find the map again before the end. The losses of sequence~3 come from the same set
 of initial corners, where the camera swings fast and the board is blurred.
@@ -651,7 +682,7 @@ motion fitted around each seed, and $2$ to $6$~ms the search of the patches. On 
 pixels, with windows and patches half as wide, they cost a fraction of that. Over $15$ runs, the
 accuracy is the same within the spread of the runs: the first return of sequence~5 is $1$~cm worse,
 the second visit of sequence~6 better, and the kidnaps recovered go from $20$ to $18$ of $30$.
-Three more things keep the time down:
+The subpixel alignment of the matches adds about $1$~ms. Three more things keep the time down:
 \begin{itemize}
   \item The masked correlation of the patches is computed from three plain correlations
         (\texttt{maskedCorrelation}), the same score that OpenCV's masked \texttt{matchTemplate}
@@ -681,7 +712,7 @@ and 3 in every run.
   \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
         Keeping both predictions, its own flow and the motion of its neighbors, and letting the
         update choose would fix it.
-  \item $12$ of the $30$ kidnaps are not recovered in time, mostly the first one, where the camera
+  \item $8$ of the $30$ kidnaps are not recovered in time, mostly the first one, where the camera
         sees, after the cut, a part of the scene it had not seen before. Which ones are recovered
         changes a lot from run to run: the float rounding of the faster correlation alone moved the
         first kidnap from $13$ recoveries to $9$, and the second from $10$ to $11$, out of $15$.
@@ -690,6 +721,12 @@ and 3 in every run.
         association shows the same, so it is the filter and not the matching: new features enter
         with a very uncertain depth, and every update with them gives the camera information that
         it does not have. With features entering at their true depth the filter is consistent.
+  \item The camera has a rolling shutter: on the chessboard frames, the reprojection error is
+        smallest if the rows are exposed over about $10$~ms, top to bottom. Predicting each feature
+        at the time of its row did not help over $15$ runs, since the motion of these sequences is
+        slow, and it only moves the corners by about $0.01$~px on average. It may matter for fast
+        live motion. \texttt{evaluate\_tracking.py} would then need it too, since it projects with a
+        single pose per frame.
   \item The features used for long are never removed, so the map, and the cost of the filter,
         grow with the explored scene.
   \item The global match describes only detected corners, a few pixels away from where the
@@ -717,6 +754,8 @@ and 3 in every run.
   initialization & \texttt{initializeFromPattern} \\
   seeds & \texttt{FlowTracker} in \texttt{tracking.h} \\
   patch search, returning features & \texttt{findPatch}, \texttt{matchFeatures} \\
+  subpixel alignment, $\Sigma_a$ & \texttt{alignPatch} in \texttt{tracking.cpp} \\
+  noise of each match & \texttt{matchNoise} in \texttt{main.cpp}, \texttt{EKF::setNoises} \\
   adding, removing features & \texttt{Mapper::addFeatures}, \texttt{Mapper::removeUnreliable} \\
   descriptors & \texttt{describe}, \texttt{Mapper::recordAppearance} \\
   keyframes & \texttt{Keyframes} in \texttt{relocalization.h} \\
@@ -727,6 +766,11 @@ and 3 in every run.
 \end{center}
 
 \begin{thebibliography}{9}
+
+\bibitem{baker2004}
+S.~Baker and I.~Matthews.
+Lucas-Kanade 20 years on: a unifying framework.
+\emph{International Journal of Computer Vision}, 56(3):221--255, 2004.
 
 \bibitem{civera2008}
 J.~Civera, A.~J.~Davison and J.~M.~M.~Montiel.

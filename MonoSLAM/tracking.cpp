@@ -243,6 +243,144 @@ warpPatch(const monoslam::Feature& feature,
 }
 
 /*
+ * Refines a match of a patch to subpixel precision by aligning the patch with the frame, with the
+ * inverse compositional Lucas-Kanade algorithm for a translation (Baker and Matthews, 2004). The
+ * frame is normalized to the mean and contrast of the patch at every step, as the correlation does.
+ * Returns the match unchanged if the alignment fails or wanders off it. The covariance of the
+ * aligned match is that of the least squares fit, the variance of the residuals over the Hessian:
+ * large if the patch differs from the frame, or if it lacks texture in some direction, as along an
+ * edge. It is left as it is if the alignment fails.
+ *
+ * frame         Frame
+ * patch         Warped patch
+ * mask          Pixels of the patch that come from the feature
+ * anchor        Center of the patch in the patch
+ * match         Match to integer precision, or better
+ * covariance    Covariance of the aligned match
+ */
+cv::Point2d
+alignPatch(const cv::Mat1b& frame,
+           const cv::Mat1b& patch,
+           const cv::Mat1b& mask,
+           const cv::Point2d& anchor,
+           const cv::Point2d& match,
+           cv::Matx22d& covariance)
+{
+    constexpr int maxIterations = 10;
+    constexpr double minStep = 0.01;  // Pixels
+    constexpr double maxShift = 1.0;  // From the match, in pixels
+
+    // The gradients of the patch, used where the patch and its neighbors come from the feature
+    cv::Mat1f templ, gx, gy;
+    patch.convertTo(templ, CV_32F);
+    cv::Sobel(templ, gx, CV_32F, 1, 0, 3, 1.0 / 8.0);
+    cv::Sobel(templ, gy, CV_32F, 0, 1, 3, 1.0 / 8.0);
+
+    cv::Mat1b used;
+    cv::erode(mask, used, cv::Mat(), cv::Point(-1, -1), 1, cv::BORDER_CONSTANT, cv::Scalar::all(0));
+
+    std::vector<cv::Point> pixels;
+    cv::findNonZero(used, pixels);
+
+    if (pixels.size() < 9) {
+        return match;
+    }
+
+    double templMean = 0.0;
+
+    for (const cv::Point& q : pixels) {
+        templMean += templ(q);
+    }
+
+    templMean /= static_cast<double>(pixels.size());
+
+    double templNorm = 0.0;
+    cv::Matx22d hessian = cv::Matx22d::zeros();
+
+    for (const cv::Point& q : pixels) {
+        const double d = templ(q) - templMean;
+        templNorm += d * d;
+        hessian += cv::Matx22d(gx(q) * gx(q), gx(q) * gy(q), gx(q) * gy(q), gy(q) * gy(q));
+    }
+
+    templNorm = std::sqrt(templNorm);
+
+    if (cv::determinant(hessian) < 1e-6 || templNorm < 1e-6) {
+        return match;
+    }
+
+    const cv::Matx22d inverse = hessian.inv();
+
+    cv::Point2d p = match;
+    std::vector<double> values(pixels.size());
+
+    for (int iteration = 0; iteration < maxIterations; ++iteration) {
+        // The frame under the patch, bilinearly
+        double mean = 0.0;
+
+        for (std::size_t k = 0; k < pixels.size(); ++k) {
+            const double x = p.x + pixels[k].x - anchor.x;
+            const double y = p.y + pixels[k].y - anchor.y;
+
+            const int x0 = static_cast<int>(std::floor(x));
+            const int y0 = static_cast<int>(std::floor(y));
+
+            if (x0 < 0 || y0 < 0 || x0 + 1 >= frame.cols || y0 + 1 >= frame.rows) {
+                return match;
+            }
+
+            const double ax = x - x0;
+            const double ay = y - y0;
+
+            values[k] = (1.0 - ay) * ((1.0 - ax) * frame(y0, x0) + ax * frame(y0, x0 + 1)) +
+                        ay * ((1.0 - ax) * frame(y0 + 1, x0) + ax * frame(y0 + 1, x0 + 1));
+            mean += values[k];
+        }
+
+        mean /= static_cast<double>(values.size());
+
+        double norm = 0.0;
+
+        for (const double v : values) {
+            norm += (v - mean) * (v - mean);
+        }
+
+        norm = std::sqrt(norm);
+
+        if (norm < 1e-6) {
+            return match;
+        }
+
+        // The error, with the frame brought to the mean and contrast of the patch
+        cv::Vec2d b(0.0, 0.0);
+        double squares = 0.0;
+
+        for (std::size_t k = 0; k < pixels.size(); ++k) {
+            const double error = (values[k] - mean) * (templNorm / norm) - (templ(pixels[k]) - templMean);
+            b += cv::Vec2d(gx(pixels[k]), gy(pixels[k])) * error;
+            squares += error * error;
+        }
+
+        const cv::Vec2d step = inverse * b;
+
+        p -= cv::Point2d(step[0], step[1]);
+
+        if (cv::norm(p - match) > maxShift) {
+            return match;
+        }
+
+        // Two parameters were fitted to the residuals
+        covariance = inverse * (squares / static_cast<double>(pixels.size() - 2));
+
+        if (cv::norm(step) < minStep) {
+            break;
+        }
+    }
+
+    return p;
+}
+
+/*
  * Fits a parabola to the neighbors of a peak and returns the offset of its vertex.
  */
 double
@@ -283,8 +421,10 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
         std::vector<uchar> forwardStatus, backwardStatus;
         std::vector<float> error;
 
-        cv::calcOpticalFlowPyrLK(pyramid_, pyramid, corners_, forward, forwardStatus, error, cornerWindow, pyramidLevels);
-        cv::calcOpticalFlowPyrLK(pyramid, pyramid_, forward, backward, backwardStatus, error, cornerWindow, pyramidLevels);
+        cv::calcOpticalFlowPyrLK(
+          pyramid_, pyramid, corners_, forward, forwardStatus, error, cornerWindow, pyramidLevels);
+        cv::calcOpticalFlowPyrLK(
+          pyramid, pyramid_, forward, backward, backwardStatus, error, cornerWindow, pyramidLevels);
 
         for (std::size_t i = 0; i < corners_.size(); ++i) {
             if (forwardStatus[i] &&
@@ -384,7 +524,8 @@ monoslam::findPatch(const cv::Mat1b& frame,
                     const CameraModel& camera,
                     const CameraPose& pose,
                     const cv::Point2d& center,
-                    int radius)
+                    int radius,
+                    cv::Matx22d* covariance)
 {
     cv::Point2d anchor;
     cv::Mat1b mask;
@@ -468,6 +609,13 @@ monoslam::findPatch(const cv::Mat1b& frame,
         found.y += refinePeak(result(peak.y - 1, peak.x), score, result(peak.y + 1, peak.x));
     }
 
+    cv::Matx22d alignment = cv::Matx22d::zeros();
+    found = alignPatch(frame, patch, mask, anchor, found, alignment);
+
+    if (covariance != nullptr) {
+        *covariance = alignment;
+    }
+
     return found;
 }
 
@@ -477,8 +625,11 @@ monoslam::matchFeatures(const cv::Mat1b& frame,
                         const CameraModel& camera,
                         const EKF& ekf,
                         const Observation& o,
-                        const std::vector<cv::Point2f>& seeds)
+                        const std::vector<cv::Point2f>& seeds,
+                        std::vector<cv::Matx22d>& covariances)
 {
+    covariances.assign(o.features.size(), cv::Matx22d::zeros());
+
     const cv::Mat1d& x = ekf.state();
     const CameraPose pose = ekf.pose();
 
@@ -498,14 +649,16 @@ monoslam::matchFeatures(const cv::Mat1b& frame,
             const int radius =
               std::clamp(static_cast<int>(std::ceil(returningSigmas * sigma)), searchRadius, maxReturningRadius);
 
-            matches.push_back(findPatch(frame, features[i], featurePosition(x, i), camera, pose, prediction, radius));
+            matches.push_back(
+              findPatch(frame, features[i], featurePosition(x, i), camera, pose, prediction, radius, &covariances[k]));
             continue;
         }
 
         // Without a seed in view, the prediction is the best guess
         const cv::Point2d center = camera.inView(seeds[i]) ? cv::Point2d(seeds[i]) : prediction;
 
-        matches.push_back(findPatch(frame, features[i], featurePosition(x, i), camera, pose, center, searchRadius));
+        matches.push_back(
+          findPatch(frame, features[i], featurePosition(x, i), camera, pose, center, searchRadius, &covariances[k]));
     }
 
     return matches;

@@ -71,6 +71,29 @@ constexpr double maxNIS = 9.210340371976184;  // Chi-squared, 2 degrees of freed
 
 constexpr std::size_t minConstrained = 4;  // Measurements needed to fix a pose beyond doubt
 
+constexpr double goodAlignmentVariance = 0.04;  // Largest of a match aligned well, in pixels^2: 1 in 10 is worse
+
+/*
+ * Returns the noise of a match: the pixel noise, made larger in the directions in which the
+ * alignment of its patch was worse than a good one, as along an edge, or with a patch that does not look
+ * like the frame. It is never smaller, since the pixel noise also covers what the alignment does
+ * not see.
+ *
+ * alignment    Covariance of the alignment of the patch
+ */
+cv::Matx22d
+matchNoise(const cv::Matx22d& alignment)
+{
+    cv::Vec2d eigenvalues;
+    cv::Matx22d eigenvectors;
+    cv::eigen(alignment, eigenvalues, eigenvectors);
+
+    const cv::Matx22d scale = cv::Matx22d::diag(cv::Vec2d(std::max(1.0, eigenvalues[0] / goodAlignmentVariance),
+                                                          std::max(1.0, eigenvalues[1] / goodAlignmentVariance)));
+
+    return eigenvectors.t() * scale * eigenvectors * (pixelStd * pixelStd);
+}
+
 struct Options
 {
     cv::Size patternSize;     // Inner corners of the calibration pattern
@@ -307,10 +330,17 @@ track(const Options& options,
         const monoslam::Observation observation = ekf.observe();
         const std::vector<std::size_t>& searched = observation.features;
 
+        std::vector<cv::Matx22d> alignments;
         const std::vector<std::optional<cv::Point2d>> matches =
-          monoslam::matchFeatures(gray, features, camera, ekf, observation, seeds);
+          monoslam::matchFeatures(gray, features, camera, ekf, observation, seeds, alignments);
 
-        std::vector<std::size_t> used = ekf.update(observation, matches, maxInlierDistance, maxNIS);
+        std::vector<cv::Matx22d> noises;
+
+        for (const cv::Matx22d& alignment : alignments) {
+            noises.push_back(matchNoise(alignment));
+        }
+
+        std::vector<std::size_t> used = ekf.update(observation, matches, noises, maxInlierDistance, maxNIS);
 
         // What to show, if anything shows it
         const bool shown = display != nullptr || !options.annotateDir.empty();
