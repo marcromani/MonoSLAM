@@ -21,17 +21,17 @@ constexpr std::size_t maxNewPerFrame = 2;  // And at most this many per frame
 
 constexpr int boxDivisions = 4;  // The box where a feature is added is this many times smaller than the frame
 
-constexpr int patchSize = 23;
-constexpr int border = 20;              // Distance of new features to the border of the frame, in pixels
-constexpr int minFeatureDistance = 30;  // Distance of new features to those in view, in pixels
+constexpr int patchSize = 11;
+constexpr int border = 10;              // Distance of new features to the border of the frame, in pixels
+constexpr int minFeatureDistance = 15;  // Distance of new features to those in view, in pixels
 
-constexpr int maxCandidates = 10;              // In the box
-constexpr double candidateQuality = 0.01;      // Relative to the best corner in the box
-constexpr double minTexture = 2.0;             // Gray levels per pixel, see texture
-constexpr double minCandidateDistance = 10.0;  // Between candidates, in pixels
+constexpr int maxCandidates = 10;             // In the box
+constexpr double candidateQuality = 0.01;     // Relative to the best corner in the box
+constexpr double minTexture = 4.0;            // Gray levels per pixel, see texture
+constexpr double minCandidateDistance = 5.0;  // Between candidates, in pixels
 
-constexpr int distinctivenessRadius = 40;  // Region where a candidate must not look like anything else
-constexpr int selfRadius = 4;              // Around the candidate itself, which is excluded
+constexpr int distinctivenessRadius = 20;  // Region where a candidate must not look like anything else
+constexpr int selfRadius = 2;              // Around the candidate itself, which is excluded
 constexpr double maxLookAlikeScore = 0.8;  // Correlation of the best look-alike allowed
 
 constexpr double defaultInverseDepth = 0.02;  // 1 / cm, that is 50 cm away, without well located features

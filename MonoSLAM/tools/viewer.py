@@ -75,7 +75,7 @@ def log_frame(frame, trajectory):
     axis = frame["o"] / angle if angle > 0.0 else np.array([0.0, 0.0, 1.0])
 
     rr.log("world/camera", rr.Transform3D(translation=frame["r"], rotation=rr.RotationAxisAngle(axis, radians=angle)))
-    rr.log("world/camera", rr.Pinhole(width=640, height=480, focal_length=550.0, camera_xyz=rr.ViewCoordinates.RDF,
+    rr.log("world/camera", rr.Pinhole(width=320, height=240, focal_length=275.0, camera_xyz=rr.ViewCoordinates.RDF,
                                       image_plane_distance=5.0))
 
     trajectory.append(frame["r"])

@@ -133,7 +133,7 @@ def main():
         pixel_errors.append(np.nanmax(errors))
         pose_errors.append(np.linalg.norm(frame["r"] - positions[index]))
 
-        if pixel_errors[-1] > 10.0:
+        if pixel_errors[-1] > 5.0:
             losses.append(index)
 
     pixel_errors = np.array(pixel_errors)
@@ -149,7 +149,7 @@ def main():
         f"mean {pose_errors.mean():.2f}, p95 {np.percentile(pose_errors, 95):.2f}, max {pose_errors.max():.2f}"
     )
     print(f"Measured features per frame: {np.mean([f['used'] for f in frames]):.2f}")
-    print(f"Frames over 10 px: {len(losses)} {losses[:40]}")
+    print(f"Frames over 5 px: {len(losses)} {losses[:40]}")
 
 
 if __name__ == "__main__":

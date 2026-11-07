@@ -15,27 +15,27 @@ namespace {
 constexpr int maxCorners = 150;                 // Generic corners whose motion the seeds follow
 constexpr std::size_t minTrackedCorners = 120;  // New ones are only detected when fewer are tracked
 constexpr double cornerQuality = 0.01;
-constexpr double minCornerDistance = 8.0;  // Pixels
+constexpr double minCornerDistance = 4.0;  // Pixels
 constexpr std::size_t numNeighbors = 24;   // Corners that move a seed
 constexpr std::size_t minNeighbors = 6;
 
 constexpr int pyramidLevels = 5;
-constexpr int seedMargin = 50;  // Pixels out of the frame within which seeds still follow the corners
-const cv::Size cornerWindow(21, 21);
-const cv::Size featureWindow(31, 31);
+constexpr int seedMargin = 25;  // Pixels out of the frame within which seeds still follow the corners
+const cv::Size cornerWindow(11, 11);
+const cv::Size featureWindow(15, 15);
 
-constexpr double maxForwardBackwardError = 1.0;  // Pixels
-constexpr double motionInlierThreshold = 3.0;    // Pixels
-constexpr double maxFlowDisagreement = 6.0;      // Pixels
+constexpr double maxForwardBackwardError = 0.5;  // Pixels
+constexpr double motionInlierThreshold = 1.5;    // Pixels
+constexpr double maxFlowDisagreement = 3.0;      // Pixels
 
 // Patch search
-constexpr int searchRadius = 15;         // Around the seeds, in pixels
+constexpr int searchRadius = 8;          // Around the seeds, in pixels
 constexpr double returningSigmas = 3.0;  // Of the innovation, around the prediction of a returning feature
-constexpr int maxReturningRadius = 40;   // Pixels, so that a large uncertainty does not invite look-alikes
-constexpr int minPatchPixels = 25;
+constexpr int maxReturningRadius = 20;   // Pixels, so that a large uncertainty does not invite look-alikes
+constexpr int minPatchPixels = 6;
 constexpr double minScore = 0.6;     // Of the correlation
 constexpr double minPeakGap = 0.05;  // Between the best peak and any other, of the correlation
-constexpr int peakRadius = 2;        // Of the best peak, within which there are no others, in pixels
+constexpr int peakRadius = 1;        // Of the best peak, within which there are no others, in pixels
 
 /*
  * Moves a point according to the corners around it, with the affine motion that most of the
@@ -260,7 +260,7 @@ refinePeak(double left, double peak, double right)
 }
 
 monoslam::FlowTracker::FlowTracker(const cv::Mat1b& frame, const std::vector<cv::Point2f>& positions)
-  : frame_(frame.clone())
+  : frame_(frame)
   , seeds_(positions)
 {
     buildPyramid(frame_, pyramid_);
@@ -271,8 +271,7 @@ std::vector<cv::Point2f>&
 monoslam::FlowTracker::predict(const cv::Mat1b& frame)
 {
     // The pyramid of each frame is built once for the corners, forwards and backwards, and again as
-    // the previous frame. Its first level must be a copy: by default it is the frame itself, which
-    // the caller overwrites with the next one
+    // the previous frame
     std::vector<cv::Mat> pyramid;
     buildPyramid(frame, pyramid);
 
@@ -337,7 +336,7 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
     }
 
     seeds_ = moved;
-    frame_ = frame.clone();
+    frame_ = frame;  // Frames are never written to: no copy
     pyramid_ = pyramid;
 
     // The corners followed are kept for the next frame, and replaced only when too many are lost

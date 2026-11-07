@@ -27,7 +27,7 @@ target_link_libraries(monoslam_core PUBLIC ${OpenCV_LIBS})
 add_executable(analyze_pattern tools/analyze_pattern.cpp)
 target_link_libraries(analyze_pattern PRIVATE monoslam_core)
 
-add_executable(monoslam main.cpp)
+add_executable(monoslam main.cpp display.cpp)
 target_link_libraries(monoslam PRIVATE monoslam_core)
 
 add_executable(record_sequence tools/record_sequence.cpp)

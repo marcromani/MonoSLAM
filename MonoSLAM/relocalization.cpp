@@ -46,15 +46,15 @@ orientation(const cv::Mat1b& frame, const cv::Point& center)
 // Global matching
 constexpr int numCorners = 1500;  // Detected in the frame, as the features are when they are added
 constexpr double cornerQuality = 0.002;
-constexpr double minCornerDistance = 7.0;  // Pixels
+constexpr double minCornerDistance = 3.5;  // Pixels
 
-constexpr float maxRatio = 0.8f;     // Of the distances to the best corner and the best one elsewhere
-constexpr int numNearest = 8;        // Corners compared with the best one
-constexpr double sameCorner = 10.0;  // Corners closer than this to the best one are not elsewhere, in pixels
-constexpr float maxDistance = 64;    // Bits, out of 256
+constexpr float maxRatio = 0.8f;    // Of the distances to the best corner and the best one elsewhere
+constexpr int numNearest = 8;       // Corners compared with the best one
+constexpr double sameCorner = 5.0;  // Corners closer than this to the best one are not elsewhere, in pixels
+constexpr float maxDistance = 64;   // Bits, out of 256
 
 constexpr int iterations = 1000;             // Of RANSAC
-constexpr float maxReprojectionError = 4.0;  // Pixels
+constexpr float maxReprojectionError = 2.0;  // Pixels
 constexpr std::size_t minInliers = 6;        // And patches found where the pose projects them
 
 // Keyframes
@@ -65,10 +65,10 @@ constexpr std::size_t numClosest = 3;                  // Keyframes tried
 constexpr double keyframeDistance = 5.0;               // cm, from every other keyframe, or
 constexpr double keyframeAngle = 8.0 * CV_PI / 180.0;  // rad
 constexpr std::size_t minKeyframeFeatures = 8;         // Used in the frame
-constexpr int keyframeSearchRadius = 20;               // Pixels
+constexpr int keyframeSearchRadius = 10;               // Pixels
 
-constexpr int verifyRadius = 8;          // Of the search of the patches, in pixels
-constexpr double verifyTolerance = 3.0;  // Pixels
+constexpr int verifyRadius = 4;          // Of the search of the patches, in pixels
+constexpr double verifyTolerance = 1.5;  // Pixels
 
 /*
  * Returns how many features are found by their patches where a pose projects them.

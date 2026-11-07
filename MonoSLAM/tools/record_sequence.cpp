@@ -34,17 +34,18 @@ struct Options
     std::string cameraFile;   // Calibration, as the calibration program writes it
     std::string device;       // Camera device
     std::string directory;    // Where the sequence goes, empty or not yet created
-    double fps = 30.0;        // Frame rate to ask the camera for
     long maxFrames = 0;       // Frames to record, 0 for no limit
     double maxSeconds = 0.0;  // Seconds to record, 0 for no limit
     bool headless = false;    // Without the preview window, only with a limit
+
+    double exposure = monoslam::defaultExposure;  // Of the camera, in milliseconds
 };
 
 constexpr const char* usage = "Usage: record_sequence camera device directory [options]\n"
                               "     camera: Calibration file, without \".json\"\n"
-                              "     device: Camera device, such as /dev/video5\n"
+                              "     device: Camera device, such as /dev/video4\n"
                               "  directory: Where the sequence goes, empty or not yet created\n"
-                              "  --fps F        Frame rate to ask the camera for (default 30)\n"
+                              "  --exposure E   Exposure time of the camera, in ms (default 5)\n"
                               "  --frames N     Record N frames, starting right away\n"
                               "  --seconds S    Record S seconds, starting right away\n"
                               "  --headless     Without the preview window, only with --frames or --seconds\n";
@@ -76,7 +77,7 @@ parseOptions(int argc, char* argv[])
         if (option == "--headless") {
             options.headless = true;
 
-        } else if (option == "--fps" && hasValue && parse(argv[i + 1], options.fps)) {
+        } else if (option == "--exposure" && hasValue && parse(argv[i + 1], options.exposure)) {
             ++i;
 
         } else if (option == "--frames" && hasValue && parse(argv[i + 1], options.maxFrames)) {
@@ -123,8 +124,7 @@ main(int argc, char* argv[])
 
     monoslam::FrameSource source;
 
-    if (!source.openCamera(options.device, camera->frameSize(), options.fps)) {
-        std::cerr << "Could not open " << options.device << '\n';
+    if (!source.openCamera(options.device, camera->frameSize(), options.exposure)) {
         return EXIT_FAILURE;
     }
 

@@ -35,6 +35,15 @@ how well it works (section~\ref{sec:results}).
 \section{The frame loop}
 \label{sec:loop}
 
+The camera is asked for $320 \times 240$ frames, which it gives at about 100~Hz with a fixed
+exposure of 5~ms, and the filter works on them as they are (\texttt{FrameSource}). Every length in
+pixels below is one of these frames, also those measured at $640 \times 480$ before, halved. With a
+quarter of the pixels of $640 \times 480$, the frames cost about half the time, with the same
+accuracy (section~\ref{sec:results}). The calibration is fitted on the largest frames the camera
+gives in the same shape, $1024 \times 768$, where the corners are the most precise, and saved for
+the small ones: a pixel center $x$ becomes $(x + \frac{1}{2}) s - \frac{1}{2}$, with $s$ the
+shrinking factor, and the distortion, in normalized coordinates, does not change.
+
 Every frame goes through the same steps, in \texttt{main.cpp}:
 \begin{enumerate}
   \item \texttt{ekf.predict(dt)} moves the camera with the motion model, over the real interval
@@ -297,7 +306,7 @@ patches. A feature with $\rho \le 10^{-3}$ is placed at $10$~m along its ray.
 
 \paragraph{Initialization.}
 The camera pose comes from the whole chessboard, with PnP, if it explains all its corners within
-$6$~px and $2$~px RMS. Five of its corners, the four outermost and the one closest to the center,
+$3$~px and $1$~px RMS. Five of its corners, the four outermost and the one closest to the center,
 become the first features, at their known positions $p_i$, written with the anchor at the initial
 camera position, $y_i = (r_0, \theta_i, \phi_i, \rho_i)$ (\texttt{fromPoint}). The covariance of
 $(\theta_i, \phi_i, \rho_i)$ is $J\, (0.05\, I_3)\, J^\top$, with $J$ the Jacobian of
@@ -336,9 +345,9 @@ The features have to be found in every new image, and the question is where to l
 the search region is the $3\sigma$ ellipse of the innovation covariance around the prediction, the
 active search of Davison et al.~\cite{davison2007}. That only works if the ellipse holds the feature and nothing that
 looks like it, and a hand-held camera jerks: on the first sequence the chessboard corners move up
-to $38$~px between frames, and a constant velocity only reduces the median prediction error from
-$10$ to $6$~px, with $22$~px at the $99$th percentile. Searched as the active search does, the
-first two sequences are lost, in the frames where the motion changes by $20$~px from one frame to
+to $19$~px between frames, and a constant velocity only reduces the median prediction error from
+$5$ to $3$~px, with $11$~px at the $99$th percentile. Searched as the active search does, the
+first two sequences are lost, in the frames where the motion changes by $10$~px from one frame to
 the next.
 The motion model cannot predict that, but the images can.
 
@@ -348,19 +357,19 @@ and every frame (\texttt{predict}):
 \begin{enumerate}
   \item \emph{Tracks generic corners.} The corners of the previous image are tracked to the new
         image and back with pyramidal Lucas--Kanade~\cite{lucas1981}, six levels and a
-        $21 \times 21$ window. A corner is kept if it comes back within $1$~px of where it started,
+        $11 \times 11$ window. A corner is kept if it comes back within $0.5$~px of where it started,
         which removes most of those lost to blur or occlusion. The corners are kept from frame to
         frame, and only when fewer than $120$ are left are new ones detected
-        (\texttt{goodFeaturesToTrack}, quality $0.01$, at least $8$~px apart from each other and
+        (\texttt{goodFeaturesToTrack}, quality $0.01$, at least $4$~px apart from each other and
         from those left), up to $150$. Detecting them anew in every frame made the flow $40\%$
         slower. The six levels matter: with four, the second sequence is
-        lost, because the flow cannot follow jumps of more than $100$~px.
+        lost, because the flow cannot follow jumps of more than $50$~px.
   \item \emph{Moves each seed with its neighbors.} An affine map is fitted with RANSAC to the
-        motion of the $24$ tracked corners closest to the seed (inliers within $3$~px), and the
+        motion of the $24$ tracked corners closest to the seed (inliers within $1.5$~px), and the
         seed is moved with it. With fewer than $6$ corners, or if the fit fails, it stays. Seeds
         out of the image are moved the same way, by the corners closest to them.
   \item \emph{Lets the seed's own flow take over.} The seeds in view are also tracked themselves,
-        with a $31 \times 31$ window. If that lands within $6$~px of the affine position, it
+        with a $15 \times 15$ window. If that lands within $3$~px of the affine position, it
         replaces it, since the flow of a single point is more precise. If not, it has probably
         slipped to a look-alike neighbor, and the affine position is kept.
 \end{enumerate}
@@ -378,16 +387,16 @@ following the images.
 \section{The patch search}
 \label{sec:search}
 
-Each feature keeps the patch, $23 \times 23$~px, of the frame where it was first seen. To find it
+Each feature keeps the patch, $11 \times 11$~px, of the frame where it was first seen. To find it
 in a new frame (\texttt{findPatch}), the patch is warped to how it would look from the predicted
 pose, taking it as a piece of the plane through the feature with its normal: the pattern's for the
 five chessboard corners, and facing the first camera for the others. The corners of the patch are
 mapped through the whole camera model, distortion included, and the homography is the one that
 maps them.
 
-The warped patch is searched within $\pm 15$~px of the seed, or of the prediction if the seed is
+The warped patch is searched within $\pm 8$~px of the seed, or of the prediction if the seed is
 out of view, by zero-mean normalized cross-correlation with the mask of the warped patch. The best
-peak is kept if it scores at least $0.6$, and if no other peak, a local maximum more than $2$~px
+peak is kept if it scores at least $0.6$, and if no other peak, a local maximum more than $1$~px
 away, scores within $0.05$ of it: two near-equal peaks are a repeated texture or an edge, and which
 one wins then depends on tiny differences of the prediction. The peak is refined to subpixel
 precision with a parabola. Every feature found is returned, and the update decides which ones to
@@ -397,10 +406,10 @@ use.
 A feature that was out of view for at least $10$ frames is \emph{returning} until the update uses
 it again. Its seed is no use: the flow could not follow it while it was away. It is searched around
 its prediction instead, within $3\sigma$ of the larger standard deviation of its innovation, as in
-the active search of Davison et al.~\cite{davison2007}, but no closer than $\pm 15$~px and no
-wider than $\pm 40$~px. While the camera is away its uncertainty grows, and so does the region, so
+the active search of Davison et al.~\cite{davison2007}, but no closer than $\pm 8$~px and no
+wider than $\pm 20$~px. While the camera is away its uncertainty grows, and so does the region, so
 the feature is found even if the map has drifted. The cap keeps a large uncertainty from inviting
-look-alikes: without it, at $\pm 60$~px, some runs of sequence~6 end more than $3$~m off. Over
+look-alikes: without it, at $\pm 30$~px, some runs of sequence~6 end more than $3$~m off. Over
 $15$ runs, searching the returning features this way recovers $17$ of the $30$ kidnaps, against
 $9$ when they were searched around their seeds.
 
@@ -409,7 +418,7 @@ $9$ when they were searched around their seeds.
 
 \texttt{EKF::observe} predicts the pixels $h$ of the features in view, two rows per feature, their
 Jacobian $H$, which only has the columns of the camera and of the features in view, the innovation
-covariance $S = H P H^\top + \sigma^2 I$, with $\sigma = 3$~px, and the columns of $P$ that $H$
+covariance $S = H P H^\top + \sigma^2 I$, with $\sigma = 1.5$~px, and the columns of $P$ that $H$
 acts on. A pixel only depends on the camera and on its own feature, so most of $H$ is zero, and
 $P H^\top$ skips those zeros.
 
@@ -441,7 +450,7 @@ in Civera et al.~\cite{civera2010}:
         is enough to tell which other matches agree. The hypotheses are states with $e \neq 0$,
         projected with $R \exp([e]_\times)$.
   \item \emph{Support.} The prediction $h(x^{(j)})$ is computed with the full nonlinear model, and
-        every match within $6$~px of it supports the hypothesis. The features in view at $x^{(j)}$
+        every match within $3$~px of it supports the hypothesis. The features in view at $x^{(j)}$
         need not be those in view at $x_0$, so rows are paired through the feature they belong to,
         not by position, and a match whose feature leaves the image does not support it. The
         largest support wins, ties broken by the smallest sum of distances.
@@ -472,24 +481,24 @@ free. The curvature it would correct is small for the innovations that 1-point R
 While fewer than $12$ features are in view, at most two are added per frame:
 \begin{enumerate}
   \item \emph{Where.} A box a quarter of the frame in each dimension is slid over it by half its
-        size, $20$~px away from the border, and the positions with no feature in view inside are
+        size, $10$~px away from the border, and the positions with no feature in view inside are
         tried, the farthest from the features first, so that the features keep a roughly constant
         density over the frame, as in Davison et al.~\cite{davison2007}, who place the box at random. A
         fixed order keeps the runs repeatable. A box can be empty because there is nothing to track in it,
         and then the next one is tried.
   \item \emph{Salient.} \texttt{goodFeaturesToTrack} proposes up to $10$ corners in the box
-        (Shi--Tomasi~\cite{shi1994}, quality $0.01$, at least $10$~px apart), $30$~px away from the features in
-        view, strongest first.
+        (Shi--Tomasi~\cite{shi1994}, quality $0.01$, at least $5$~px apart), $15$~px away from
+        the features in view, strongest first.
   \item \emph{Textured.} The quality of \texttt{goodFeaturesToTrack} is relative to the best
         corner of the box, so on a blank wall the least blank point passes. A candidate also needs
         an absolute texture: the root mean square of the gradient of its patch along its least
         textured direction, the smaller eigenvalue of the gradient matrix of the patch, as in Shi
-        and Tomasi, must be at least $2$ gray levels per pixel. On the six sequences, the features
-        below $1$, $31\%$ of them, lived a median of $11$ frames and were used in $21\%$ of their
-        searches, and those above $2$ were used in about $70\%$. The correlation of the next test
+        and Tomasi, must be at least $4$ gray levels per pixel. On the six sequences, the features
+        below $2$, $31\%$ of them, lived a median of $11$ frames and were used in $21\%$ of their
+        searches, and those above $4$ were used in about $70\%$. The correlation of the next test
         cannot tell a blank patch: it divides by its contrast, and what is left is camera noise.
   \item \emph{Distinctive.} A candidate is rejected if its patch correlates with some other place
-        within $\pm 40$~px, outside $\pm 4$~px of itself, with a score of $0.8$ or more. That keeps
+        within $\pm 20$~px, outside $\pm 2$~px of itself, with a score of $0.8$ or more. That keeps
         the new features off the inner corners of the chessboard, and off repeated texture in
         general, which the search could not tell apart within its region.
   \item \emph{Initial depth.} $\rho_0$ is the inverse of the median distance of the well located
@@ -536,7 +545,7 @@ three keyframes with the smallest mean squared difference to it are tried in tur
 aligned with the frame by the shift, within $6$ pixels of the thumbnail, that makes them most alike,
 since a small turn of the camera shifts the whole image. The well located features, except those of
 the pattern, are then projected with the pose of the keyframe, shifted, and searched with their
-patches, warped to that pose, within $20$~px. A pose is fitted to those found, and verified, as
+patches, warped to that pose, within $10$~px. A pose is fitted to those found, and verified, as
 below for the descriptors.
 
 The global match needs a corner of the frame on the feature, and an ORB descriptor that survives the
@@ -563,14 +572,14 @@ Up to $1500$ corners of the frame are detected as the features were, with
 \texttt{goodFeaturesToTrack}, since ORB's own corners rarely fall on them, and described in the
 same way. Each descriptor of each well located feature, except the five chessboard corners, which
 all look alike, is matched to its nearest corner, if it is within $64$ bits and clearly nearer, by
-a ratio of $0.8$, than the best corner more than $10$~px away from it: corners around the same
+a ratio of $0.8$, than the best corner more than $5$~px away from it: corners around the same
 structure look alike, but are not an ambiguity. A pose is fitted to the matches with P3P and
-RANSAC, $1000$ iterations, inliers within $4$~px, and at least six must agree.
+RANSAC, $1000$ iterations, inliers within $2$~px, and at least six must agree.
 
 \paragraph{Verification.}
 A wrong pose can agree with six descriptors by chance. So the pose is verified with the patches:
-the features are projected with it and searched, warped to it, within $8$~px of their projections,
-and at least six must be found within $3$~px.
+the features are projected with it and searched, warped to it, within $4$~px of their projections,
+and at least six must be found within $1.5$~px.
 
 \paragraph{When it is used.}
 A frame is \emph{weak} when fewer than four features, or fewer than half of those searched, were
@@ -610,13 +619,13 @@ chessboard corners, each with three negligible changes of the pixel noise.
 \begin{tabular}{ll}
   sequence & result over $15$ runs \\
   \hline
-  1 & median $1$ frame over $10$~px, at most $3$ \\
-  2 & median $5$ frames over $10$~px, at most $8$ \\
-  3 & median $2$ frames over $10$~px, never lost \\
-  5, back on the board at frames 336, 514, 566 & median errors $1.3$, $1.6$, $1.9$~cm \\
-  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $9$ and $11$ runs \\
-  6, board visits at frames 359, 411 & median errors $4.3$, $1.9$~cm \\
-  6, board visits at frames 771, 836 & median errors $12$, $1.4$~cm \\
+  1 & median $0$ frames over $5$~px, at most $3$ \\
+  2 & median $5$ frames over $5$~px, at most $9$ \\
+  3 & median $2$ frames over $5$~px, never lost \\
+  5, back on the board at frames 336, 514, 566 & median errors $2.3$, $2.1$, $2.0$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $6$ and $12$ runs \\
+  6, board visits at frames 359, 411 & median errors $4.1$, $1.6$~cm \\
+  6, board visits at frames 771, 836 & median errors $6.2$, $1.1$~cm \\
   6, board visits at frames 1413, 1549 & lost in every run \\
 \end{tabular}
 \end{center}
@@ -632,11 +641,15 @@ match does not find the map again before the end. The losses of sequence~3 come 
 of initial corners, where the camera swings fast and the board is blurred.
 
 \paragraph{Speed.}
-On sequence~6, while tracking, $12$~ms per frame on average, from $7$~ms with $15$ features to
-$16$~ms with $70$. The filter takes $1$ to $3$~ms of it: most of the time goes to the images. The
-optical flow takes $6$ to $10$~ms, of which $4$~ms is the Lucas--Kanade tracking of the $150$
-corners forwards and backwards, and up to $3$~ms the affine motion fitted around each seed. The
-search of the patches takes $2$ to $6$~ms. Three things keep it there:
+On sequence~6, while tracking, $6$~ms per frame, the median of the averages over every second,
+against $14$~ms with the same code on $640 \times 480$ frames. There the filter took $1$ to $3$~ms,
+and most of the time went to the images: $6$ to $10$~ms the optical flow, of which $4$~ms was the
+Lucas--Kanade tracking of the $150$ corners forwards and backwards, and up to $3$~ms the affine
+motion fitted around each seed, and $2$ to $6$~ms the search of the patches. On a quarter of the
+pixels, with windows and patches half as wide, they cost a fraction of that. Over $15$ runs, the
+accuracy is the same within the spread of the runs: the first return of sequence~5 is $1$~cm worse,
+the second visit of sequence~6 better, and the kidnaps recovered go from $20$ to $18$ of $30$.
+Three more things keep the time down:
 \begin{itemize}
   \item The masked correlation of the patches is computed from three plain correlations
         (\texttt{maskedCorrelation}), the same score that OpenCV's masked \texttt{matchTemplate}
@@ -650,20 +663,25 @@ search of the patches takes $2$ to $6$~ms. Three things keep it there:
         up to $40$~ms in one frame out of $14$.
 \end{itemize}
 After a weak frame the keyframes and the global matching run, so while the camera is lost a frame
-takes $30$ to $50$~ms. Live, a frame that takes longer than the frame period drops the next one, and
-the interval of the prediction doubles, and with it the uncertainty of the predictions. With
-\texttt{--timing} the decoding of the camera frames and the display are reported too, about $3$~ms
-each. $150$ corners track as well as $300$, but a $15 \times 15$ window with at most $10$
-iterations loses sequences 2 and 3 in every run.
+takes longer, up to $30$~ms on average over a second. Live, a frame that takes longer than the
+frame period drops the next one, and the interval of the prediction doubles, and with it the
+uncertainty of the predictions. With \texttt{--timing} the decoding of the camera frames is
+reported too, about $1$~ms. Each frame read is a new image that nothing writes to, which tracking,
+the features and the window share without copying it. The window is
+drawn and shown by the main thread, and tracking runs in another, which hands it only its last
+frame (\texttt{Display}): the display took $3$~ms per frame at $640 \times 480$, and much more
+with the window maximized, which was enough to drop frames. $150$ corners track as well as $300$,
+but on $640 \times 480$ frames a $15 \times 15$ window with at most $10$ iterations lost sequences 2
+and 3 in every run.
 
 \paragraph{Limitations.}
 \begin{itemize}
   \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
         Keeping both predictions, its own flow and the motion of its neighbors, and letting the
         update choose would fix it.
-  \item A third of the kidnaps are not recovered in time, mostly the first one, where the camera
+  \item $12$ of the $30$ kidnaps are not recovered in time, mostly the first one, where the camera
         sees, after the cut, a part of the scene it had not seen before. Which ones are recovered
-        changes a lot from run to run: the float rounding of the faster correlation alone moves the
+        changes a lot from run to run: the float rounding of the faster correlation alone moved the
         first kidnap from $13$ recoveries to $9$, and the second from $10$ to $11$, out of $15$.
   \item Over long excursions the map drifts, and the filter does not know: the uncertainty it
         reports grows far less than the error. A simulation of the filter with exact data
@@ -675,7 +693,7 @@ iterations loses sequences 2 and 3 in every run.
   \item The global match describes only detected corners, a few pixels away from where the
         descriptor of a feature matches best, and ORB descriptors change a lot over a few pixels.
         On the return to the board at the end of sequence~6, most visible features match their
-        descriptors well within $8$~pixels of their true position, but only one or two at the
+        descriptors well within $4$~pixels of their true position, but only one or two at the
         corners described.
 \end{itemize}
 
@@ -702,6 +720,7 @@ iterations loses sequences 2 and 3 in every run.
   keyframes & \texttt{Keyframes} in \texttt{relocalization.h} \\
   global matching & \texttt{matchGlobally} in \texttt{relocalization.h} \\
   input, output & \texttt{FrameSource}, \texttt{StateStream} \\
+  window & \texttt{Display}, \texttt{draw} in \texttt{display.h} \\
 \end{tabular}
 \end{center}
 

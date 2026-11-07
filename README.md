@@ -97,26 +97,44 @@ Calibrate the camera with a chessboard of 7 x 10 squares of 2.5 cm, then run Mon
 ./build/MonoSLAM/monoslam 7 10 2.5 camera
 ```
 
-The calibration captures a view of the chessboard every two seconds until Escape is pressed, and
-accepts these options after the camera file:
+The calibration captures a view of the chessboard every two seconds until Escape is pressed, fits
+the camera model on the largest frames the camera gives in the same 4:3 shape, 1024 x 768, and saves
+it scaled to the 320 x 240 frames that MonoSLAM works on. MonoSLAM refuses a calibration for another
+size: the lengths in pixels of its code are chosen for 320 x 240. The calibration accepts these
+options after the camera file:
 
 ```text
 --device D     Camera device (default /dev/video5)
---tolerance T  Largest RMS reprojection error of a view that is kept (default 1.5 pixels)
+--tolerance T  Largest RMS reprojection error of a view that is kept, in pixels of the camera
+               frames (default 3)
 ```
 
 MonoSLAM accepts these options after the camera file:
 
 ```text
 --device D    Camera device (default /dev/video5)
+--exposure E  Exposure time of the camera, in ms (default 5): fixed, so that the frame rate is too
 --images D    Replay the sorted images of directory D instead of a camera
 --frames N    Stop after N frames
 --stream F    Write the state of every frame to F, for the viewer and evaluate_tracking.py
 --annotate D  Save the frames with the features the filter used: their predictions and 99%
-              ellipses (green), their seeds (blue), and their matches (red)
+              ellipses (cyan), their seeds (magenta), and their matches (amber)
 --headless    Do not open any window
---timing      Report every second the frame interval, processing time and dropped frames
+--timing      Report every second the frame interval, the decoding and processing times, the
+              frames dropped and those shown
 ```
+
+MonoSLAM asks the camera for 320 x 240 frames, which it gives at about 100 Hz, with a fixed
+exposure: with automatic exposure the camera lengthens it in dim light, and lowers the frame rate to
+make room for it. Raise `--exposure` if the frames are too dark, up to 7 ms, beyond which the frame
+rate falls. The camera keeps the setting after MonoSLAM ends; the calibration turns automatic
+exposure back on.
+
+The window shows the frames enlarged to 640 x 480, with the matches drawn on them. It is drawn and
+shown by the main thread, and tracking runs in another, which hands it only its last frame: a frame
+the window has no time for is skipped, so the window never slows tracking down, whatever its size.
+The frames are never copied: each one read is a new image that nothing writes to, which tracking,
+the features and the window share. `--annotate` draws every frame in the tracking thread instead.
 
 ## Seeing the scene in 3D
 
@@ -153,10 +171,12 @@ Use the standalone recorder to capture timestamped grayscale frames:
 ./build/MonoSLAM/record_sequence camera /dev/video5 /path/to/sequence --frames 300
 ```
 
-This writes `frame_*.png`, `timestamps.csv` with the capture time of every frame, and a copy of
-`camera.json` into the output directory, which must be empty or not exist yet. With `--frames` or
-`--seconds` recording starts right away, and otherwise when you press Space in the preview window. Escape stops it. `--fps F` sets the frame rate to ask the camera for, and `--headless`
-records without the preview window, with `--frames` or `--seconds`.
+This writes `frame_*.png`, at the 320 x 240 of the calibration, `timestamps.csv` with the capture
+time of every frame, and a copy of `camera.json` into the output directory, which must be empty or
+not exist yet. With `--frames` or `--seconds` recording starts right away, and otherwise when you
+press Space in the preview window. Escape stops it. `--exposure E` sets the exposure time of the
+camera, as for MonoSLAM, and `--headless` records without the preview window, with `--frames` or
+`--seconds`.
 
 Replay the sequence through the EKF:
 

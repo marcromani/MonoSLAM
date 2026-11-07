@@ -13,7 +13,7 @@ namespace monoslam {
 class Feature
 {
   public:
-    cv::Mat1b frame;       // Original grayscale frame
+    cv::Mat1b frame;       // Original grayscale frame, shared
     cv::Point2d position;  // Pixel position in the original frame
     cv::Rect roi;          // Patch region in the original frame
 

@@ -13,10 +13,10 @@
 
 namespace {
 
-constexpr int patchSize = 23;
+constexpr int patchSize = 11;
 
-constexpr double maxReprojectionRms = 2.0;    // Pixels
-constexpr double maxReprojectionError = 6.0;  // Pixels
+constexpr double maxReprojectionRms = 1.0;    // Pixels
+constexpr double maxReprojectionError = 3.0;  // Pixels
 
 // Initial uncertainty
 constexpr double positionVariance = 0.05;     // cm^2
@@ -64,7 +64,7 @@ monoslam::initializeFromPattern(const cv::Mat1b& frame,
         return false;
     }
 
-    cv::cornerSubPix(frame, points2D, cv::Size(11, 11), cv::Size(-1, -1), cv::TermCriteria(100, 0.1));
+    cv::cornerSubPix(frame, points2D, cv::Size(5, 5), cv::Size(-1, -1), cv::TermCriteria(100, 0.1));
 
     std::vector<cv::Point3f> points3D;
     points3D.reserve(static_cast<std::size_t>(patternSize.width * patternSize.height));

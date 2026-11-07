@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <sstream>
 
@@ -11,21 +13,39 @@
 #include <opencv2/imgproc.hpp>
 
 bool
-monoslam::FrameSource::openCamera(const std::string& device, const cv::Size& frameSize, double fps)
+monoslam::FrameSource::openCamera(const std::string& device, const cv::Size& frameSize, double exposure)
 {
+    constexpr double manualExposure = 1.0;  // V4L2_EXPOSURE_MANUAL
+    constexpr double exposureUnit = 0.1;    // Of V4L2 exposure times, in milliseconds
+
     frameSize_ = frameSize;
 
     device_.open(device, cv::CAP_V4L2);
 
     if (!device_.isOpened()) {
+        std::cerr << "Could not open " << device << '\n';
         return false;
     }
 
     device_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-    device_.set(cv::CAP_PROP_FPS, fps);
     device_.set(cv::CAP_PROP_FRAME_WIDTH, frameSize.width);
     device_.set(cv::CAP_PROP_FRAME_HEIGHT, frameSize.height);
-    device_.set(cv::CAP_PROP_BUFFERSIZE, 1);  // Do not fall behind if an iteration takes too long
+    device_.set(cv::CAP_PROP_FPS, cameraFps);
+    device_.set(cv::CAP_PROP_AUTO_EXPOSURE, manualExposure);
+    device_.set(cv::CAP_PROP_EXPOSURE, std::round(exposure / exposureUnit));
+    // Two buffers: with one, the camera cannot fill the next frame while the last one is read, and
+    // gives half its frame rate. With more, a slow iteration would leave older frames waiting
+    device_.set(cv::CAP_PROP_BUFFERSIZE, 2);
+
+    // A camera without the mode gives another one
+    const cv::Size given(static_cast<int>(device_.get(cv::CAP_PROP_FRAME_WIDTH)),
+                         static_cast<int>(device_.get(cv::CAP_PROP_FRAME_HEIGHT)));
+
+    if (given != frameSize) {
+        std::cerr << device << " gives " << given.width << " x " << given.height << " frames instead of "
+                  << frameSize.width << " x " << frameSize.height << '\n';
+        return false;
+    }
 
     return true;
 }
@@ -116,7 +136,7 @@ monoslam::FrameSource::openImages(const std::string& directory, const cv::Size& 
 bool
 monoslam::FrameSource::read(cv::Mat1b& frame)
 {
-    cv::Mat3b color;
+    cv::Mat1b gray;  // A new image, never the last one
 
     auto start = std::chrono::steady_clock::now();
 
@@ -127,9 +147,13 @@ monoslam::FrameSource::read(cv::Mat1b& frame)
 
         start = std::chrono::steady_clock::now();
 
+        cv::Mat3b color;
+
         if (!device_.retrieve(color)) {
             return false;
         }
+
+        cv::cvtColor(color, gray, cv::COLOR_BGR2GRAY);
 
         // The timestamp of the driver, in milliseconds, or the time of reading if there is none
         const double milliseconds = device_.get(cv::CAP_PROP_POS_MSEC);
@@ -144,15 +168,18 @@ monoslam::FrameSource::read(cv::Mat1b& frame)
         }
 
         time_ = times_[nextFile_];
-        color = cv::imread(files_[nextFile_++], cv::IMREAD_COLOR);
+        gray = cv::imread(files_[nextFile_], cv::IMREAD_GRAYSCALE);
 
-        if (color.empty()) {
+        if (gray.size() != frameSize_) {
+            std::cerr << files_[nextFile_] << " is not a " << frameSize_.width << " x " << frameSize_.height
+                      << " image\n";
             return false;
         }
+
+        ++nextFile_;
     }
 
-    cv::resize(color, color, frameSize_);
-    cv::cvtColor(color, frame, cv::COLOR_BGR2GRAY);
+    frame = gray;
 
     decodeTime_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     ++numRead_;

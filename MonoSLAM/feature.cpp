@@ -9,7 +9,7 @@ monoslam::Feature::Feature(const cv::Mat1b& image,
                            int patchSize,
                            const cv::Vec3d& patchNormal,
                            const CameraPose& firstPose)
-  : frame(image.clone())
+  : frame(image)
   , position(pixel)
   , roi(static_cast<int>(std::lround(pixel.x)) - patchSize / 2,
         static_cast<int>(std::lround(pixel.y)) - patchSize / 2,

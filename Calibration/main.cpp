@@ -1,7 +1,9 @@
 /*
  * Calibrates the camera with a chessboard: it captures a view of the pattern every two seconds
  * until Escape is pressed, fits the pinhole model and the lens distortion to all of them, drops
- * the views that the fit explains badly, fits again, and saves the result for monoslam.
+ * the views that the fit explains badly, fits again, and saves the result for monoslam. The fit is
+ * on the largest frames the camera gives in the shape of those monoslam works on, where the corners
+ * are the most precise, and the model is saved for monoslam's frames, scaled to their size.
  */
 
 #include <charconv>
@@ -22,7 +24,11 @@
 
 namespace {
 
-const cv::Size frameSize(640, 480);
+const cv::Size frameSize(320, 240);     // Of the frames monoslam works on
+const cv::Size captureSize(1024, 768);  // The largest mode of the camera in the shape of frameSize
+
+constexpr double autoExposure = 3.0;  // V4L2_EXPOSURE_APERTURE_PRIORITY, which monoslam turns off
+
 constexpr auto samplePeriod = std::chrono::seconds(2);  // Between captured views, so that they differ
 
 struct Options
@@ -31,7 +37,7 @@ struct Options
     double squareSize = 0.0;  // Side of a square, in cm
     std::string cameraFile;   // Output
     std::string device = "/dev/video5";
-    double tolerance = 1.5;  // Largest RMS reprojection error of a view that is kept, in pixels
+    double tolerance = 3.0;  // Largest RMS reprojection error of a view that is kept, in pixels of the camera
 };
 
 constexpr const char* usage =
@@ -40,7 +46,8 @@ constexpr const char* usage =
   "  square_size: Side of a square, in cm\n"
   "       camera: Output file, \".json\" is appended\n"
   "  --device D     Camera device (default /dev/video5)\n"
-  "  --tolerance T  Largest RMS reprojection error of a view that is kept (default 1.5 pixels)\n";
+  "  --tolerance T  Largest RMS reprojection error of a view that is kept, in pixels of the camera frames\n"
+  "                (default 3)\n";
 
 std::optional<Options>
 parseOptions(int argc, char* argv[])
@@ -88,19 +95,35 @@ try {
 
     const Options& options = parsed.value();
 
-    cv::VideoCapture device(options.device);
+    cv::VideoCapture device(options.device, cv::CAP_V4L2);
 
     if (!device.isOpened()) {
         std::cerr << "Could not open " << options.device << '\n';
         return EXIT_FAILURE;
     }
 
+    device.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+    device.set(cv::CAP_PROP_FRAME_WIDTH, captureSize.width);
+    device.set(cv::CAP_PROP_FRAME_HEIGHT, captureSize.height);
+    device.set(cv::CAP_PROP_AUTO_EXPOSURE, autoExposure);  // The views are still: no need for a short one
+
+    // Another mode, of another shape, would not scale to frameSize
+    const cv::Size imageSize(static_cast<int>(device.get(cv::CAP_PROP_FRAME_WIDTH)),
+                             static_cast<int>(device.get(cv::CAP_PROP_FRAME_HEIGHT)));
+
+    if (imageSize != captureSize) {
+        std::cerr << options.device << " gives " << imageSize.width << " x " << imageSize.height
+                  << " frames instead of " << captureSize.width << " x " << captureSize.height << '\n';
+        return EXIT_FAILURE;
+    }
+
     std::cout << "Press Escape to finish capturing views\n";
 
-    // The camera on the left, and the last view captured on the right, in gray with the pattern found in color
-    cv::Mat3b display(frameSize.height, 2 * frameSize.width, cv::Vec3b::zeros());
-    cv::Mat3b live = display(cv::Rect(0, 0, frameSize.width, frameSize.height));
-    cv::Mat3b captured = display(cv::Rect(frameSize.width, 0, frameSize.width, frameSize.height));
+    // The camera on the left, and the last view captured on the right, in gray with the pattern
+    // found in color
+    cv::Mat3b display(imageSize.height, 2 * imageSize.width, cv::Vec3b::zeros());
+    cv::Mat3b live = display(cv::Rect(0, 0, imageSize.width, imageSize.height));
+    cv::Mat3b captured = display(cv::Rect(imageSize.width, 0, imageSize.width, imageSize.height));
 
     cv::namedWindow("Camera calibration", cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
 
@@ -115,7 +138,6 @@ try {
             return EXIT_FAILURE;
         }
 
-        cv::resize(frame, frame, frameSize);
         frame.copyTo(live);
 
         std::vector<cv::Point2f> corners;
@@ -167,7 +189,7 @@ try {
 
     double rms = cv::calibrateCamera(std::vector(views.size(), pattern),
                                      views,
-                                     frameSize,
+                                     imageSize,
                                      K,
                                      distCoeffs,
                                      rotations,
@@ -192,11 +214,19 @@ try {
 
     if (kept.size() < views.size()) {
         rms = cv::calibrateCamera(
-          std::vector(kept.size(), pattern), kept, frameSize, K, distCoeffs, rotations, translations);
+          std::vector(kept.size(), pattern), kept, imageSize, K, distCoeffs, rotations, translations);
     }
 
-    std::cout << "Calibrated with " << kept.size() << " of " << views.size() << " views, RMS reprojection error " << rms
-              << " pixels\n"
+    // For the frames monoslam works on: the center of a pixel scales with the frame, its corner does not
+    const double sx = static_cast<double>(frameSize.width) / imageSize.width;
+    const double sy = static_cast<double>(frameSize.height) / imageSize.height;
+
+    K = cv::Matx33d(
+      K(0, 0) * sx, 0.0, (K(0, 2) + 0.5) * sx - 0.5, 0.0, K(1, 1) * sy, (K(1, 2) + 0.5) * sy - 0.5, 0.0, 0.0, 1.0);
+
+    std::cout << "Calibrated with " << kept.size() << " of " << views.size() << " views of " << imageSize.width << " x "
+              << imageSize.height << ", RMS reprojection error " << rms << " pixels\n"
+              << "For " << frameSize.width << " x " << frameSize.height << " frames:\n"
               << "fx = " << K(0, 0) << ", fy = " << K(1, 1) << ", cx = " << K(0, 2) << ", cy = " << K(1, 2) << '\n'
               << "k1 = " << distCoeffs[0] << ", k2 = " << distCoeffs[1] << ", p1 = " << distCoeffs[2]
               << ", p2 = " << distCoeffs[3] << ", k3 = " << distCoeffs[4] << '\n';
