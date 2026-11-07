@@ -3,7 +3,7 @@
 --stream (see state_stream.h). It reads the state from a file given as its argument, or from its
 standard input, so that it can be fed while monoslam runs, through a process substitution:
 
-    monoslam 7 10 2.5 camera --stream >(python3 MonoSLAM/tools/viewer.py)
+    monoslam 7 10 2.5 camera --device /dev/video4 --stream >(python3 MonoSLAM/tools/viewer.py)
 
 The world is the frame of the calibration pattern, which lies on the plane z = 0. Shown are the
 camera and its trajectory, and the features: red if the last update used them, yellow if they were

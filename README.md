@@ -4,7 +4,7 @@ A concise and thoroughly documented C++ implementation of monocular EKF SLAM, af
 work of [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
 The project is mostly compliant with ISO C++17, and it compiles against OpenCV 5.
 
-It runs at 30 Hz on commodity hardware, check the [sample videos](https://www.youtube.com/watch?v=zg3O0ZN1_rI&list=PLQjxkIPDI8hgJj4gUFwuYeaorkd8JWDpo).
+It runs at 100 Hz on commodity hardware.
 
 ## The code
 
@@ -93,26 +93,30 @@ To build only one target use:
 Calibrate the camera with a chessboard of 7 x 10 squares of 2.5 cm, then run MonoSLAM with it:
 
 ```bash
-./build/Calibration/calibration 7 10 2.5 camera
-./build/MonoSLAM/monoslam 7 10 2.5 camera
+./build/Calibration/calibration 7 10 2.5 camera --device /dev/video4
+./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4
 ```
 
+All three programs take the camera with `--device`, and need it: `v4l2-ctl --list-devices` lists
+the cameras, and the first device of each is the one that gives frames.
+
 The calibration captures a view of the chessboard every two seconds until Escape is pressed, fits
-the camera model on the largest frames the camera gives in the same 4:3 shape, 1024 x 768, and saves
-it scaled to the 320 x 240 frames that MonoSLAM works on. MonoSLAM refuses a calibration for another
+the camera model on the largest frames the camera gives of the same view, 640 x 480, and saves it
+scaled to the 320 x 240 frames that MonoSLAM works on. A larger mode of the same shape is not
+necessarily the same view: the 1024 x 768 of this camera sees a view 12% wider and taller. MonoSLAM refuses a calibration for another
 size: the lengths in pixels of its code are chosen for 320 x 240. The calibration accepts these
 options after the camera file:
 
 ```text
---device D     Camera device (default /dev/video5)
+--device D     Camera device, such as /dev/video4 (required)
 --tolerance T  Largest RMS reprojection error of a view that is kept, in pixels of the camera
-               frames (default 3)
+               frames (default 1.5)
 ```
 
 MonoSLAM accepts these options after the camera file:
 
 ```text
---device D    Camera device (default /dev/video5)
+--device D    Camera device, such as /dev/video4 (required, unless --images)
 --exposure E  Exposure time of the camera, in ms (default 5): fixed, so that the frame rate is too
 --images D    Replay the sorted images of directory D instead of a camera
 --frames N    Stop after N frames
@@ -158,7 +162,7 @@ Feed the viewer while MonoSLAM runs, through a process substitution of bash, or 
 saved to a file. With `--save` it writes a recording instead, to open later with `rerun`:
 
 ```bash
-./build/MonoSLAM/monoslam 7 10 2.5 camera --stream >(python3 MonoSLAM/tools/viewer.py)
+./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4 --stream >(python3 MonoSLAM/tools/viewer.py)
 python3 MonoSLAM/tools/viewer.py state.txt
 python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 ```
@@ -168,15 +172,23 @@ python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 Use the standalone recorder to capture timestamped grayscale frames:
 
 ```bash
-./build/MonoSLAM/record_sequence camera /dev/video5 /path/to/sequence --frames 300
+./build/MonoSLAM/record_sequence camera /path/to/sequence --device /dev/video4 --frames 300
 ```
 
 This writes `frame_*.png`, at the 320 x 240 of the calibration, `timestamps.csv` with the capture
 time of every frame, and a copy of `camera.json` into the output directory, which must be empty or
-not exist yet. With `--frames` or `--seconds` recording starts right away, and otherwise when you
-press Space in the preview window. Escape stops it. `--exposure E` sets the exposure time of the
-camera, as for MonoSLAM, and `--headless` records without the preview window, with `--frames` or
-`--seconds`.
+not exist yet. The recorder accepts these options after the directory:
+
+```text
+--device D    Camera device, such as /dev/video4 (required)
+--exposure E  Exposure time of the camera, in ms (default 5), as for MonoSLAM
+--frames N    Record N frames, starting right away
+--seconds S   Record S seconds, starting right away
+--headless    Do not open any window, only with --frames or --seconds
+```
+
+Without `--frames` or `--seconds`, recording starts when you press Space in the preview window.
+Escape stops it.
 
 Replay the sequence through the EKF:
 

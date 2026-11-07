@@ -40,9 +40,11 @@ exposure of 5~ms, and the filter works on them as they are (\texttt{FrameSource}
 pixels below is one of these frames, also those measured at $640 \times 480$ before, halved. With a
 quarter of the pixels of $640 \times 480$, the frames cost about half the time, with the same
 accuracy (section~\ref{sec:results}). The calibration is fitted on the largest frames the camera
-gives in the same shape, $1024 \times 768$, where the corners are the most precise, and saved for
-the small ones: a pixel center $x$ becomes $(x + \frac{1}{2}) s - \frac{1}{2}$, with $s$ the
-shrinking factor, and the distortion, in normalized coordinates, does not change.
+gives of the same view, $640 \times 480$, where the corners are the most precise. A mode of the
+same shape is not necessarily the same view: the $1024 \times 768$ of this camera sees a view
+$12\%$ wider and taller. The model is saved for the small frames: a pixel center $x$ becomes
+$(x + \frac{1}{2}) s - \frac{1}{2}$, with $s$ the shrinking factor, and the distortion, in
+normalized coordinates, does not change.
 
 Every frame goes through the same steps, in \texttt{main.cpp}:
 \begin{enumerate}

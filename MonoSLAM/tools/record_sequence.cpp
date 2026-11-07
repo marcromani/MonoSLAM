@@ -31,24 +31,26 @@ namespace {
 
 struct Options
 {
-    std::string cameraFile;   // Calibration, as the calibration program writes it
-    std::string device;       // Camera device
-    std::string directory;    // Where the sequence goes, empty or not yet created
+    std::string cameraFile;  // Calibration file, as the calibration program writes it
+    std::string directory;   // Where the sequence goes, empty or not yet created
+
+    std::string device;                           // Camera device
+    double exposure = monoslam::defaultExposure;  // In milliseconds
+
     long maxFrames = 0;       // Frames to record, 0 for no limit
     double maxSeconds = 0.0;  // Seconds to record, 0 for no limit
     bool headless = false;    // Without the preview window, only with a limit
-
-    double exposure = monoslam::defaultExposure;  // Of the camera, in milliseconds
 };
 
-constexpr const char* usage = "Usage: record_sequence camera device directory [options]\n"
-                              "     camera: Calibration file, without \".json\"\n"
-                              "     device: Camera device, such as /dev/video4\n"
-                              "  directory: Where the sequence goes, empty or not yet created\n"
-                              "  --exposure E   Exposure time of the camera, in ms (default 5)\n"
-                              "  --frames N     Record N frames, starting right away\n"
-                              "  --seconds S    Record S seconds, starting right away\n"
-                              "  --headless     Without the preview window, only with --frames or --seconds\n";
+constexpr const char* usage =
+  "Usage: record_sequence camera directory [options]\n"
+  "     camera: Calibration file, \".json\" is appended; it is copied into the sequence\n"
+  "  directory: Where the sequence goes, empty or not yet created\n"
+  "  --device D    Camera device, such as /dev/video4 (required)\n"
+  "  --exposure E  Exposure time of the camera, in ms (default 5): fixed, so that the frame rate is too\n"
+  "  --frames N    Record N frames, starting right away\n"
+  "  --seconds S   Record S seconds, starting right away\n"
+  "  --headless    Do not open any window, only with --frames or --seconds\n";
 
 /*
  * Parses the command line. Returns nothing if it is not valid.
@@ -61,21 +63,23 @@ parseOptions(int argc, char* argv[])
         return error == std::errc() && end == text.data() + text.size() && value > 0;
     };
 
-    if (argc < 4) {
+    if (argc < 3) {
         return std::nullopt;
     }
 
     Options options;
     options.cameraFile = std::string(argv[1]) + ".json";
-    options.device = argv[2];
-    options.directory = argv[3];
+    options.directory = argv[2];
 
-    for (int i = 4; i < argc; ++i) {
+    for (int i = 3; i < argc; ++i) {
         const std::string_view option(argv[i]);
         const bool hasValue = i + 1 < argc;
 
         if (option == "--headless") {
             options.headless = true;
+
+        } else if (option == "--device" && hasValue) {
+            options.device = argv[++i];
 
         } else if (option == "--exposure" && hasValue && parse(argv[i + 1], options.exposure)) {
             ++i;
@@ -92,7 +96,7 @@ parseOptions(int argc, char* argv[])
     }
 
     // Without a window there is no way to start or stop recording
-    if (options.headless && options.maxFrames == 0 && options.maxSeconds == 0.0) {
+    if (options.device.empty() || (options.headless && options.maxFrames == 0 && options.maxSeconds == 0.0)) {
         return std::nullopt;
     }
 

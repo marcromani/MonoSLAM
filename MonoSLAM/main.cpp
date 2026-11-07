@@ -76,7 +76,8 @@ struct Options
     cv::Size patternSize;     // Inner corners of the calibration pattern
     double squareSize = 0.0;  // Side of a square of the calibration pattern, in cm
     std::string cameraFile;   // Camera intrinsics
-    std::string device = "/dev/video5";
+
+    std::string device;                           // Camera device, if not replaying images
     double exposure = monoslam::defaultExposure;  // In milliseconds
 
     std::string imagesDir;      // Replay the images of this directory instead of using the camera
@@ -91,8 +92,8 @@ constexpr const char* usage =
   "Usage: monoslam rows cols square_size camera [options]\n"
   "   rows, cols: Number of squares of the calibration pattern\n"
   "  square_size: Side of a square, in cm\n"
-  "       camera: Camera intrinsics file, \".json\" is appended\n"
-  "  --device D    Camera device (default /dev/video5)\n"
+  "       camera: Calibration file, \".json\" is appended\n"
+  "  --device D    Camera device, such as /dev/video4 (required, unless --images)\n"
   "  --exposure E  Exposure time of the camera, in ms (default 5): fixed, so that the frame rate is too\n"
   "  --images D    Replay the sorted images of directory D instead of a camera\n"
   "  --frames N    Stop after N frames\n"
@@ -410,7 +411,7 @@ parseOptions(int argc, char* argv[])
     };
 
     Options options;
-    int rows = 0, cols = 0, maxFrames = 0;
+    int rows = 0, cols = 0;
 
     if (argc < 5 || !parse(argv[1], rows) || !parse(argv[2], cols) || !parse(argv[3], options.squareSize)) {
         return std::nullopt;
@@ -422,42 +423,40 @@ parseOptions(int argc, char* argv[])
     for (int i = 5; i < argc; ++i) {
         const std::string_view option(argv[i]);
 
+        const bool hasValue = i + 1 < argc;
+
         if (option == "--headless") {
             options.headless = true;
 
         } else if (option == "--timing") {
             options.timing = true;
 
-        } else if (i + 1 == argc) {
-            return std::nullopt;
-
-        } else if (option == "--frames") {
-            if (!parse(argv[++i], maxFrames)) {
-                return std::nullopt;
-            }
-
-            options.maxFrames = static_cast<std::size_t>(maxFrames);
-
-        } else if (option == "--exposure") {
-            if (!parse(argv[++i], options.exposure)) {
-                return std::nullopt;
-            }
-
-        } else if (option == "--device") {
+        } else if (option == "--device" && hasValue) {
             options.device = argv[++i];
 
-        } else if (option == "--images") {
+        } else if (option == "--exposure" && hasValue && parse(argv[i + 1], options.exposure)) {
+            ++i;
+
+        } else if (option == "--images" && hasValue) {
             options.imagesDir = argv[++i];
 
-        } else if (option == "--stream") {
+        } else if (option == "--frames" && hasValue && parse(argv[i + 1], options.maxFrames)) {
+            ++i;
+
+        } else if (option == "--stream" && hasValue) {
             options.streamFile = argv[++i];
 
-        } else if (option == "--annotate") {
+        } else if (option == "--annotate" && hasValue) {
             options.annotateDir = argv[++i];
 
         } else {
             return std::nullopt;
         }
+    }
+
+    // Exactly one input
+    if (options.device.empty() == options.imagesDir.empty()) {
+        return std::nullopt;
     }
 
     return options;

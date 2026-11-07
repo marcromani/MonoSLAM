@@ -2,8 +2,8 @@
  * Calibrates the camera with a chessboard: it captures a view of the pattern every two seconds
  * until Escape is pressed, fits the pinhole model and the lens distortion to all of them, drops
  * the views that the fit explains badly, fits again, and saves the result for monoslam. The fit is
- * on the largest frames the camera gives in the shape of those monoslam works on, where the corners
- * are the most precise, and the model is saved for monoslam's frames, scaled to their size.
+ * on the largest frames the camera gives of the same view as monoslam's, where the corners are the
+ * most precise, and the model is saved for monoslam's frames, scaled to their size.
  */
 
 #include <charconv>
@@ -24,8 +24,10 @@
 
 namespace {
 
-const cv::Size frameSize(320, 240);     // Of the frames monoslam works on
-const cv::Size captureSize(1024, 768);  // The largest mode of the camera in the shape of frameSize
+const cv::Size frameSize(320, 240);  // Of the frames monoslam works on
+// The largest mode of the camera with the same view as frameSize, only larger. Not every mode of
+// the same shape is one: this camera's 1024 x 768 sees a view 12% wider and taller than its 320 x 240
+const cv::Size captureSize(640, 480);
 
 constexpr double autoExposure = 3.0;  // V4L2_EXPOSURE_APERTURE_PRIORITY, which monoslam turns off
 
@@ -35,19 +37,19 @@ struct Options
 {
     cv::Size patternSize;     // Inner corners of the pattern
     double squareSize = 0.0;  // Side of a square, in cm
-    std::string cameraFile;   // Output
-    std::string device = "/dev/video5";
-    double tolerance = 3.0;  // Largest RMS reprojection error of a view that is kept, in pixels of the camera
+    std::string cameraFile;   // Calibration file to write
+    std::string device;       // Camera device
+    double tolerance = 1.5;   // Largest RMS reprojection error of a view that is kept, in pixels of the camera
 };
 
 constexpr const char* usage =
   "Usage: calibration rows cols square_size camera [options]\n"
   "   rows, cols: Number of squares of the calibration pattern\n"
   "  square_size: Side of a square, in cm\n"
-  "       camera: Output file, \".json\" is appended\n"
-  "  --device D     Camera device (default /dev/video5)\n"
+  "       camera: Calibration file to write, \".json\" is appended\n"
+  "  --device D     Camera device, such as /dev/video4 (required)\n"
   "  --tolerance T  Largest RMS reprojection error of a view that is kept, in pixels of the camera frames\n"
-  "                (default 3)\n";
+  "                 (default 1.5)\n";
 
 std::optional<Options>
 parseOptions(int argc, char* argv[])
@@ -67,18 +69,26 @@ parseOptions(int argc, char* argv[])
     options.patternSize = cv::Size(cols - 1, rows - 1);
     options.cameraFile = std::string(argv[4]) + ".json";
 
-    for (int i = 5; i + 1 < argc; i += 2) {
+    for (int i = 5; i < argc; ++i) {
         const std::string_view option(argv[i]);
+        const bool hasValue = i + 1 < argc;
 
-        if (option == "--device") {
-            options.device = argv[i + 1];
+        if (option == "--device" && hasValue) {
+            options.device = argv[++i];
 
-        } else if (option != "--tolerance" || !parse(argv[i + 1], options.tolerance)) {
+        } else if (option == "--tolerance" && hasValue && parse(argv[i + 1], options.tolerance)) {
+            ++i;
+
+        } else {
             return std::nullopt;
         }
     }
 
-    return argc % 2 == 1 ? std::optional(options) : std::nullopt;
+    if (options.device.empty()) {
+        return std::nullopt;
+    }
+
+    return options;
 }
 
 }
