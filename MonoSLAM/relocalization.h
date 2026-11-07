@@ -65,6 +65,50 @@ struct GlobalMatch
 std::optional<GlobalMatch>
 matchGlobally(const cv::Mat1b& frame, const std::vector<Feature>& features, const CameraModel& camera, const EKF& ekf);
 
+/*
+ * Frames where tracking was good, small and blurred, with their pose, as in the relocalization of
+ * Klein and Murray (2008). A frame that looks like one of them was taken from near its pose, which
+ * tells where to look for the features. Unlike the descriptors, it needs no corner where the
+ * feature is, and the patches it searches with are those that track the features.
+ */
+class Keyframes
+{
+  public:
+    /*
+     * Keeps a frame if it was taken far from every keyframe, and enough features were used in it.
+     *
+     * frame      Current frame
+     * pose       Camera pose, after the update
+     * numUsed    Features used in the frame
+     */
+    void add(const cv::Mat1b& frame, const CameraPose& pose, std::size_t numUsed);
+
+    /*
+     * Searches the well located features, other than those of the pattern, where each of the
+     * keyframes that look most like a frame would see them, shifted by the turn of the camera, and
+     * fits a pose to them as matchGlobally does. Returns nothing if too few features agree on a
+     * pose.
+     *
+     * frame       Current frame
+     * features    All the features
+     * camera      Camera model
+     * ekf         Filter
+     */
+    std::optional<GlobalMatch> match(const cv::Mat1b& frame,
+                                     const std::vector<Feature>& features,
+                                     const CameraModel& camera,
+                                     const EKF& ekf) const;
+
+  private:
+    struct Keyframe
+    {
+        cv::Mat1f thumbnail;  // Shrunk and blurred, with zero mean
+        CameraPose pose;
+    };
+
+    std::vector<Keyframe> keyframes_;
+};
+
 }
 
 #endif

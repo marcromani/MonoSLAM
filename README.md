@@ -44,8 +44,11 @@ three standard deviations of its innovation, since its seed has drifted in the m
 features are added, as in
 [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf), where
 the frame has none, if they are textured enough to be located and do not look like anything around
-them, and removed when they stop being matched. Every feature keeps ORB descriptors of how it has
-looked, so that after a weak frame the map can be found anywhere in the frame
+them, and removed when they stop being matched, unless they have been used long enough to be part
+of the map the camera comes back to. After a weak frame the map is looked for where the keyframes
+that look most like the frame saw it, small blurred images of frames where tracking was good
+([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)), and if that fails,
+anywhere in the frame by the ORB descriptors every feature keeps of how it has looked
 ([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
 `docs/monoslam.tex` describes the system in detail: the frame loop, the derivation of the

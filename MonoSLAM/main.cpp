@@ -196,6 +196,7 @@ main(int argc, char* argv[])
 
     monoslam::FlowTracker tracker(gray, initialPositions);
     monoslam::Mapper mapper(features.size());
+    monoslam::Keyframes keyframes;
 
     monoslam::StateStream stream;
 
@@ -231,10 +232,17 @@ main(int argc, char* argv[])
 
         std::vector<cv::Point2f>& seeds = tracker.predict(gray);
 
-        // 2. After a weak frame the state may be wrong: the features are looked for anywhere in the
-        //    frame by their descriptors, and the camera is moved where they say
+        // 2. After a weak frame the state may be wrong: the features are looked for where the
+        //    keyframes that look like the frame saw them, or else anywhere in the frame by their
+        //    descriptors, and the camera is moved where they say
         if (weak) {
-            if (const auto found = monoslam::matchGlobally(gray, features, camera, ekf)) {
+            std::optional<monoslam::GlobalMatch> found = keyframes.match(gray, features, camera, ekf);
+
+            if (!found.has_value()) {
+                found = monoslam::matchGlobally(gray, features, camera, ekf);
+            }
+
+            if (found.has_value()) {
                 ekf.resetCamera(found->r, found->R);
 
                 seeds = ekf.project(seeds);
@@ -282,6 +290,10 @@ main(int argc, char* argv[])
             mapper.recordAppearance(gray, features, used, projections);
             mapper.removeUnreliable(ekf, features, tracker);
             mapper.addFeatures(gray, camera, ekf, features, tracker);
+        }
+
+        if (!weak) {
+            keyframes.add(gray, ekf.pose(), numMeasured);
         }
 
         if (options.timing) {

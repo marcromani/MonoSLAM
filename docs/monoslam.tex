@@ -42,8 +42,9 @@ Every frame goes through the same steps, in \texttt{main.cpp}:
         processed, so the interval can be several frame periods.
   \item \texttt{tracker.predict(gray)} moves the \emph{seed} of every feature, where it is
         expected in the new image, with the optical flow (section~\ref{sec:flow}).
-  \item After a weak frame (section~\ref{sec:global}), \texttt{matchGlobally} looks for the map
-        anywhere in the frame by its appearance. If it finds it, the camera is moved there, the
+  \item After a weak frame (section~\ref{sec:global}), \texttt{keyframes.match} looks for the
+        map where the keyframes that look like the frame saw it, and if that fails,
+        \texttt{matchGlobally} anywhere in the frame by its appearance. If either finds it, the camera is moved there, the
         seeds of the features found to where they were found, and the others to the projections
         of their features.
   \item \texttt{ekf.observe()} predicts the features in view, \texttt{matchFeatures} searches each
@@ -53,7 +54,8 @@ Every frame goes through the same steps, in \texttt{main.cpp}:
   \item If at least four features were used, the seeds move to the projections of their features
         from the updated state, and otherwise they keep following the images.
   \item Unless the frame is weak, the map is kept: the features rarely matched are removed, and new
-        ones are added where the frame has none (section~\ref{sec:map}).
+        ones are added where the frame has none (section~\ref{sec:map}), and the frame becomes a
+        keyframe if it was taken far from every other one.
 \end{enumerate}
 
 The information flows in a loop: images $\to$ seeds $\to$ where to search $\to$ matches $\to$
@@ -66,11 +68,12 @@ drifting, and the flow keeps it going in step 2 when the filter cannot.
   \hline
   \texttt{ekf.predict} & state & state \\
   \texttt{tracker.predict} & images, seeds & seeds \\
-  \texttt{matchGlobally} & image, state & state, seeds \\
+  \texttt{Keyframes::match}, \texttt{matchGlobally} & image, state, keyframes & state, seeds \\
   \texttt{matchFeatures} & image, predicted state, seeds & matches \\
   \texttt{ekf.update} & state, matches & state \\
   \texttt{tracker.correct} & state & seeds \\
   \texttt{Mapper} & image, state & state, seeds \\
+  \texttt{Keyframes::add} & image, state & keyframes \\
 \end{tabular}
 \end{center}
 
@@ -519,9 +522,32 @@ match a whole square away.
 
 The search only looks near the seeds and the predictions. When the camera gets somewhere else
 without the images or the filter following it (a kidnap, simulated by cutting frames out of a
-sequence), nothing there is right. As in Williams et
-al.~\cite{williams2011}, the features are then looked for by their appearance alone, anywhere in the frame
-(\texttt{matchGlobally}).
+sequence), nothing there is right. The features are then looked for where the keyframes that look
+like the frame saw them, as in Klein and Murray~\cite{klein2008} (\texttt{Keyframes::match}),
+and if that fails, by their appearance alone, anywhere in the frame, as in Williams et
+al.~\cite{williams2011} (\texttt{matchGlobally}).
+
+\paragraph{Keyframes.}
+After every frame that is not weak, with at least $8$ features used, the frame is kept as a
+keyframe if no keyframe is within $5$~cm and $8^\circ$ of its pose: shrunk to $80 \times 60$
+pixels, blurred with $\sigma = 2.5$ of those pixels, and with its mean removed, along with the
+pose (\texttt{Keyframes::add}). After a weak frame, the frame is shrunk in the same way, and the
+three keyframes with the smallest mean squared difference to it are tried in turn. Each is first
+aligned with the frame by the shift, within $6$ pixels of the thumbnail, that makes them most alike,
+since a small turn of the camera shifts the whole image. The well located features, except those of
+the pattern, are then projected with the pose of the keyframe, shifted, and searched with their
+patches, warped to that pose, within $20$~px. A pose is fitted to those found, and verified, as
+below for the descriptors.
+
+The global match needs a corner of the frame on the feature, and an ORB descriptor that survives the
+few pixels between them, and on these sequences only $3$ or $4$ of its $10$ to $14$ matches are
+right, even while tracking is good, of about $9$ features in view. The keyframes need neither:
+they search with the patches that track the features, around where they should be. They need the
+camera back near a pose it had, though. On sequence~5, right after the second cut, the keyframe
+that looks most like the frame is $5$~cm and $4^\circ$ from it, while at the third visit of
+sequence~6 the camera is $9$ to $14$~cm from every pose it had, and neither method finds the map.
+Over $15$ runs, kidnaps recovered went from $19$ to $23$ of $30$, and the return to the board at
+frame $836$ of sequence~6 is within $10$~cm in $13$ runs instead of $9$.
 
 \paragraph{Descriptors.}
 Every feature gets an ORB descriptor~\cite{rublee2011} when it is created (\texttt{describe}): $256$ binary
@@ -551,7 +577,7 @@ A frame is \emph{weak} when fewer than four features, or fewer than half of thos
 used by the update. That means the state may be wrong, even if some matches still agree with it:
 after a kidnap, 1-point RANSAC can keep finding a few look-alikes that agree with a wrong pose.
 \begin{itemize}
-  \item After a weak frame, the global match decides: if it finds a pose, \texttt{resetCamera}
+  \item After a weak frame, the keyframes or the global match decide: if it finds a pose, \texttt{resetCamera}
         moves the camera there, with no velocity and a large uncertainty ($2$~cm, $0.2$~rad,
         $30$~cm/s, $1.5$~rad/s) and no correlation with the features, and the seeds move to their
         projections.
@@ -641,12 +667,13 @@ $15 \times 15$ window with at most $10$ iterations loses sequences 2 and 3 in ev
   patch search, returning features & \texttt{findPatch}, \texttt{matchFeatures} \\
   adding, removing features & \texttt{Mapper::addFeatures}, \texttt{Mapper::removeUnreliable} \\
   descriptors & \texttt{describe}, \texttt{Mapper::recordAppearance} \\
+  keyframes & \texttt{Keyframes} in \texttt{relocalization.h} \\
   global matching & \texttt{matchGlobally} in \texttt{relocalization.h} \\
   input, output & \texttt{FrameSource}, \texttt{StateStream} \\
 \end{tabular}
 \end{center}
 
-\begin{thebibliography}{8}
+\begin{thebibliography}{9}
 
 \bibitem{civera2008}
 J.~Civera, A.~J.~Davison and J.~M.~M.~Montiel.
@@ -663,6 +690,11 @@ visual odometry.
 A.~J.~Davison, I.~D.~Reid, N.~D.~Molton and O.~Stasse.
 MonoSLAM: real-time single camera SLAM.
 \emph{IEEE Transactions on Pattern Analysis and Machine Intelligence}, 29(6):1052--1067, 2007.
+
+\bibitem{klein2008}
+G.~Klein and D.~Murray.
+Improving the agility of keyframe-based SLAM.
+In \emph{Proceedings of the European Conference on Computer Vision}, pages 802--815, 2008.
 
 \bibitem{lefferts1982}
 E.~J.~Lefferts, F.~L.~Markley and M.~D.~Shuster.
