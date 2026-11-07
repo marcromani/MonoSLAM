@@ -271,11 +271,13 @@ main(int argc, char* argv[])
         }
 
         // 5. Keep the map: remove the features rarely matched, and add new ones where too few are in
-        //    view. Not while tracking is weak, though: the state may be wrong, and then the features
-        //    would be blamed for it, and the new ones placed where they are not
+        //    view. Not while most of the features searched fail, though: the state may be wrong, and
+        //    then the features would be blamed for it, and the new ones placed where they are not.
+        //    Few features in view, most of them found, is a new part of the scene instead, which
+        //    needs new features: without them tracking would stay weak, and the map frozen, for good
         weak = numMeasured < minConstrained || 2 * numMeasured < searched.size();
 
-        if (!weak) {
+        if (2 * numMeasured >= searched.size()) {
             mapper.recordMatches(features, searched, used);
             mapper.recordAppearance(gray, features, used, projections);
             mapper.removeUnreliable(ekf, features, tracker);

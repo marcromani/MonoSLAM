@@ -55,9 +55,10 @@ class Mapper
 
     /*
      * Removes the features used in less than half of their recent attempts, once they have had a
-     * few, as in Davison et al. but over the last attempts only, so that a feature that stops being
-     * matched goes within a third of a second however long it was good. Such features are usually
-     * not salient enough, occluded, on the edge of an object, or on something that moves.
+     * few, as in Davison et al. but over the last attempts only, so that a bad feature goes within a
+     * third of a second. Such features are usually not salient enough, occluded, on the edge of an
+     * object, or on something that moves. The corners of the pattern, and the features used in at
+     * least 30 frames, are never removed: they are the map the camera comes back to.
      *
      * ekf         Filter
      * features    All the features

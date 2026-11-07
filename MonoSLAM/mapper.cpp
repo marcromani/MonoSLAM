@@ -42,6 +42,7 @@ constexpr int minAttempts = 10;     // Before a feature can be judged
 constexpr int recentAttempts = 20;  // It is judged on these last ones, at most
 constexpr int minFramesAway = 10;   // Out of view, after which a feature is judged anew
 constexpr double minMatchRatio = 0.5;
+constexpr int establishedUses = 30;  // Uses after which a feature is never removed
 
 /*
  * Returns the inverse of the median distance of the well located features in view, the best guess
@@ -230,6 +231,7 @@ monoslam::Mapper::recordMatches(std::vector<Feature>& features,
 
         const bool matched = std::find(used.begin(), used.end(), i) != used.end();
 
+        feature.timesUsed += matched ? 1 : 0;
         feature.framesAway = 0;
         feature.returning = feature.returning && !matched;
         ++feature.matchingAttempts;
@@ -275,6 +277,13 @@ monoslam::Mapper::removeUnreliable(EKF& ekf, std::vector<Feature>& features, Flo
 
     for (std::size_t i = 0; i < features.size(); ++i) {
         const Feature& feature = features[i];
+
+        // The corners of the pattern hold the scale of the map, and a feature used for long is part
+        // of the map that the camera can come back to and close the loop with. Either may fail for a
+        // while, blurred, occluded or seen from far away, but it is not a bad feature
+        if (feature.knownSurface || feature.timesUsed >= establishedUses) {
+            continue;
+        }
 
         if (feature.matchingAttempts < minAttempts) {
             continue;

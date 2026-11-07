@@ -506,6 +506,14 @@ changes with the point of view, and features on things that move. A feature that
 view after at least $10$ frames away starts its count anew: its failures from before tell little
 about it now, and a single bad frame on its return would otherwise remove it.
 
+Two kinds of features are never removed: the corners of the pattern, which hold the scale of the
+map, and the features used in at least $30$ frames. A feature that was good for that long is part of
+the map, and when the camera comes back after a long excursion, it is what closes the loop: its
+first searches after the return may fail, since the state has drifted, and by the rule above it
+would be gone before it could pull the state back. Without this, sequence~6 comes back to the board
+after a minute with nothing left of the first visit but the board itself, whose look-alike corners
+match a whole square away.
+
 \section{Finding the map again}
 \label{sec:global}
 
@@ -547,9 +555,12 @@ after a kidnap, 1-point RANSAC can keep finding a few look-alikes that agree wit
         moves the camera there, with no velocity and a large uncertainty ($2$~cm, $0.2$~rad,
         $30$~cm/s, $1.5$~rad/s) and no correlation with the features, and the seeds move to their
         projections.
-  \item While tracking is weak, the map is left alone: no feature is added, since it would be
-        placed with a wrong pose, and no failed match is counted, since the failures are the
-        state's.
+  \item While fewer than half of the features searched are used, the map is left alone: no
+        feature is added, since it would be placed with a wrong pose, and no failed match is
+        counted, since the failures are the state's. A frame with fewer than four features used,
+        but most of those searched, is not one of these: the camera is entering a part of the scene
+        with no features yet, and needs new ones. Freezing the map there would keep tracking weak,
+        and the map frozen, for good.
 \end{itemize}
 
 \section{Results}
