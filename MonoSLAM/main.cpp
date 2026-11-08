@@ -4,8 +4,9 @@
  *
  *   1. Predict the camera with the motion model, and the image position of every feature, its
  *      seed, with the optical flow (tracking.h).
- *   2. After a weak frame, look for the map anywhere in the frame by its appearance, and move the
- *      camera where it says (relocalization.h).
+ *   2. After a weak frame, look for the map where the keyframes that look like the frame saw it,
+ *      or else anywhere in the frame by its appearance, and move the camera where it says
+ *      (relocalization.h).
  *   3. Search the features in view around their seeds, and those the camera comes back to around
  *      their prediction, and update the filter with the matches that 1-point RANSAC accepts
  *      (tracking.h, ekf.h).
@@ -125,6 +126,47 @@ constexpr const char* usage =
   "  --headless    Do not open any window\n"
   "  --timing      Report every second the frame interval, the decoding and processing times, the frames\n"
   "                dropped and those shown\n";
+
+/*
+ * Reports every 30 frames, with --timing, the mean and largest frame interval and processing time,
+ * the decoding time, and the frames dropped: live, frames are dropped while one is processed.
+ */
+class TimingReport
+{
+  public:
+    /*
+     * Adds a frame, and reports if it is the last of a period.
+     *
+     * index          Frame index
+     * interval       Time since the previous frame, in s
+     * processing     Time it took to process, in s
+     * decoding       Time it took to decode, in s
+     * numShown       Frames shown so far, or nothing if no window shows them
+     * numFeatures    Features in the map
+     */
+    void add(std::size_t index,
+             double interval,
+             double processing,
+             double decoding,
+             std::optional<std::size_t> numShown,
+             std::size_t numFeatures);
+
+  private:
+    static constexpr std::size_t period_ = 30;  // Frames
+
+    double sumInterval_ = 0.0;
+    double maxInterval_ = 0.0;
+    double sumProcessing_ = 0.0;
+    double maxProcessing_ = 0.0;
+    double sumDecoding_ = 0.0;
+    std::size_t numDropped_ = 0;
+    std::size_t previousShown_ = 0;
+
+    // The frame period of the camera, to count the frames dropped: half the shortest two intervals
+    // in a row, since some cameras alternate a short and a long one (8 and 12 ms at 100 Hz)
+    double framePeriod_ = HUGE_VAL;
+    double previousInterval_ = HUGE_VAL;
+};
 
 /*
  * Parses the command line. Returns nothing if it is not valid.
@@ -257,7 +299,8 @@ track(const Options& options,
     std::cout << "Initialization succeeded\n";
 
     const monoslam::MotionModel motion{ linearAccStd, angularAccStd, linearDecayTime, angularDecayTime };
-    monoslam::EKF ekf(motion, camera, pixelStd, x, R, P);
+    const monoslam::MeasurementModel measurement{ pixelStd, maxInlierDistance, maxNIS };
+    monoslam::EKF ekf(motion, measurement, camera, x, R, P);
 
     std::vector<cv::Point2f> initialPositions;
 
@@ -281,14 +324,7 @@ track(const Options& options,
     bool weak = false;  // Whether too few of the features searched were used, which can mean the state is wrong
     double previousTime = source.time();
 
-    // Live timing, reported every second with --timing
-    constexpr std::size_t timingPeriod = 30;  // Frames
-    double sumInterval = 0.0, maxInterval = 0.0, sumProcessing = 0.0, maxProcessing = 0.0;
-    double sumDecode = 0.0;
-    // The frame period of the camera, to count the frames dropped: half the shortest two intervals in
-    // a row, since some cameras alternate a short and a long one (8 and 12 ms at 100 Hz)
-    double period = HUGE_VAL, previousInterval = HUGE_VAL;
-    std::size_t numDropped = 0, previousShown = 0;
+    TimingReport timing;
 
     while (source.read(gray)) {
         const std::size_t index = source.index();
@@ -308,7 +344,7 @@ track(const Options& options,
         //    keyframes that look like the frame saw them, or else anywhere in the frame by their
         //    descriptors, and the camera is moved where they say
         if (weak) {
-            std::optional<monoslam::GlobalMatch> found = keyframes.match(gray, features, camera, ekf);
+            std::optional<monoslam::Relocalization> found = keyframes.match(gray, features, camera, ekf);
 
             if (!found.has_value()) {
                 found = monoslam::matchGlobally(gray, features, camera, ekf);
@@ -340,7 +376,7 @@ track(const Options& options,
             noises.push_back(matchNoise(alignment));
         }
 
-        std::vector<std::size_t> used = ekf.update(observation, matches, noises, maxInlierDistance, maxNIS);
+        std::vector<std::size_t> used = ekf.update(observation, matches, noises);
 
         // What to show, if anything shows it
         const bool shown = display != nullptr || !options.annotateDir.empty();
@@ -350,12 +386,12 @@ track(const Options& options,
             snapshot = { gray, monoslam::usedMatches(observation, seeds, matches, used) };
         }
 
-        const std::size_t numMeasured = used.size();
+        const std::size_t numUsed = used.size();
 
         // 4. The seeds follow the state if it is well constrained, and the images otherwise
         const std::vector<cv::Point2f> projections = ekf.project(seeds);
 
-        if (numMeasured >= minConstrained) {
+        if (numUsed >= minConstrained) {
             tracker.correct(projections);
         }
 
@@ -368,9 +404,9 @@ track(const Options& options,
         //    then the features would be blamed for it, and the new ones placed where they are not.
         //    Few features in view, most of them found, is a new part of the scene instead, which
         //    needs new features: without them tracking would stay weak, and the map frozen, for good
-        weak = numMeasured < minConstrained || 2 * numMeasured < searched.size();
+        weak = numUsed < minConstrained || 2 * numUsed < searched.size();
 
-        if (2 * numMeasured >= searched.size()) {
+        if (2 * numUsed >= searched.size()) {
             mapper.recordMatches(features, searched, used);
             mapper.recordAppearance(gray, features, used, projections);
             mapper.removeUnreliable(ekf, features, tracker);
@@ -378,40 +414,16 @@ track(const Options& options,
         }
 
         if (!weak) {
-            keyframes.add(gray, ekf.pose(), numMeasured);
+            keyframes.add(gray, ekf.pose(), numUsed);
         }
 
         if (options.timing) {
             const double processing =
               std::chrono::duration<double>(std::chrono::steady_clock::now() - processingStart).count();
+            const std::optional<std::size_t> numShown =
+              display != nullptr ? std::optional<std::size_t>(display->numShown()) : std::nullopt;
 
-            sumInterval += dt;
-            maxInterval = std::max(maxInterval, dt);
-            sumProcessing += processing;
-            maxProcessing = std::max(maxProcessing, processing);
-            sumDecode += source.decodeTime();
-            period = std::min(period, 0.5 * (previousInterval + dt));
-            previousInterval = dt;
-            numDropped += static_cast<std::size_t>(std::max(0L, std::lround(dt / period) - 1));
-
-            if (index % timingPeriod == 0) {
-                std::cout << "Frame " << index << ": interval " << std::lround(1000.0 * sumInterval / timingPeriod)
-                          << " ms (max " << std::lround(1000.0 * maxInterval) << "), processing "
-                          << std::lround(1000.0 * sumProcessing / timingPeriod) << " ms (max "
-                          << std::lround(1000.0 * maxProcessing) << "), decoding "
-                          << std::lround(1000.0 * sumDecode / timingPeriod) << " ms, " << numDropped
-                          << " frames dropped";
-
-                if (display != nullptr) {
-                    std::cout << ", " << display->numShown() - previousShown << " shown";
-                    previousShown = display->numShown();
-                }
-
-                std::cout << ", " << features.size() << " features\n";
-
-                sumInterval = maxInterval = sumProcessing = maxProcessing = sumDecode = 0.0;
-                numDropped = 0;
-            }
+            timing.add(index, dt, processing, source.decodeTime(), numShown, features.size());
         }
 
         if (shown) {
@@ -430,6 +442,45 @@ track(const Options& options,
     }
 
     return EXIT_SUCCESS;
+}
+
+void
+TimingReport::add(std::size_t index,
+                  double interval,
+                  double processing,
+                  double decoding,
+                  std::optional<std::size_t> numShown,
+                  std::size_t numFeatures)
+{
+    sumInterval_ += interval;
+    maxInterval_ = std::max(maxInterval_, interval);
+    sumProcessing_ += processing;
+    maxProcessing_ = std::max(maxProcessing_, processing);
+    sumDecoding_ += decoding;
+    framePeriod_ = std::min(framePeriod_, 0.5 * (previousInterval_ + interval));
+    previousInterval_ = interval;
+    numDropped_ += static_cast<std::size_t>(std::max(0L, std::lround(interval / framePeriod_) - 1));
+
+    if (index % period_ != 0) {
+        return;
+    }
+
+    const auto milliseconds = [](double seconds) { return std::lround(1000.0 * seconds); };
+
+    std::cout << "Frame " << index << ": interval " << milliseconds(sumInterval_ / period_) << " ms (max "
+              << milliseconds(maxInterval_) << "), processing " << milliseconds(sumProcessing_ / period_) << " ms (max "
+              << milliseconds(maxProcessing_) << "), decoding " << milliseconds(sumDecoding_ / period_) << " ms, "
+              << numDropped_ << " frames dropped";
+
+    if (numShown.has_value()) {
+        std::cout << ", " << numShown.value() - previousShown_ << " shown";
+        previousShown_ = numShown.value();
+    }
+
+    std::cout << ", " << numFeatures << " features\n";
+
+    sumInterval_ = maxInterval_ = sumProcessing_ = maxProcessing_ = sumDecoding_ = 0.0;
+    numDropped_ = 0;
 }
 
 std::optional<Options>

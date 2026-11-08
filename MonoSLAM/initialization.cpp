@@ -13,8 +13,6 @@
 
 namespace {
 
-constexpr int patchSize = 11;
-
 constexpr double maxReprojectionRms = 1.0;    // Pixels
 constexpr double maxReprojectionError = 3.0;  // Pixels
 
@@ -31,11 +29,11 @@ constexpr double featureVariance = 0.05;      // cm^2
  *
  * patternSize    Number of inner corners of the pattern, per row and per column
  */
-std::vector<size_t>
+std::vector<std::size_t>
 selectCorners(const cv::Size& patternSize)
 {
-    const size_t w = static_cast<size_t>(patternSize.width);
-    const size_t h = static_cast<size_t>(patternSize.height);
+    const auto w = static_cast<std::size_t>(patternSize.width);
+    const auto h = static_cast<std::size_t>(patternSize.height);
 
     return { 0, w - 1, (h - 1) * w, w * h - 1, w * ((h - 1) / 2) + (w + 1) / 2 - 1 };
 }
@@ -121,7 +119,7 @@ monoslam::initializeFromPattern(const cv::Mat1b& frame,
 
     // STATE //
 
-    const std::vector<size_t> corners = selectCorners(patternSize);
+    const std::vector<std::size_t> corners = selectCorners(patternSize);
 
     x = cv::Mat1d::zeros(cameraStateSize + featureSize * static_cast<int>(corners.size()), 1);
     P = cv::Mat1d::zeros(x.rows, x.rows);
@@ -150,12 +148,11 @@ monoslam::initializeFromPattern(const cv::Mat1b& frame,
 
     const cv::Vec3d normal(0.0, 0.0, 1.0);  // The normal of the pattern, in world coordinates
 
-    for (size_t i = 0; i < corners.size(); ++i) {
+    for (std::size_t i = 0; i < corners.size(); ++i) {
         const cv::Point2f& pixel = points2D[corners[i]];
         const cv::Point3f& point = points3D[corners[i]];
 
-        Feature feature(frame, pixel, patchSize, normal, pose);
-        feature.id = i;
+        Feature feature(frame, pixel, normal, pose, i);
         feature.knownSurface = true;
 
         if ((feature.roi & cv::Rect(0, 0, frame.cols, frame.rows)) != feature.roi) {

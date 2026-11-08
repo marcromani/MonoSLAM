@@ -48,14 +48,11 @@ class CameraModel
 {
   public:
     /*
-     * Constructor for a lens-distorted camera model.
+     * K             Intrinsic matrix
+     * distCoeffs    Lens distortion coefficients (k1, k2, p1, p2, k3), as OpenCV's
+     * frameSize     Frame size, in pixels
      */
     CameraModel(const cv::Matx33d& K, const cv::Vec<double, 5>& distCoeffs, const cv::Size& frameSize);
-
-    /*
-     * Constructor for a pinhole camera model (distCoeffs is filled with zeros).
-     */
-    CameraModel(const cv::Matx33d& K, const cv::Size& frameSize);
 
     /*
      * Reads a camera model from a calibration file, as written by the calibration program.
@@ -70,8 +67,8 @@ class CameraModel
     const cv::Size& frameSize() const { return frameSize_; }
 
     /*
-     * Maps the components of a 3D point from the affine world frame to camera pixel coordinates.
-     * If the point is not visible std::nullopt is returned.
+     * Returns the pixel of a point in world coordinates, seen from a pose, or nothing if it is
+     * behind the camera or out of the frame.
      */
     std::optional<cv::Point2d> project(const CameraPose& pose, const cv::Vec3d& p) const;
 

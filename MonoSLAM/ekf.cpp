@@ -233,14 +233,14 @@ monoslam::MotionModel::noiseCovariance(double dt) const
 }
 
 monoslam::EKF::EKF(const MotionModel& motion,
+                   const MeasurementModel& measurement,
                    const CameraModel& camera,
-                   double pixelStd,
                    const cv::Mat1d& x,
                    const cv::Matx33d& R,
                    const cv::Mat1d& P)
   : motion_(motion)
+  , measurement_(measurement)
   , camera_(camera)
-  , pixelStd_(pixelStd)
   , x_(x.clone())
   , R_(R)
   , P_(P.clone())
@@ -344,7 +344,8 @@ monoslam::EKF::observe() const
     }
 
     const Indices columns = columnsOf(o);
-    const cv::Mat1d R(pixelStd_ * pixelStd_ * cv::Mat1d::eye(o.h.rows, o.h.rows));
+    const double pixelVariance = measurement_.pixelStd * measurement_.pixelStd;
+    const cv::Mat1d R(pixelVariance * cv::Mat1d::eye(o.h.rows, o.h.rows));
 
     o.Pcols = selectCols(P_, columns);
     o.S = cv::Mat1d(o.H * selectRowsCols(P_, columns, columns) * o.H.t() + R);
@@ -388,6 +389,8 @@ monoslam::EKF::setNoises(Observation& o,
                          const std::vector<std::size_t>& features,
                          const std::vector<cv::Matx22d>& noises) const
 {
+    const double pixelVariance = measurement_.pixelStd * measurement_.pixelStd;
+
     o.S = o.S.clone();
 
     for (std::size_t k = 0; k < features.size(); ++k) {
@@ -398,7 +401,7 @@ monoslam::EKF::setNoises(Observation& o,
         }
 
         const int row = static_cast<int>(rows->front());
-        const cv::Matx22d extra = noises[k] - cv::Matx22d::eye() * (pixelStd_ * pixelStd_);
+        const cv::Matx22d extra = noises[k] - cv::Matx22d::eye() * pixelVariance;
 
         cv::Mat1d block = o.S(cv::Rect(row, row, 2, 2));
         block += cv::Mat1d(extra);
@@ -408,18 +411,13 @@ monoslam::EKF::setNoises(Observation& o,
 std::vector<std::size_t>
 monoslam::EKF::update(Observation o,
                       const std::vector<std::optional<cv::Point2d>>& matches,
-                      const std::vector<cv::Matx22d>& noises,
-                      double maxDistance,
-                      double maxNIS)
+                      const std::vector<cv::Matx22d>& noises)
 {
-    assert(matches.size() == o.features.size());
-    assert(noises.empty() || noises.size() == o.features.size());
+    assert(matches.size() == o.features.size() && noises.size() == o.features.size());
 
     const std::vector<std::size_t> matched = o.features;  // The features of the matches, in order
 
-    if (!noises.empty()) {
-        setNoises(o, matched, noises);
-    }
+    setNoises(o, matched, noises);
 
     // Every match is a group of two rows of the observation
     std::vector<std::size_t> groups;  // Index in o.features of each match
@@ -474,7 +472,7 @@ monoslam::EKF::update(Observation o,
 
             const double distance = cv::norm(zOf(g) - selectRows(predicted.h, predictedRows.value()));
 
-            if (distance < maxDistance) {
+            if (distance < measurement_.maxInlierDistance) {
                 agreeing.push_back(g);
                 residual += distance;
             }
@@ -504,10 +502,7 @@ monoslam::EKF::update(Observation o,
 
     // High innovation inliers: the rest of the matches that the updated state can explain
     Observation updated = observe();
-
-    if (!noises.empty()) {
-        setNoises(updated, matched, noises);
-    }
+    setNoises(updated, matched, noises);
 
     Indices rescued;      // Groups
     Indices rescuedRows;  // Their rows in the updated observation
@@ -532,7 +527,7 @@ monoslam::EKF::update(Observation o,
                   weighted,
                   cv::DECOMP_CHOLESKY);
 
-        if (innovation.dot(weighted) < maxNIS) {
+        if (innovation.dot(weighted) < measurement_.maxNIS) {
             rescued.push_back(g);
             rescuedRows.insert(rescuedRows.end(), updatedRows->begin(), updatedRows->end());
             rescuedZ.push_back(zOf(g));
@@ -559,6 +554,7 @@ monoslam::EKF::update(Observation o,
 void
 monoslam::EKF::addFeature(const cv::Point2d& pixel, double inverseDepth, double inverseDepthStd)
 {
+    const double pixelVariance = measurement_.pixelStd * measurement_.pixelStd;
     const CameraPose pose = this->pose();
 
     // J is the Jacobian with respect to the camera position and orientation error, the pixel and
@@ -571,7 +567,7 @@ monoslam::EKF::addFeature(const cv::Point2d& pixel, double inverseDepth, double 
 
     // Covariance of the pixel and the inverse depth
     const cv::Matx33d noise =
-      cv::Matx33d::diag(cv::Vec3d(pixelStd_ * pixelStd_, pixelStd_ * pixelStd_, inverseDepthStd * inverseDepthStd));
+      cv::Matx33d::diag(cv::Vec3d(pixelVariance, pixelVariance, inverseDepthStd * inverseDepthStd));
 
     // Covariance of the new feature with the rest of the state, through the camera pose
     const cv::Mat1d crossCovariance(cv::Mat1d(Jpose) * P_.rowRange(0, 6));

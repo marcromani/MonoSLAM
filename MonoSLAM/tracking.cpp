@@ -146,14 +146,8 @@ maskedCorrelation(const cv::Mat1b& image, const cv::Mat1b& patch, const cv::Mat1
 void
 buildPyramid(const cv::Mat1b& frame, std::vector<cv::Mat>& pyramid)
 {
-    cv::buildOpticalFlowPyramid(frame,
-                                pyramid,
-                                cornerWindow,
-                                pyramidLevels,
-                                true,
-                                cv::BORDER_REFLECT_101,
-                                cv::BORDER_CONSTANT,
-                                false);
+    cv::buildOpticalFlowPyramid(
+      frame, pyramid, cornerWindow, pyramidLevels, true, cv::BORDER_REFLECT_101, cv::BORDER_CONSTANT, false);
 }
 
 /*

@@ -13,8 +13,8 @@
 namespace {
 
 // Descriptors
-constexpr int patchSize = 31;  // Of ORB, in pixels
-constexpr int radius = patchSize / 2;
+constexpr int orbPatchSize = 31;  // Pixels
+constexpr int orbRadius = orbPatchSize / 2;
 
 /*
  * Returns the orientation of the patch around a pixel, in degrees: the direction from the pixel to
@@ -27,9 +27,9 @@ orientation(const cv::Mat1b& frame, const cv::Point& center)
     double m10 = 0.0;
     double m01 = 0.0;
 
-    for (int dy = -radius; dy <= radius; ++dy) {
-        for (int dx = -radius; dx <= radius; ++dx) {
-            if (dx * dx + dy * dy <= radius * radius) {
+    for (int dy = -orbRadius; dy <= orbRadius; ++dy) {
+        for (int dx = -orbRadius; dx <= orbRadius; ++dx) {
+            if (dx * dx + dy * dy <= orbRadius * orbRadius) {
                 const double intensity = frame(center.y + dy, center.x + dx);
 
                 m10 += dx * intensity;
@@ -121,7 +121,7 @@ countPatchesAt(const cv::Mat1b& frame,
  * matched       Features found
  * pixels        Where they were found
  */
-std::optional<monoslam::GlobalMatch>
+std::optional<monoslam::Relocalization>
 fitPose(const cv::Mat1b& frame,
         const std::vector<monoslam::Feature>& features,
         const monoslam::CameraModel& camera,
@@ -170,16 +170,16 @@ fitPose(const cv::Mat1b& frame,
         return std::nullopt;
     }
 
-    monoslam::GlobalMatch match;
-    match.r = r;
-    match.R = R;
+    monoslam::Relocalization relocalization;
+    relocalization.r = r;
+    relocalization.R = R;
 
     for (int inlier : inliers) {
-        match.features.push_back(matched[static_cast<std::size_t>(inlier)]);
-        match.pixels.push_back(pixels[static_cast<std::size_t>(inlier)]);
+        relocalization.features.push_back(matched[static_cast<std::size_t>(inlier)]);
+        relocalization.pixels.push_back(pixels[static_cast<std::size_t>(inlier)]);
     }
 
-    return match;
+    return relocalization;
 }
 
 /*
@@ -232,7 +232,7 @@ monoslam::Keyframes::add(const cv::Mat1b& frame, const CameraPose& pose, std::si
     keyframes_.push_back({ thumbnail(frame), pose });
 }
 
-std::optional<monoslam::GlobalMatch>
+std::optional<monoslam::Relocalization>
 monoslam::Keyframes::match(const cv::Mat1b& frame,
                            const std::vector<Feature>& features,
                            const CameraModel& camera,
@@ -303,8 +303,8 @@ monoslam::Keyframes::match(const cv::Mat1b& frame,
             }
         }
 
-        if (std::optional<GlobalMatch> match = fitPose(frame, features, camera, x, candidates, matched, pixels)) {
-            return match;
+        if (std::optional<Relocalization> found = fitPose(frame, features, camera, x, candidates, matched, pixels)) {
+            return found;
         }
     }
 
@@ -317,7 +317,7 @@ monoslam::describe(const cv::Mat1b& frame, std::vector<cv::Point2f>& positions)
     static const cv::Ptr<cv::ORB> orb = cv::ORB::create();
 
     // ORB needs its patch, rotated, inside the frame
-    const cv::Rect inside(patchSize, patchSize, frame.cols - 2 * patchSize, frame.rows - 2 * patchSize);
+    const cv::Rect inside(orbPatchSize, orbPatchSize, frame.cols - 2 * orbPatchSize, frame.rows - 2 * orbPatchSize);
 
     std::vector<cv::KeyPoint> keypoints;
 
@@ -325,7 +325,7 @@ monoslam::describe(const cv::Mat1b& frame, std::vector<cv::Point2f>& positions)
         const cv::Point center(cvRound(position.x), cvRound(position.y));
 
         if (inside.contains(center)) {
-            keypoints.emplace_back(cv::Point2f(center), patchSize, orientation(frame, center));
+            keypoints.emplace_back(cv::Point2f(center), orbPatchSize, orientation(frame, center));
         }
     }
 
@@ -352,7 +352,7 @@ monoslam::describe(const cv::Mat1b& frame, const cv::Point2d& position)
     return describe(frame, positions);
 }
 
-std::optional<monoslam::GlobalMatch>
+std::optional<monoslam::Relocalization>
 monoslam::matchGlobally(const cv::Mat1b& frame,
                         const std::vector<Feature>& features,
                         const CameraModel& camera,

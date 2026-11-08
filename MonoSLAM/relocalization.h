@@ -12,10 +12,11 @@
 #include "feature.h"
 
 /*
- * Finding the features of the map anywhere in a frame, by their appearance alone, without the
- * state of the camera (Williams, Klein and Reid, 2011). It is what recovers the camera when
- * tracking is lost, and what finds the features the camera comes back to after a long excursion,
- * when the state has drifted too far for their seeds.
+ * Finding the map again when tracking fails, without the state of the camera, which may be wrong.
+ * The features are first searched where the keyframes that look most like the frame saw them
+ * (Klein and Murray, 2008), and if that fails, anywhere in the frame by their appearance alone
+ * (Williams, Klein and Reid, 2011). Either way, a pose is fitted to the features found, and only
+ * accepted if the patches of the features are found where it projects them.
  *
  * The appearance of a feature is an ORB descriptor (Rublee et al., 2011): 256 binary comparisons of
  * pixel pairs of the patch around it, rotated with the patch, so that it does not change when the
@@ -40,9 +41,9 @@ cv::Mat1b
 describe(const cv::Mat1b& frame, const cv::Point2d& position);
 
 /*
- * Features of the map found in a frame by matchGlobally, and the pose that explains them.
+ * Features of the map found in a frame, and the pose that explains them.
  */
-struct GlobalMatch
+struct Relocalization
 {
     cv::Vec3d r;    // Camera position
     cv::Matx33d R;  // Camera orientation, from camera to world
@@ -62,7 +63,7 @@ struct GlobalMatch
  * camera      Camera model
  * ekf         Filter
  */
-std::optional<GlobalMatch>
+std::optional<Relocalization>
 matchGlobally(const cv::Mat1b& frame, const std::vector<Feature>& features, const CameraModel& camera, const EKF& ekf);
 
 /*
@@ -94,10 +95,10 @@ class Keyframes
      * camera      Camera model
      * ekf         Filter
      */
-    std::optional<GlobalMatch> match(const cv::Mat1b& frame,
-                                     const std::vector<Feature>& features,
-                                     const CameraModel& camera,
-                                     const EKF& ekf) const;
+    std::optional<Relocalization> match(const cv::Mat1b& frame,
+                                        const std::vector<Feature>& features,
+                                        const CameraModel& camera,
+                                        const EKF& ekf) const;
 
   private:
     struct Keyframe

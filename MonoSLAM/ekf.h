@@ -115,6 +115,16 @@ struct MotionModel
 };
 
 /*
+ * How the pixels where the features are found are trusted.
+ */
+struct MeasurementModel
+{
+    double pixelStd;           // Standard deviation of a pixel measurement, in pixels
+    double maxInlierDistance;  // Of a match from the prediction of a 1-point RANSAC hypothesis it supports, in pixels
+    double maxNIS;             // Normalized innovation squared of a match rescued after the first update
+};
+
+/*
  * The features predicted in view from a state, and what the update needs about them.
  */
 struct Observation
@@ -136,16 +146,16 @@ class EKF
 {
   public:
     /*
-     * motion      Motion model
-     * camera      Camera model
-     * pixelStd    Standard deviation of a pixel measurement
-     * x           Initial state
-     * R           Initial orientation, from camera to world
-     * P           Initial covariance
+     * motion         Motion model
+     * measurement    Measurement model
+     * camera         Camera model
+     * x              Initial state
+     * R              Initial orientation, from camera to world
+     * P              Initial covariance
      */
     EKF(const MotionModel& motion,
+        const MeasurementModel& measurement,
         const CameraModel& camera,
-        double pixelStd,
         const cv::Mat1d& x,
         const cv::Matx33d& R,
         const cv::Mat1d& P);
@@ -173,22 +183,17 @@ class EKF
     /*
      * Updates the state with the matches of the features in view, and returns the features whose
      * matches were used. Wrong matches are left out with 1-point RANSAC (Civera et al., 2010): every
-     * match proposes the state that the update with it alone would give, the matches within
-     * maxDistance pixels of their prediction from it support it, and the state is updated with the
-     * largest support. Then the matches that the updated state explains, with a normalized
-     * innovation squared below maxNIS, are rescued and used in a second update.
+     * match proposes the state that the update with it alone would give, the matches close enough
+     * to their prediction from it support it, and the state is updated with the largest support.
+     * Then the matches that the updated state explains are rescued and used in a second update.
      *
-     * o              Observation, from observe
-     * matches        Pixel of each feature of o, if it was found
-     * noises         Covariance of each match, or nothing for the pixel noise of the constructor
-     * maxDistance    Largest distance of a supporting match, in pixels
-     * maxNIS         Largest normalized innovation squared of a rescued match
+     * o          Observation, from observe
+     * matches    Pixel of each feature of o, if it was found
+     * noises     Covariance of each match
      */
     std::vector<std::size_t> update(Observation o,
                                     const std::vector<std::optional<cv::Point2d>>& matches,
-                                    const std::vector<cv::Matx22d>& noises,
-                                    double maxDistance,
-                                    double maxNIS);
+                                    const std::vector<cv::Matx22d>& noises);
 
     /*
      * Adds a feature first seen at a pixel. Its anchor and ray come from the camera pose and the
@@ -241,7 +246,7 @@ class EKF
 
     /*
      * Gives some features of an observation their own measurement noise in S, instead of the pixel
-     * noise of the constructor.
+     * noise of the constructor, which observe uses.
      *
      * o           Observation
      * features    Features
@@ -261,8 +266,8 @@ class EKF
     void correct(const Observation& o, const std::vector<std::size_t>& rows, const cv::Mat1d& z);
 
     MotionModel motion_;
+    MeasurementModel measurement_;
     CameraModel camera_;
-    double pixelStd_;
 
     cv::Mat1d x_;
     cv::Matx33d R_;

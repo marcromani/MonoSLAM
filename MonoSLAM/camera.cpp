@@ -37,13 +37,6 @@ monoslam::CameraModel::CameraModel(const cv::Matx33d& K,
 {
 }
 
-monoslam::CameraModel::CameraModel(const cv::Matx33d& K, const cv::Size& frameSize)
-  : K_(K)
-  , distCoeffs_(cv::Vec<double, 5>::all(0.0))
-  , frameSize_(frameSize)
-{
-}
-
 std::optional<cv::Point2d>
 monoslam::CameraModel::project(const CameraPose& pose, const cv::Vec3d& p) const
 {

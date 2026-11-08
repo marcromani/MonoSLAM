@@ -34,7 +34,7 @@ class FlowTracker
      * followed from frame to frame, and new ones are detected only when too many are lost. The
      * flow of the feature itself takes over only if it agrees with that motion, since the flow of
      * a single point is more precise, but it can also jump to a look-alike neighbor. Seeds more
-     * than 50 pixels out of the frame stay where they are.
+     * than 25 pixels out of the frame stay where they are.
      *
      * frame    New frame
      */

@@ -21,7 +21,7 @@ constexpr std::size_t maxNewPerFrame = 2;  // And at most this many per frame
 
 constexpr int boxDivisions = 4;  // The box where a feature is added is this many times smaller than the frame
 
-constexpr int patchSize = 11;
+constexpr int patchSize = monoslam::Feature::patchSize;
 constexpr int border = 10;              // Distance of new features to the border of the frame, in pixels
 constexpr int minFeatureDistance = 15;  // Distance of new features to those in view, in pixels
 
@@ -321,8 +321,6 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
                               std::vector<Feature>& features,
                               FlowTracker& tracker)
 {
-    const cv::Mat1d x = ekf.state().clone();
-
     const cv::Rect inside(border, border, frame.cols - 2 * border, frame.rows - 2 * border);
 
     // The features in view, where new ones must not be
@@ -407,10 +405,7 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
         const cv::Mat1d& y = ekf.state();
         const cv::Vec3d normal = -inverse_depth::direction(y(y.rows - 3), y(y.rows - 2));
 
-        Feature feature(frame, found.value(), patchSize, normal, pose);
-        feature.id = nextId_++;
-
-        features.push_back(feature);
+        features.emplace_back(frame, found.value(), normal, pose, nextId_++);
         tracker.add(found.value());
         inView.push_back(found.value());
 
