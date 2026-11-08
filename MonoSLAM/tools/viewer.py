@@ -28,6 +28,8 @@ COLORS = {0: (128, 128, 128), 1: (255, 200, 0), 2: (255, 40, 40)}  # By status
 GRID_EXTENT = 60.0  # Of the grid on the plane of the pattern, in cm
 GRID_STEP = 10.0
 
+TRAJECTORY_CHUNK = 200  # Points of the trajectory logged together: logging all of them every frame grows quadratically
+
 
 def frames(stream):
     """Yields the frames of a stream: index, camera position and orientation (a rotation vector),
@@ -65,9 +67,15 @@ def log_world():
     lines += [[(-GRID_EXTENT, t, 0.0), (GRID_EXTENT, t, 0.0)] for t in ticks]
     rr.log("world/grid", rr.LineStrips3D(lines, colors=(70, 70, 70), radii=0.05), static=True)
 
+    # The frustum of the camera, about that of the calibration
+    rr.log("world/camera", rr.Pinhole(width=320, height=240, focal_length=333.0, camera_xyz=rr.ViewCoordinates.RDF,
+                                      image_plane_distance=5.0), static=True)
+
 
 def log_frame(frame, trajectory):
-    """Logs the camera, its trajectory and the features of a frame, at its index on the timeline."""
+    """Logs the camera, its trajectory and the features of a frame, at its index on the timeline. The
+    trajectory is logged in chunks, each its own entity, and every frame only logs the last one, so
+    that the data sent per frame does not grow with the length of the run."""
     rr.set_time("frame", sequence=frame["index"])
 
     # The camera, from camera to world, with the axes of an image: x right, y down, z forward
@@ -75,11 +83,15 @@ def log_frame(frame, trajectory):
     axis = frame["o"] / angle if angle > 0.0 else np.array([0.0, 0.0, 1.0])
 
     rr.log("world/camera", rr.Transform3D(translation=frame["r"], rotation=rr.RotationAxisAngle(axis, radians=angle)))
-    rr.log("world/camera", rr.Pinhole(width=320, height=240, focal_length=275.0, camera_xyz=rr.ViewCoordinates.RDF,
-                                      image_plane_distance=5.0))
 
-    trajectory.append(frame["r"])
-    rr.log("world/trajectory", rr.LineStrips3D([trajectory], colors=(0, 200, 255), radii=0.15))
+    # A new chunk starts where the last one ends, so that the trajectory has no gaps
+    if len(trajectory["points"]) == TRAJECTORY_CHUNK:
+        trajectory["points"] = trajectory["points"][-1:]
+        trajectory["chunk"] += 1
+
+    trajectory["points"].append(frame["r"])
+    rr.log(f"world/trajectory/{trajectory['chunk']}",
+           rr.LineStrips3D([trajectory["points"]], colors=(0, 200, 255), radii=0.15))
 
     if frame["features"]:
         status, points, near, far = zip(*frame["features"])
@@ -120,7 +132,7 @@ def main():
     log_world()
 
     stream = open(arguments[0]) if arguments else sys.stdin
-    trajectory = []
+    trajectory = dict(points=[], chunk=0)
 
     for frame in frames(stream):
         log_frame(frame, trajectory)
