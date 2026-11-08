@@ -1,62 +1,67 @@
 # MonoSLAM
 
-A concise and thoroughly documented C++ implementation of monocular EKF SLAM, after the seminal
-work of [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
-The project is mostly compliant with ISO C++17, and it compiles against OpenCV 5.
+A small, well documented C++ implementation of monocular EKF SLAM, based on the work of
+[Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
+The code is mostly ISO C++17 and builds against OpenCV 5.
 
-It runs at 100 Hz on commodity hardware.
+It runs at 100 Hz on an ordinary laptop.
 
 ## The code
 
-A small monocular EKF SLAM: one camera, no IMU, initialized from a chessboard and then tracking
-the natural features of the scene. The whole system is in `MonoSLAM/`:
+We use a single camera and no IMU. The system starts from a chessboard and then tracks the natural
+features of the scene. Everything lives in `MonoSLAM/`:
 
 | File | What it does |
 |---|---|
-| `main.cpp` | The loop of every frame, step by step, and the command line |
-| `ekf.h/.cpp` | The state layout, the motion model, and the EKF: prediction, observation, the update with 1-point RANSAC, adding and removing features |
-| `inverse_depth.h/.cpp` | The inverse depth parametrization of the features and its Jacobians |
-| `camera.h/.cpp` | The camera pose and model with lens distortion, its Jacobians, and the rotation helpers |
-| `tracking.h/.cpp` | The seeds that follow the image motion of the features, and the search of their warped patches |
-| `relocalization.h/.cpp` | Finding the map anywhere in a frame by ORB descriptors, P3P and RANSAC |
-| `mapper.h/.cpp` | Adding features where the frame has none, and removing those rarely matched |
+| `main.cpp` | The per-frame loop, step by step, and the command line |
+| `ekf.h/.cpp` | State layout, motion model and the EKF itself: prediction, observation, the update with 1-point RANSAC, adding and removing features |
+| `inverse_depth.h/.cpp` | Inverse depth parametrization of the features and its Jacobians |
+| `camera.h/.cpp` | Camera pose, camera model with lens distortion, their Jacobians and some rotation helpers |
+| `tracking.h/.cpp` | Seeds that follow the image motion of the features, and the patch search |
+| `relocalization.h/.cpp` | Finding the map anywhere in a frame with ORB descriptors, P3P and RANSAC |
+| `mapper.h/.cpp` | Adding features where the frame has none, and removing the ones that are rarely matched |
 | `initialization.h/.cpp` | The first state, from the chessboard |
 | `feature.h/.cpp` | The patch of a feature |
-| `frame_source.h/.cpp`, `state_stream.h/.cpp` | Input from a camera or a directory, and output of the state |
+| `frame_source.h/.cpp`, `state_stream.h/.cpp` | Reading from a camera or a directory, and writing the state out |
 
 The EKF state is `[r, e, v, w, y_1, ..., y_N]`: camera position, orientation error, linear and
-angular velocity, and stationary features in inverse depth
+angular velocity, and the features. Features are static points in inverse depth
 ([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)),
-`y = (anchor, azimuth, elevation, inverse depth)`, which every feature keeps for its whole
-life. The orientation is a rotation matrix kept next to the state, which only holds a small
-rotation `e` on top of it, absorbed after every update (an error-state EKF): no quaternion to
-normalize. The motion model is a constant velocity model whose velocities decay towards zero, which
-fits a hand-held camera better than velocities that persist. The wrong matches are found with
-1-point RANSAC
-([Civera et al., 2010](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf)), using
-only the filter's own models and covariances, and a match is not even proposed if another place in
-its search region looks almost as alike. Every match is aligned with the frame to subpixel
-precision by Lucas-Kanade
-([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)), and a match
-aligned worse than usual, as along an edge, gets a larger noise in the directions where it is
-worse.
+`y = (anchor, azimuth, elevation, inverse depth)`, and they keep this parametrization for their
+whole life. We keep the orientation as a rotation matrix outside the state, and the state only
+holds a small rotation `e` on top of it that we fold back into the matrix after every update (an
+error-state EKF). This way there is no quaternion to normalize. The motion model is constant
+velocity, but the velocities decay towards zero, which suits a hand-held camera better.
 
-Every feature is searched in a small region around its seed, which follows the image motion of the
-corners around it: the motion model cannot predict a jerk of the hand, but the images can. A
-feature that comes back into view after a while is searched around its prediction instead, within
-three standard deviations of its innovation, since its seed has drifted in the meantime. New
-features are added, as in
-[Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf), where
-the frame has none, if they are textured enough to be located and do not look like anything around
-them, and removed when they stop being matched, unless they have been used long enough to be part
-of the map the camera comes back to. After a weak frame the map is looked for where the keyframes
-that look most like the frame saw it, small blurred images of frames where tracking was good
-([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)), and if that fails,
-anywhere in the frame by the ORB descriptors every feature keeps of how it has looked
+Wrong matches are rejected with 1-point RANSAC
+([Civera et al., 2010](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf)),
+using nothing but the filter's own models and covariances. We also drop a match before that if
+something else in its search region looks almost the same. Each match is then refined to subpixel
+precision with Lucas-Kanade
+([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)). When the
+alignment is poor in some direction, e.g. along an edge, the match gets a larger noise in that
+direction.
+
+Each feature is searched in a small region around its seed. The seed follows the image motion of
+the corners around it, because the motion model can't predict a sudden jerk of the hand but the
+images can. When a feature comes back into view after a while, its seed has drifted, so we search
+it around its prediction instead, within three standard deviations of its innovation.
+
+New features are added where the frame has none, as in
+[Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
+They have to be textured enough to be located and must not look like anything around them. We
+remove features that stop being matched, unless they have been used long enough to be part of the
+map the camera comes back to.
+
+After a weak frame we look for the map using keyframes, i.e. small blurred copies of frames where
+tracking went well
+([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)): the features are searched
+where the most similar keyframes saw them. If that fails, we search the whole frame with the ORB
+descriptors that every feature collects as its appearance changes
 ([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
-`docs/monoslam.tex` describes the system in detail: the frame loop, the derivation of the
-models, every step with its parameters and the evidence behind them, and the current results.
+`docs/monoslam.tex` has all the details: the frame loop, the derivation of the models, every step
+with its parameters and why we chose them, and the current results.
 
 ## How to build
 
@@ -66,7 +71,7 @@ Configure the project with:
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 ```
 
-To enable debug symbols, and AddressSanitizer and UndefinedBehaviorSanitizer for MonoSLAM, use:
+For debug symbols, plus AddressSanitizer and UndefinedBehaviorSanitizer on MonoSLAM, use:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -84,8 +89,8 @@ Run the Jacobian and filter tests with:
 ctest --test-dir build --output-on-failure
 ```
 
-To build only one target, the calibration, MonoSLAM, the sequence recorder or the ground truth from
-the chessboard, use one of:
+You can also build a single target: the calibration, MonoSLAM, the sequence recorder or the
+chessboard ground truth:
 
 ```bash
 cmake --build build --target calibration --parallel
@@ -94,23 +99,23 @@ cmake --build build --target record_sequence --parallel
 cmake --build build --target analyze_pattern --parallel
 ```
 
-Calibrate the camera with a chessboard of 7 x 10 squares of 2.5 cm, then run MonoSLAM with it:
+Calibrate the camera with a chessboard of 7 x 10 squares of 2.5 cm, then run MonoSLAM:
 
 ```bash
 ./build/Calibration/calibration 7 10 2.5 camera --device /dev/video4
 ./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4
 ```
 
-All three programs take the camera with `--device`, and need it: `v4l2-ctl --list-devices` lists
-the cameras, and the first device of each is the one that gives frames.
+All three programs need the camera device, given with `--device`. `v4l2-ctl --list-devices` lists
+the cameras; for each camera, the first device is the one that gives frames.
 
-The calibration captures a view of the chessboard every two seconds until Escape is pressed, fits
-the camera model on the largest frames the camera gives of the same view, 640 x 480, and saves it
-scaled to the 320 x 240 frames that MonoSLAM works on. A larger mode of the same shape is not
-necessarily the same view: the 1024 x 768 of this camera sees a view 12% wider and taller.
-MonoSLAM refuses a calibration for another size: the lengths in pixels of its code are chosen for
-320 x 240. The calibration accepts these
-options after the camera file:
+The calibration grabs a view of the chessboard every two seconds until you press Escape. It fits
+the camera model at 640 x 480, the largest frames the camera gives with the same field of view, and
+saves it scaled down to the 320 x 240 that MonoSLAM uses. Note that a larger mode with the same
+aspect ratio doesn't necessarily have the same field of view: at 1024 x 768 this camera sees 12%
+more in each direction. MonoSLAM refuses a calibration made for any other size, since the pixel
+lengths in the code are tuned for 320 x 240. The calibration takes these options after the camera
+file:
 
 ```text
 --device D     Camera device, such as /dev/video4 (required)
@@ -118,7 +123,7 @@ options after the camera file:
                pixels of the camera frames (default 1.5)
 ```
 
-MonoSLAM accepts these options after the camera file:
+MonoSLAM takes these options after the camera file:
 
 ```text
 --device D    Camera device, such as /dev/video4 (required, unless --images)
@@ -136,29 +141,31 @@ MonoSLAM accepts these options after the camera file:
               processing times, the frames dropped and those shown
 ```
 
-MonoSLAM asks the camera for 320 x 240 frames, which it gives at about 100 Hz, with a fixed
-exposure: with automatic exposure the camera lengthens it in dim light, and lowers the frame rate to
-make room for it. Raise `--exposure` if the frames are too dark, up to 7 ms, beyond which the frame
-rate falls. The camera keeps the setting after MonoSLAM ends; the calibration turns automatic
-exposure back on.
+MonoSLAM asks the camera for 320 x 240 frames, which it delivers at about 100 Hz, with a fixed
+exposure. With automatic exposure the camera lengthens the exposure in dim light and drops the
+frame rate to fit it. If the frames are too dark, raise `--exposure`, up to 7 ms; beyond that the
+frame rate falls. The camera remembers the setting after MonoSLAM exits, and the calibration turns
+automatic exposure back on.
 
-The window shows the frames enlarged to 640 x 480, with the matches drawn on them. It is drawn and
-shown by the main thread, and tracking runs in another, which hands it only its last frame: a frame
-the window has no time for is skipped, so the window never slows tracking down, whatever its size.
-The frames are never copied: each one read is a new image that nothing writes to, which tracking,
-the features and the window share. `--annotate` draws every frame in the tracking thread instead.
+The window shows the frames enlarged to 640 x 480, with the matches drawn on top. The main thread
+draws the window and tracking runs in a separate thread, which only hands over its latest frame.
+If the window can't keep up, it skips frames, so it never slows tracking down, whatever its size.
+Frames are never copied either: every frame read is a fresh image that nobody writes to, shared by
+tracking, the features and the window. With `--annotate`, the tracking thread draws every frame
+itself.
 
 ## Seeing the scene in 3D
 
-`MonoSLAM/tools/viewer.py` shows the scene as the filter sees it in [Rerun](https://rerun.io): the
-plane of the pattern, the camera and its trajectory, and the features, red if the last update used
-them, yellow if they were in view but not used, gray otherwise, each with the segment of its ray
-within two standard deviations of its inverse depth. Every frame stays on the timeline, so any of
-them can be looked at again, next to plots of the features used and the position uncertainty.
+`MonoSLAM/tools/viewer.py` shows the scene as the filter sees it, in [Rerun](https://rerun.io).
+You get the chessboard plane, the camera and its trajectory, and the features: red if the last
+update used them, yellow if they were in view but not used, and gray otherwise. Each feature is
+drawn as the segment of its ray within two standard deviations of its inverse depth. All the frames
+stay on the timeline, so you can go back to any of them, and there are plots of the number of
+features used and of the position uncertainty.
 
-The viewer needs Rerun and NumPy. Recent Ubuntu releases do not let `pip` install into the system
-Python, so install them in a virtual environment, anywhere, and activate it before using the
-viewer:
+The viewer needs Rerun and NumPy. Recent Ubuntu releases don't let `pip` install into the system
+Python, so install them in a virtual environment, anywhere you like, and activate it before using
+the viewer:
 
 ```bash
 python3 -m venv ~/rerun-env
@@ -166,8 +173,8 @@ source ~/rerun-env/bin/activate
 pip install rerun-sdk numpy
 ```
 
-Feed the viewer while MonoSLAM runs, through a process substitution of bash, or give it a stream
-saved to a file. With `--save` it writes a recording instead, to open later with `rerun`:
+You can feed the viewer live, through bash process substitution, or give it a saved stream. With
+`--save` it writes a recording instead, which you can open later with `rerun`:
 
 ```bash
 ./build/MonoSLAM/monoslam 7 10 2.5 camera --device /dev/video4 \
@@ -176,9 +183,9 @@ python3 MonoSLAM/tools/viewer.py state.txt
 python3 MonoSLAM/tools/viewer.py state.txt --save scene.rrd
 ```
 
-## Recording a replay sequence
+## Recording a sequence
 
-Use the standalone recorder to capture timestamped grayscale frames:
+Use the recorder to capture timestamped grayscale frames:
 
 ```bash
 ./build/MonoSLAM/record_sequence camera /path/to/sequence \
@@ -186,9 +193,9 @@ Use the standalone recorder to capture timestamped grayscale frames:
   --frames 300
 ```
 
-This writes `frame_*.png`, at the 320 x 240 of the calibration, `timestamps.csv` with the capture
-time of every frame, and a copy of `camera.json` into the output directory, which must be empty or
-not exist yet. The recorder accepts these options after the directory:
+It writes the frames (`frame_*.png`, at 320 x 240), `timestamps.csv` with the capture time of each
+frame, and a copy of `camera.json`. The output directory must be empty or not exist yet. The
+recorder takes these options after the directory:
 
 ```text
 --device D    Camera device, such as /dev/video4 (required)
@@ -198,10 +205,10 @@ not exist yet. The recorder accepts these options after the directory:
 --headless    Do not open any window, only with --frames or --seconds
 ```
 
-Without `--frames` or `--seconds`, recording starts when you press Space in the preview window.
-Escape stops it.
+Without `--frames` or `--seconds`, recording starts when you press Space in the preview window,
+and Escape stops it.
 
-Replay the sequence through the EKF:
+To replay the sequence through the EKF:
 
 ```bash
 ./build/MonoSLAM/monoslam 7 10 2.5 /path/to/sequence/camera \
@@ -212,9 +219,9 @@ Replay the sequence through the EKF:
 
 ## Evaluating a sequence
 
-`analyze_pattern` detects the whole chessboard in every frame where it can and fits the camera
-pose to it, and `MonoSLAM/tools/evaluate_tracking.py` scores a state stream against that, in
-pixels first. It needs NumPy, which the environment of the viewer already has:
+`analyze_pattern` finds the whole chessboard in every frame where it can and computes the camera
+pose from it. `MonoSLAM/tools/evaluate_tracking.py` then scores a state stream against those poses,
+mainly in pixels. It needs NumPy, which the viewer environment already has:
 
 ```bash
 ./build/MonoSLAM/analyze_pattern /path/to/sequence > ground_truth.txt
@@ -223,9 +230,9 @@ python3 MonoSLAM/tools/evaluate_tracking.py /path/to/state.txt \
   /path/to/sequence/camera.json
 ```
 
-The detector misses the blurriest frames, so always check those with `--annotate`. A single run is
-not enough to compare two versions: a negligible difference can flip a borderline decision and send
-the run elsewhere, so compare several runs, with different initial corners.
+The detector misses the blurriest frames, so check those with `--annotate`. Also, don't compare two
+versions on a single run. A tiny difference can flip a borderline decision and send the whole run
+somewhere else, so compare several runs, each starting from different chessboard corners.
 
 ## Developer dependencies
 
@@ -248,7 +255,7 @@ cmakefmt -i .
 
 ## References
 
-Titles link to a free copy of the paper where there is one, and the DOI to the publisher's version.
+Titles link to a free copy of the paper when there is one, and the DOI to the publisher's version.
 
 1. S. Baker and I. Matthews.
    [Lucas-Kanade 20 years on: a unifying framework](https://doi.org/10.1023/B:VISI.0000011205.11775.fd).
