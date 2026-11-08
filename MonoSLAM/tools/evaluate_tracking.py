@@ -8,7 +8,11 @@ the frames as well, a low number is not a proof of good tracking.
 The features scored are those MonoSLAM initializes from the pattern, the identifiers 0 to 4, which
 are projected with the camera pose and the camera model.
 
-Usage: evaluate_tracking.py stream.txt ground_truth.txt camera.json
+Near the border of the frame the pattern can be fitted with a reprojection error of several pixels,
+and its pose is then less reliable than the tracking it is meant to score. With --max-rms, the
+frames fitted worse than that, in pixels, are not scored.
+
+Usage: evaluate_tracking.py stream.txt ground_truth.txt camera.json [--max-rms PX]
 """
 
 import json
@@ -18,17 +22,21 @@ import sys
 import numpy as np
 
 
-def load_ground_truth(path):
+def load_ground_truth(path, max_rms):
+    """Returns the camera position and the pixels of the five corners in every frame where the
+    pattern was found, and fitted within max_rms pixels."""
     positions, pixels = {}, {}
     frame = None
 
     with open(path) as file:
         for line in file:
-            match = re.match(r"frame_(\d+)\.png OK.*?pos=\[(.*?)\]", line)
+            match = re.match(r"frame_(\d+)\.png OK rms=(\S+) pos=\[(.*?)\]", line)
 
             if match:
-                frame = int(match[1])
-                positions[frame] = np.fromstring(match[2], sep=",")
+                frame = int(match[1]) if float(match[2]) <= max_rms else None
+
+                if frame is not None:
+                    positions[frame] = np.fromstring(match[3], sep=",")
 
             elif "sel=" in line and frame is not None:
                 values = re.search(r"\[(.*)\]", line)[1]
@@ -98,13 +106,20 @@ def project(camera, r, o, point):
 
 
 def main():
-    if len(sys.argv) != 4:
+    arguments = sys.argv[1:]
+    max_rms = np.inf
+
+    if len(arguments) == 5 and arguments[3] == "--max-rms":
+        max_rms = float(arguments[4])
+        del arguments[3:]
+
+    if len(arguments) != 3:
         sys.exit(__doc__)
 
-    positions, pixels = load_ground_truth(sys.argv[2])
-    frames = load_stream(sys.argv[1])
+    positions, pixels = load_ground_truth(arguments[1], max_rms)
+    frames = load_stream(arguments[0])
 
-    with open(sys.argv[3]) as file:
+    with open(arguments[2]) as file:
         camera = json.load(file)
 
     pixel_errors, pose_errors, losses = [], [], []
@@ -148,7 +163,7 @@ def main():
         "Position (cm): "
         f"mean {pose_errors.mean():.2f}, p95 {np.percentile(pose_errors, 95):.2f}, max {pose_errors.max():.2f}"
     )
-    print(f"Measured features per frame: {np.mean([f['used'] for f in frames]):.2f}")
+    print(f"Used features per frame: {np.mean([f['used'] for f in frames]):.2f}")
     print(f"Frames over 5 px: {len(losses)} {losses[:40]}")
 
 

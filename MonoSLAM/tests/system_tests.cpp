@@ -16,13 +16,25 @@
 
 namespace {
 
+constexpr double infinity = std::numeric_limits<double>::infinity();
+
+// A camera with a strong lens distortion, as the real one, and a pinhole one
+const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
+const monoslam::CameraModel camera(K, cv::Vec<double, 5>(-0.4, 0.3, 0.001, 0.001, -0.1), cv::Size(640, 480));
+const monoslam::CameraModel pinhole(K, cv::Vec<double, 5>::all(0.0), cv::Size(640, 480));
+
+const monoslam::MotionModel motion{ 100.0, 1.57, 0.5, 0.3 };
+
+// Pixels with a standard deviation of 1, and every match accepted
+const monoslam::MeasurementModel measurement{ 1.0, infinity, infinity };
+
 const cv::Matx33d orientation = monoslam::rotation(cv::Vec3d(3.0, 0.1, -0.2));
 
 cv::Mat1d
 makeState()
 {
     // Camera position, orientation error, linear and angular velocity
-    const double camera[] = { 1.0, 2.0, 30.0, 0.0, 0.0, 0.0, 20.0, -10.0, 5.0, 0.8, -0.3, 1.2 };
+    const double cameraState[] = { 1.0, 2.0, 30.0, 0.0, 0.0, 0.0, 20.0, -10.0, 5.0, 0.8, -0.3, 1.2 };
 
     // Two features, seen first from other places
     const monoslam::inverse_depth::Parameters y1 =
@@ -33,7 +45,7 @@ makeState()
     cv::Mat1d x(monoslam::cameraStateSize + 2 * monoslam::featureSize, 1);
 
     for (int i = 0; i < monoslam::cameraStateSize; ++i) {
-        x(i) = camera[i];
+        x(i) = cameraState[i];
     }
 
     for (int k = 0; k < monoslam::featureSize; ++k) {
@@ -80,8 +92,6 @@ toMat(const monoslam::inverse_depth::Parameters& y)
     return cv::Mat1d(y, true);
 }
 
-const monoslam::MotionModel motion{ 100.0, 1.57, 0.5, 0.3 };
-
 /*
  * Returns the camera state predicted from one with an orientation error e, the orientation being
  * orientation exp(e), with its new error measured from a nominal predicted orientation. This is
@@ -105,51 +115,25 @@ predictWithError(const cv::Mat1d& v, const cv::Matx33d& nominal, double dt)
 }
 
 // H must match the numerical derivative everywhere, including the columns of other features
-
 bool
 testObservationJacobian()
 {
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
-    const cv::Vec<double, 5> distCoeffs(-0.4, 0.3, 0.001, 0.001, -0.1);
-
-    const monoslam::CameraModel camera(K, distCoeffs, cv::Size(640, 480));
-
     // The predicted measurements of a filter at a state
     const auto observeAt = [&](const cv::Mat1d& at) {
         const cv::Mat1d P(cv::Mat1d::eye(at.rows, at.rows));
-        const monoslam::EKF ekf(motion, camera, 1.0, at, orientation, P);
+        const monoslam::EKF ekf(motion, measurement, camera, at, orientation, P);
         return ekf.observe();
     };
 
     const cv::Mat1d x = makeState();
-    const monoslam::Observation p = observeAt(x);
+    const monoslam::Observation o = observeAt(x);
 
-    if (p.h.rows != 4) {
+    if (o.h.rows != 4) {
         std::cerr << "The features should be visible\n";
         return false;
     }
 
-    constexpr double step = 1e-6;
-
-    for (int col = 0; col < x.rows; ++col) {
-        cv::Mat1d xPlus = x.clone();
-        cv::Mat1d xMinus = x.clone();
-
-        xPlus(col) += step;
-        xMinus(col) -= step;
-
-        const cv::Mat1d numerical((observeAt(xPlus).h - observeAt(xMinus).h) / (2.0 * step));
-
-        for (int row = 0; row < p.h.rows; ++row) {
-            if (std::fabs(numerical(row) - p.H(row, col)) > 1e-4) {
-                std::cerr << "H(" << row << ", " << col << ") = " << p.H(row, col) << ", expected " << numerical(row)
-                          << '\n';
-                return false;
-            }
-        }
-    }
-
-    return true;
+    return matchesNumerical(o.H, x, [&](const cv::Mat1d& v) { return observeAt(v).h; }, 1e-4, "H");
 }
 
 // F must match the numerical derivative of the prediction with respect to the camera state
@@ -196,14 +180,10 @@ testProcessNoiseJacobian()
 bool
 testPredictionKeepsFeatures()
 {
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
-
-    const monoslam::CameraModel camera(K, cv::Size(640, 480));
-
     const cv::Mat1d x = makeState();
     const cv::Mat1d P(0.01 * cv::Mat1d::eye(x.rows, x.rows));
 
-    monoslam::EKF ekf(motion, camera, 1.0, x, orientation, P);
+    monoslam::EKF ekf(motion, measurement, pinhole, x, orientation, P);
     ekf.predict(1.0 / 30.0);
 
     const int first = monoslam::cameraStateSize;
@@ -220,11 +200,6 @@ testPredictionKeepsFeatures()
 bool
 testUnproject()
 {
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
-    const cv::Vec<double, 5> distCoeffs(-0.4, 0.3, 0.001, 0.001, -0.1);
-
-    const monoslam::CameraModel camera(K, distCoeffs, cv::Size(640, 480));
-
     const cv::Vec3d ray = camera.unproject(camera.distort(0.3, -0.2));
 
     return cv::norm(ray - cv::Vec3d(0.3, -0.2, 1.0)) < 1e-4;
@@ -259,18 +234,17 @@ testFlowFollowsDepthLayers()
 bool
 testDistortionJacobian()
 {
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 610.0, 240.0, 0.0, 0.0, 1.0);
-    const cv::Vec<double, 5> distCoeffs(-0.4, 0.3, 0.002, -0.001, -0.1);
-
-    const monoslam::CameraModel camera(K, distCoeffs, cv::Size(640, 480));
+    // Unequal focal lengths and tangential coefficients, so that a swap of x and y shows
+    const cv::Matx33d Kxy(600.0, 0.0, 320.0, 0.0, 610.0, 240.0, 0.0, 0.0, 1.0);
+    const monoslam::CameraModel asymmetric(Kxy, cv::Vec<double, 5>(-0.4, 0.3, 0.002, -0.001, -0.1), cv::Size(640, 480));
 
     const cv::Mat1d at(cv::Vec2d(0.3, -0.2));
 
     return matchesNumerical(
-      cv::Mat1d(camera.distortionJacobian(at(0), at(1))),
+      cv::Mat1d(asymmetric.distortionJacobian(at(0), at(1))),
       at,
       [&](const cv::Mat1d& v) {
-          const cv::Point2d pixel = camera.distort(v(0), v(1));
+          const cv::Point2d pixel = asymmetric.distort(v(0), v(1));
           return cv::Mat1d(cv::Vec2d(pixel.x, pixel.y));
       },
       1e-4,
@@ -311,11 +285,6 @@ testInitializationJacobian()
 {
     namespace id = monoslam::inverse_depth;
 
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
-    const cv::Vec<double, 5> distCoeffs(-0.4, 0.3, 0.001, 0.001, -0.1);
-
-    const monoslam::CameraModel camera(K, distCoeffs, cv::Size(640, 480));
-
     const cv::Matx33d R = monoslam::rotation(cv::Vec3d(0.3, -0.2, 0.1));
 
     // Camera position, orientation error, pixel and inverse depth
@@ -351,9 +320,6 @@ testInitializationJacobian()
 void
 runSyntheticSequence(const cv::Vec3d& point, double inverseDepth, cv::Mat1d& x, cv::Mat1d& P)
 {
-    const cv::Matx33d K(600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0);
-    const monoslam::CameraModel camera(K, cv::Size(640, 480));
-
     constexpr double dt = 1.0 / 30.0;
     const cv::Vec3d velocity(30.0, 0.0, 0.0);  // cm/s
 
@@ -365,19 +331,18 @@ runSyntheticSequence(const cv::Vec3d& point, double inverseDepth, cv::Mat1d& x, 
 
     const auto project = [&](const cv::Vec3d& position) {
         const monoslam::CameraPose pose(position, cv::Matx33d::eye());
-        return camera.project(pose, point).value();
+        return pinhole.project(pose, point).value();
     };
 
     // A motion model that knows the velocity, so that only the depth is to be found
     const monoslam::MotionModel knownMotion{ 1e-3, 1e-3, 1e6, 1e6 };
 
-    monoslam::EKF ekf(knownMotion, camera, 1.0, x, cv::Matx33d::eye(), P);
+    monoslam::EKF ekf(knownMotion, measurement, pinhole, x, cv::Matx33d::eye(), P);
     ekf.addFeature(project(cv::Vec3d::all(0.0)), inverseDepth, 0.02);
 
     for (int k = 1; k <= 60; ++k) {
         ekf.predict(dt);
-        constexpr double infinity = std::numeric_limits<double>::infinity();
-        ekf.update(ekf.observe(), { project(velocity * dt * k) }, {}, infinity, infinity);
+        ekf.update(ekf.observe(), { project(velocity * dt * k) }, { cv::Matx22d::eye() });
     }
 
     x = ekf.state().clone();
@@ -426,8 +391,6 @@ testPointAtInfinity()
     return true;
 }
 
-}
-
 // The descriptor of a point must survive a rotation of the image, and differ from that of another point
 bool
 testDescriptorRotation()
@@ -461,6 +424,8 @@ testDescriptorRotation()
     }
 
     return true;
+}
+
 }
 
 int

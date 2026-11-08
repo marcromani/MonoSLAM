@@ -3,9 +3,11 @@
  * evaluation of monoslam only. It finds the whole pattern, 9 x 6 inner corners, in every frame,
  * fits the camera pose to its 54 corners, and prints for every frame:
  *
+ *   - rms=, the RMS reprojection error of the corners, in pixels: near the border of the frame,
+ *     where the lens model is least accurate, it can reach several pixels, and the pose is then
+ *     less reliable
  *   - pos=, the camera position, in world coordinates
  *   - rot=, the camera orientation, as the rotation vector from camera to world
- *   - dt=, the motion of the camera since the previous frame, in its current coordinates
  *   - sel=, the pixels of the five corners that monoslam initializes as features
  *
  * Usage: analyze_pattern sequence > ground_truth.txt
@@ -77,7 +79,6 @@ main(int argc, char* argv[])
     }
 
     std::size_t numFound = 0;
-    std::optional<cv::Vec3d> previousPosition;
 
     for (const std::string& file : files) {
         const std::string name = fs::path(file).filename().string();
@@ -136,14 +137,7 @@ main(int argc, char* argv[])
         cv::Rodrigues(R, orientation);
 
         std::cout << name << " OK rms=" << rms << " pos=[" << r[0] << "," << r[1] << "," << r[2] << "]";
-        std::cout << " rot=[" << orientation[0] << "," << orientation[1] << "," << orientation[2] << "]";
-
-        if (previousPosition.has_value()) {
-            const cv::Vec3d motion = R.t() * (previousPosition.value() - r);
-            std::cout << " dt=[" << motion[0] << "," << motion[1] << "," << motion[2] << "]";
-        }
-
-        std::cout << " corners=" << corners.size() << "\n  sel=[";
+        std::cout << " rot=[" << orientation[0] << "," << orientation[1] << "," << orientation[2] << "]\n  sel=[";
 
         for (std::size_t k = 0; k < selected.size(); ++k) {
             std::cout << (k == 0 ? "" : ",") << corners[selected[k]].x << "," << corners[selected[k]].y;
@@ -151,7 +145,6 @@ main(int argc, char* argv[])
 
         std::cout << "]\n";
 
-        previousPosition = r;
         ++numFound;
     }
 
