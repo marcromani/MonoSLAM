@@ -8,60 +8,84 @@ It runs at 100 Hz on an ordinary laptop.
 
 ## The code
 
-We use a single camera and no IMU. The system starts from a chessboard and then tracks the natural
-features of the scene. Everything lives in `MonoSLAM/`:
+One camera, no IMU. The system starts from a chessboard and then tracks the natural features of
+the scene. Everything lives in `MonoSLAM/`:
 
 | File | What it does |
 |---|---|
 | `main.cpp` | The per-frame loop, step by step, and the command line |
-| `ekf.h/.cpp` | State layout, motion model and the EKF itself: prediction, observation, the update with 1-point RANSAC, adding and removing features |
+| `ekf.h/.cpp` | State layout, motion and measurement models, and the EKF itself: prediction, observation, the update with 1-point RANSAC, adding and removing features |
 | `inverse_depth.h/.cpp` | Inverse depth parametrization of the features and its Jacobians |
 | `camera.h/.cpp` | Camera pose, camera model with lens distortion, their Jacobians and some rotation helpers |
 | `tracking.h/.cpp` | Seeds that follow the image motion of the features, and the patch search |
-| `relocalization.h/.cpp` | Finding the map anywhere in a frame with ORB descriptors, P3P and RANSAC |
+| `relocalization.h/.cpp` | Finding the map again after tracking fails, from keyframes or ORB descriptors |
 | `mapper.h/.cpp` | Adding features where the frame has none, and removing the ones that are rarely matched |
 | `initialization.h/.cpp` | The first state, from the chessboard |
-| `feature.h/.cpp` | The patch of a feature |
+| `feature.h/.cpp` | A feature's patch, descriptors and record of matches |
 | `frame_source.h/.cpp`, `state_stream.h/.cpp` | Reading from a camera or a directory, and writing the state out |
 
-The EKF state is `[r, e, v, w, y_1, ..., y_N]`: camera position, orientation error, linear and
-angular velocity, and the features. Features are static points in inverse depth
+The EKF state is
+
+$$
+x = (r, e, v, \omega, y_1, \dots, y_N),
+$$
+
+the camera position $r$, its orientation error $e$, its linear and angular velocities $v$ and
+$\omega$, and the features. Features are static points in inverse depth
 ([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)),
-`y = (anchor, azimuth, elevation, inverse depth)`, and they keep this parametrization for their
-whole life. We keep the orientation as a rotation matrix outside the state, and the state only
-holds a small rotation `e` on top of it that we fold back into the matrix after every update (an
-error-state EKF). This way there is no quaternion to normalize. The motion model is constant
-velocity, but the velocities decay towards zero, which suits a hand-held camera better.
+$y = (a, \theta, \phi, \rho)$: the anchor $a$, where the camera was when it first saw the point, the
+azimuth $\theta$ and elevation $\phi$ of the ray from there, and the inverse depth $\rho$ along it.
+They keep this parametrization for their whole life. The orientation is a rotation matrix $R$
+kept outside the state, and the state only holds a small rotation $e$ on top of it, so the
+orientation is $R \exp([e]_\times)$. After every update $R$ absorbs $e$ (an error-state EKF), and
+there is no quaternion to normalize. The motion model is constant velocity, but the velocities
+decay towards zero, which suits a hand-held camera better.
 
 Wrong matches are rejected with 1-point RANSAC
 ([Civera et al., 2010](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_jfr2010.pdf)),
-using nothing but the filter's own models and covariances. We also drop a match before that if
-something else in its search region looks almost the same. Each match is then refined to subpixel
+using nothing but the filter's own models and covariances. Before that, a match is dropped if
+something else in its search region looks almost the same. Each match is refined to subpixel
 precision with Lucas-Kanade
-([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)). When the
-alignment is poor in some direction, e.g. along an edge, the match gets a larger noise in that
-direction.
+([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)), and when the
+alignment is poor in some direction, along an edge for example, the match gets a larger noise in
+that direction.
 
 Each feature is searched in a small region around its seed. The seed follows the image motion of
-the corners around it, because the motion model can't predict a sudden jerk of the hand but the
-images can. When a feature comes back into view after a while, its seed has drifted, so we search
-it around its prediction instead, within three standard deviations of its innovation.
+the corners around it: the motion model can't predict a sudden jerk of the hand, but the images
+can. A feature that comes back into view after a while has a stale seed, so it is searched around
+its prediction instead, within three standard deviations of its innovation.
 
 New features are added where the frame has none, as in
 [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
-They have to be textured enough to be located and must not look like anything around them. We
-remove features that stop being matched, unless they have been used long enough to be part of the
-map the camera comes back to.
+They have to be textured enough to be located, and must not look like anything around them.
+Features that stop being matched are removed, unless they have been used long enough to be part of
+the map the camera comes back to.
 
-After a weak frame we look for the map using keyframes, i.e. small blurred copies of frames where
+After a weak frame, the map is looked for with keyframes, small blurred copies of frames where
 tracking went well
 ([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)): the features are searched
-where the most similar keyframes saw them. If that fails, we search the whole frame with the ORB
+where the most similar keyframes saw them. If that fails, the whole frame is searched with the ORB
 descriptors that every feature collects as its appearance changes
 ([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
 `docs/monoslam.tex` has all the details: the frame loop, the derivation of the models, every step
-with its parameters and why we chose them, and the current results.
+with its parameters and the evidence behind them, and the current results.
+
+## How far a filter goes
+
+This is about as far as monocular EKF SLAM goes. When the camera turns away from the mapped part
+of the scene, every feature in view is new, with a very uncertain depth, and the filter linearizes
+its updates at depths that later turn out wrong. It can't go back on those updates, so it becomes
+confident about a pose that is off. In a simulation where all the models are exact, the pose error
+ends up over a hundred times larger than the filter thinks, while features that enter at their
+true depth keep it consistent. None of the classic remedies helps: second-order terms, Schmidt
+updates, first-estimate Jacobians, an iterated EKF, delayed initialization. A bundle adjustment
+over the same matches does recover the motion, so the information is in the images.
+
+That is what [Strasdat, Montiel and Davison, 2012](https://doi.org/10.1016/j.imavis.2012.02.009)
+found, and what ended the filtering era of visual SLAM. The next step would be tracking against a
+map kept by bundle adjustment, as PTAM and its successors do, not a better filter. The last section
+of `docs/monoslam.tex` has the evidence.
 
 ## How to build
 
@@ -230,9 +254,14 @@ python3 MonoSLAM/tools/evaluate_tracking.py /path/to/state.txt \
   /path/to/sequence/camera.json
 ```
 
-The detector misses the blurriest frames, so check those with `--annotate`. Also, don't compare two
-versions on a single run. A tiny difference can flip a borderline decision and send the whole run
-somewhere else, so compare several runs, each starting from different chessboard corners.
+Near the border of the frame the chessboard can be fitted with a reprojection error of several
+pixels, and its pose is then worse than the tracking it scores. `--max-rms 1.5` after the camera
+file leaves those frames out. The detector also misses the blurriest frames, so check those with
+`--annotate`.
+
+Don't compare two versions on a single run. A tiny difference can flip a borderline decision and
+send the whole run somewhere else, so compare several runs, each starting from different chessboard
+corners.
 
 ## Developer dependencies
 
@@ -288,7 +317,11 @@ Titles link to a free copy of the paper when there is one, and the DOI to the pu
    [Good features to track](https://users.cs.duke.edu/~tomasi/papers/shi/shiCvpr94.pdf).
    *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*, 593–600, 1994.
    DOI: [10.1109/CVPR.1994.323794](https://doi.org/10.1109/CVPR.1994.323794)
-9. B. Williams, G. Klein and I. Reid.
-   [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
-   *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
-   DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)
+9. H. Strasdat, J. M. M. Montiel and A. J. Davison.
+   [Visual SLAM: why filter?](https://doi.org/10.1016/j.imavis.2012.02.009).
+   *Image and Vision Computing*, 30(2):65–77, 2012.
+   DOI: [10.1016/j.imavis.2012.02.009](https://doi.org/10.1016/j.imavis.2012.02.009)
+10. B. Williams, G. Klein and I. Reid.
+    [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
+    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
+    DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)
