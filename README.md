@@ -83,9 +83,11 @@ updates, first-estimate Jacobians, an iterated EKF, delayed initialization. A bu
 over the same matches does recover the motion, so the information is in the images.
 
 That is what [Strasdat, Montiel and Davison, 2012](https://doi.org/10.1016/j.imavis.2012.02.009)
-found, and why visual SLAM moved from filters to bundle adjustment. The next step would be tracking against a
-map kept by bundle adjustment, as PTAM and its successors do, not a better filter. The last section
-of `docs/monoslam.tex` has the evidence.
+found, and why visual SLAM moved from filters to bundle adjustment. The next step would be tracking
+against a map kept by bundle adjustment, as PTAM
+([Klein and Murray, 2007](https://www.robots.ox.ac.uk/~gk/publications/KleinMurray2007ISMAR.pdf))
+and its successors do, not a better filter. The last section of `docs/monoslam.tex` has the
+evidence.
 
 ## How to build
 
@@ -310,29 +312,18 @@ Titles link to a free copy of the paper when there is one, and the DOI to the pu
    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 29(6):1052–1067, 2007.
    DOI: [10.1109/TPAMI.2007.1049](https://doi.org/10.1109/TPAMI.2007.1049)
 5. G. Klein and D. Murray.
+   [Parallel tracking and mapping for small AR workspaces](https://www.robots.ox.ac.uk/~gk/publications/KleinMurray2007ISMAR.pdf).
+   *Proceedings of the IEEE and ACM International Symposium on Mixed and Augmented Reality*, 225–234, 2007.
+   DOI: [10.1109/ISMAR.2007.4538852](https://doi.org/10.1109/ISMAR.2007.4538852)
+6. G. Klein and D. Murray.
    [Improving the agility of keyframe-based SLAM](https://doi.org/10.1007/978-3-540-88688-4_59).
    *Proceedings of the European Conference on Computer Vision*, 802–815, 2008.
    DOI: [10.1007/978-3-540-88688-4_59](https://doi.org/10.1007/978-3-540-88688-4_59)
-6. E. J. Lefferts, F. L. Markley and M. D. Shuster.
-   [Kalman filtering for spacecraft attitude estimation](https://doi.org/10.2514/3.56190).
-   *Journal of Guidance, Control, and Dynamics*, 5(5):417–429, 1982.
-   DOI: [10.2514/3.56190](https://doi.org/10.2514/3.56190)
-7. B. D. Lucas and T. Kanade.
-   [An iterative image registration technique with an application to stereo vision](https://ijcai.org/Proceedings/81-2/Papers/017.pdf).
-   *Proceedings of the 7th International Joint Conference on Artificial Intelligence*, 674–679, 1981.
-8. E. Rublee, V. Rabaud, K. Konolige and G. Bradski.
-   [ORB: an efficient alternative to SIFT or SURF](https://web.archive.org/web/20150415004214/http://www.willowgarage.com/sites/default/files/orb_final.pdf).
-   *Proceedings of the IEEE International Conference on Computer Vision*, 2564–2571, 2011.
-   DOI: [10.1109/ICCV.2011.6126544](https://doi.org/10.1109/ICCV.2011.6126544)
-9. J. Shi and C. Tomasi.
-   [Good features to track](https://users.cs.duke.edu/~tomasi/papers/shi/shiCvpr94.pdf).
-   *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*, 593–600, 1994.
-   DOI: [10.1109/CVPR.1994.323794](https://doi.org/10.1109/CVPR.1994.323794)
-10. H. Strasdat, J. M. M. Montiel and A. J. Davison.
-    [Visual SLAM: why filter?](https://doi.org/10.1016/j.imavis.2012.02.009).
-    *Image and Vision Computing*, 30(2):65–77, 2012.
-    DOI: [10.1016/j.imavis.2012.02.009](https://doi.org/10.1016/j.imavis.2012.02.009)
-11. B. Williams, G. Klein and I. Reid.
-    [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
-    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
-    DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)
+7. H. Strasdat, J. M. M. Montiel and A. J. Davison.
+   [Visual SLAM: why filter?](https://doi.org/10.1016/j.imavis.2012.02.009).
+   *Image and Vision Computing*, 30(2):65–77, 2012.
+   DOI: [10.1016/j.imavis.2012.02.009](https://doi.org/10.1016/j.imavis.2012.02.009)
+8. B. Williams, G. Klein and I. Reid.
+   [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
+   *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
+   DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)
