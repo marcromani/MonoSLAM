@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Scores a MonoSLAM state stream against the output of analyze_pattern.
 
-The pixel error comes first: the detected corners are checked directly on the images, while a
-pose error says nothing about what the camera actually sees. Use with --annotate to look at
-the frames as well, a low number is not a proof of good tracking.
+The pixel error is reported first, since it is measured directly on the images, while a pose error does not show what
+the camera sees. Look at the frames saved with --annotate as well: a low number does not prove that tracking is good.
 
-The features scored are those MonoSLAM initializes from the pattern, the identifiers 0 to 4, which
-are projected with the camera pose and the camera model.
+The features scored are those MonoSLAM initializes from the pattern, the identifiers 0 to 4, which are projected
+with the camera pose and the camera model.
 
-Near the border of the frame the pattern can be fitted with a reprojection error of several pixels,
-and its pose is then less reliable than the tracking it is meant to score. With --max-rms, the
-frames fitted worse than that, in pixels, are not scored.
+Near the border of the frame the pattern can be fitted with a reprojection error of several pixels, and its pose is then
+less reliable than the tracking it is meant to score. With --max-rms, the frames fitted worse than that, in pixels,
+are not scored.
 
 Usage: evaluate_tracking.py stream.txt ground_truth.txt camera.json [--max-rms PX]
 """
@@ -23,8 +22,8 @@ import numpy as np
 
 
 def load_ground_truth(path, max_rms):
-    """Returns the camera position and the pixels of the five corners in every frame where the
-    pattern was found, and fitted within max_rms pixels."""
+    """Returns the camera position and the pixels of the five corners in every frame where the pattern was found,
+    and fitted within max_rms pixels."""
     positions, pixels = {}, {}
     frame = None
 
@@ -47,8 +46,8 @@ def load_ground_truth(path, max_rms):
 
 
 def load_stream(path):
-    """Returns the frames of a stream: index, camera position and orientation (a rotation vector),
-    number of features used, and the position of every feature by its identifier."""
+    """Returns the frames of a stream: index, camera position and orientation (a rotation vector), number of features
+    used, and the position of every feature by its identifier."""
     frames = []
 
     with open(path) as file:

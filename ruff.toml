@@ -1,0 +1,6 @@
+# Formatting of the Python tools, with the same line limit as clang-format
+line-length = 120
+
+[format]
+quote-style = "double"
+indent-style = "space"
