@@ -31,16 +31,15 @@ constexpr double maxFlowDisagreement = 3.0;      // Pixels
 // Patch search
 constexpr int searchRadius = 8;          // Around the seeds, in pixels
 constexpr double returningSigmas = 3.0;  // Of the innovation, around the prediction of a returning feature
-constexpr int maxReturningRadius = 20;   // Pixels, so that a large uncertainty does not invite look-alikes
+constexpr int maxReturningRadius = 20;   // Pixels, so that a large uncertainty does not let look-alikes in
 constexpr int minPatchPixels = 6;
 constexpr double minScore = 0.6;     // Of the correlation
 constexpr double minPeakGap = 0.05;  // Between the best peak and any other, of the correlation
 constexpr int peakRadius = 1;        // Of the best peak, within which there are no others, in pixels
 
 /*
- * Moves a point according to the corners around it, with the affine motion that most of the
- * nearest ones agree on. Returns the point as it is if there are not enough of them or their
- * motion cannot be explained.
+ * Moves a point according to the corners around it, with the affine motion that most of the nearest ones agree on.
+ * Returns the point unchanged if there are too few corners, or if no affine motion fits them.
  *
  * point    Point to move
  * from     Corners in the previous frame
@@ -85,12 +84,11 @@ moveWithNeighbors(const cv::Point2f& point, const std::vector<cv::Point2f>& from
 }
 
 /*
- * Returns the normalized correlation of a patch with every position of it in an image, over the
- * nonzero pixels of a mask, each counted in full, as matchTemplate with TM_CCOEFF_NORMED and a mask,
- * or -1 where the image under the mask is flat. It is the same score from three plain
- * correlations, which OpenCV computes much faster than its masked one: of the patch with its mean
- * removed, zero out of the mask, and of the mask with the image and with its square, which give the
- * mean and variance under the mask.
+ * Returns the normalized correlation of a patch with every position of it in an image, over the nonzero pixels
+ * of a mask, each counted in full. This is matchTemplate with TM_CCOEFF_NORMED and a mask, with -1 where the image
+ * under the mask is flat. The score is computed from three plain correlations, which OpenCV computes much faster
+ * than its masked one. The first is of the patch with its mean removed, zero out of the mask. The other two are
+ * of the mask with the image and with its square, which give the mean and variance under the mask.
  *
  * image    Grayscale image
  * patch    Grayscale patch
@@ -136,9 +134,9 @@ maskedCorrelation(const cv::Mat1b& image, const cv::Mat1b& patch, const cv::Mat1
 }
 
 /*
- * Builds the pyramid of a frame for the flow of the corners, with its own copy of the frame. It is
- * built with the window of the corners, since its coarsest levels are those still larger than the
- * window: with that of the features it would have one level less.
+ * Builds the pyramid of a frame for the flow of the corners, with its own copy of the frame. It is built
+ * with the window of the corners, since its coarsest levels are those still larger than the window: with that
+ * of the features it would have one level less.
  *
  * frame      Frame
  * pyramid    Its pyramid, for calcOpticalFlowPyrLK
@@ -151,24 +149,11 @@ buildPyramid(const cv::Mat1b& frame, std::vector<cv::Mat>& pyramid)
 }
 
 /*
- * Returns the corners of a rectangle, clockwise from the top left one.
- */
-std::vector<cv::Point2f>
-cornersOf(const cv::Rect& rect)
-{
-    const cv::Point2f topLeft(rect.tl());
-    const cv::Point2f bottomRight(rect.br());
-
-    return { topLeft, cv::Point2f(bottomRight.x, topLeft.y), bottomRight, cv::Point2f(topLeft.x, bottomRight.y) };
-}
-
-/*
- * Warps the patch of a feature to how it would look from another pose, taking it as a piece of the
- * plane through the feature with the feature normal. A true homography between the views only
- * exists for a pinhole camera, so the corners of the patch are mapped through the whole camera
- * model, and the homography is the one that maps them. Returns the warped patch, the pixels of it
- * that come from the patch, and where the center of the patch lands in it, or an empty patch if
- * the plane is seen from behind or out of the frame.
+ * Warps the patch of a feature to how it would look from another pose, taking it as a piece of the plane through
+ * the feature with the feature normal. A true homography between the views only exists for a pinhole camera,
+ * so the corners of the patch are mapped through the whole camera model, and the homography is the one that maps them.
+ * Returns the warped patch, the pixels of it that come from the patch, and the position of the center of the patch
+ * in it. The patch is empty if the plane is seen from behind or out of the frame.
  *
  * feature     Feature
  * position    Feature position, in world coordinates
@@ -186,18 +171,12 @@ warpPatch(const monoslam::Feature& feature,
           cv::Mat1b& mask)
 {
     const cv::Mat1b& view = feature.frame;
-    const std::vector<cv::Point2f> corners = cornersOf(feature.roi);
+    const std::vector<cv::Point2f> corners = feature.patchPixels();
 
-    // The rays through the corners of the patch in the first view, intersected with the plane and
-    // projected into the second one
-    const monoslam::CameraPose& first = feature.pose;
-    const double m = feature.normal.dot(position - first.r());
-
+    // The corners of the patch on its plane, projected into the second view
     std::vector<cv::Point2f> warpedCorners;
 
-    for (const cv::Point2f& corner : corners) {
-        const cv::Vec3d direction = first.R() * camera.unproject(corner);
-        const cv::Vec3d point = first.r() + direction * (m / feature.normal.dot(direction));
+    for (const cv::Vec3d& point : feature.patchCorners(camera, position)) {
         const cv::Vec3d pointCamera = pose.Rcw() * (point - pose.r());
 
         if (pointCamera[2] <= 0.0) {
@@ -237,13 +216,12 @@ warpPatch(const monoslam::Feature& feature,
 }
 
 /*
- * Refines a match of a patch to subpixel precision by aligning the patch with the frame, with the
- * inverse compositional Lucas-Kanade algorithm for a translation (Baker and Matthews, 2004). The
- * frame is normalized to the mean and contrast of the patch at every step, as the correlation does.
- * Returns the match unchanged if the alignment fails or wanders off it. The covariance of the
- * aligned match is that of the least squares fit, the variance of the residuals over the Hessian:
- * large if the patch differs from the frame, or if it lacks texture in some direction, as along an
- * edge. It is left as it is if the alignment fails.
+ * Refines a match of a patch to subpixel precision by aligning the patch with the frame, with the inverse compositional
+ * Lucas-Kanade algorithm for a translation (Baker and Matthews, 2004). The frame is normalized to the mean and contrast
+ * of the patch at every step, as the correlation does. Returns the match unchanged if the alignment fails or moves too
+ * far from it. The covariance of the aligned match is that of the least squares fit, the variance of the residuals over
+ * the Hessian. It is large if the patch differs from the frame, or if it lacks texture in some direction, as along
+ * an edge. It is left unchanged if the alignment fails.
  *
  * frame         Frame
  * patch         Warped patch
@@ -402,8 +380,7 @@ monoslam::FlowTracker::FlowTracker(const cv::Mat1b& frame, const std::vector<cv:
 std::vector<cv::Point2f>&
 monoslam::FlowTracker::predict(const cv::Mat1b& frame)
 {
-    // The pyramid of each frame is built once for the corners, forwards and backwards, and again as
-    // the previous frame
+    // The pyramid of each frame is built once for the corners, forwards and backwards, and again as the previous frame
     std::vector<cv::Mat> pyramid;
     buildPyramid(frame, pyramid);
 
@@ -430,8 +407,8 @@ monoslam::FlowTracker::predict(const cv::Mat1b& frame)
         }
     }
 
-    // A seed far out of the frame stays where it is: the corners tell little about its motion, and
-    // while tracking is good it moves to the projection of its feature anyway
+    // A seed far out of the frame is not moved: the corners tell little about its motion, and while tracking is good it
+    // is replaced by the projection of its feature anyway
     const cv::Rect nearFrame(-seedMargin, -seedMargin, frame.cols + 2 * seedMargin, frame.rows + 2 * seedMargin);
 
     std::vector<cv::Point2f> moved;
@@ -543,8 +520,8 @@ monoslam::findPatch(const cv::Mat1b& frame,
         return std::nullopt;
     }
 
-    // The part of the frame that every position of the anchor in the region needs, with black
-    // borders where it goes out of the frame, so that the correlation has one entry per position
+    // The part of the frame that every position of the anchor in the region needs, with black borders where it goes out
+    // of the frame, so that the correlation has one entry per position
     const int x0 = region.x - static_cast<int>(std::floor(anchor.x));
     const int y0 = region.y - static_cast<int>(std::floor(anchor.y));
     const int x1 = region.x + region.width + patch.cols - static_cast<int>(std::floor(anchor.x)) - 2;
@@ -574,10 +551,10 @@ monoslam::findPatch(const cv::Mat1b& frame,
         return std::nullopt;
     }
 
-    // The match is ambiguous if another peak, a local maximum away from the best one, scores almost
-    // as high: a repeated texture, or an edge that only fixes one direction. A tiny change of the
-    // prediction could then pick either, so neither is used. A local maximum on the border of the
-    // region may just be the slope of a peak outside it, and does not count
+    // The match is ambiguous if another peak, a local maximum away from the best one, scores almost as high: a repeated
+    // texture, or an edge that only fixes one direction. A tiny change of the prediction could then pick either,
+    // so neither is used. A local maximum on the border of the region may just be the slope of a peak outside it,
+    // and does not count
     cv::Mat1f dilated;
     cv::dilate(result, dilated, cv::Mat(), cv::Point(-1, -1), 1, cv::BORDER_CONSTANT, cv::Scalar::all(2.0));
 
@@ -635,9 +612,9 @@ monoslam::matchFeatures(const cv::Mat1b& frame,
         const int row = static_cast<int>(2 * k);
         const cv::Point2d prediction(o.h(row), o.h(row + 1));
 
-        // A returning feature has no seed worth the name: the flow could not follow it while it was
-        // away. Where it is comes from the filter alone, within the uncertainty of its prediction,
-        // which grew with the drift of the camera while it was away
+        // The seed of a returning feature is useless: the flow could not follow it while it was away. Where it is comes
+        // from the filter alone, within the uncertainty of its prediction, which grew with the drift of the camera
+        // while it was away
         if (features[i].returning) {
             const double sigma = std::sqrt(std::max(o.S(row, row), o.S(row + 1, row + 1)));
             const int radius =

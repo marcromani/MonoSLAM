@@ -1,23 +1,19 @@
 /*
- * MonoSLAM: monocular EKF SLAM, initialized from a chessboard and then run on the natural features
- * of the scene. Every frame goes through the same steps:
+ * MonoSLAM: monocular EKF SLAM, initialized from a chessboard and then run on the natural features of the scene.
+ * Every frame goes through the same steps:
  *
- *   1. Predict the camera with the motion model, and the image position of every feature, its
- *      seed, with the optical flow (tracking.h).
- *   2. After a weak frame, look for the map where the keyframes that look like the frame saw it,
- *      or else anywhere in the frame by its appearance, and move the camera where it says
- *      (relocalization.h).
- *   3. Search the features in view around their seeds, and those the camera comes back to around
- *      their prediction, and update the filter with the matches that 1-point RANSAC accepts
- *      (tracking.h, ekf.h).
- *   4. Let the seeds follow the updated state.
- *   5. Keep the map: remove the features that are rarely matched, and add new ones where the frame
- *      has none (mapper.h).
+ *   1. Predict the camera with the motion model, and the image position of every feature, its seed, with the optical
+ *      flow (tracking.h).
+ *   2. After a weak frame, look for the map where the keyframes that look like the frame saw it, or else anywhere
+ *      in the frame by its appearance, and move the camera to the pose found (relocalization.h).
+ *   3. Search the features in view around their seeds, and those the camera comes back to around their prediction,
+ *      and update the filter with the matches that 1-point RANSAC accepts (tracking.h, ekf.h).
+ *   4. Replace the seeds with the projections of the features from the updated state.
+ *   5. Keep the map: remove the features that are rarely matched, and add new ones where the frame has none (mapper.h).
  *
- * The filter works on 320 x 240 frames, which the camera gives at about 100 Hz with a fixed
- * exposure, and the window shows them enlarged. Tracking runs in its own thread, and the main
- * thread draws and shows the frames, the last one it is given, so that the window never slows
- * tracking down (display.h).
+ * The filter works on 320 x 240 frames, which the camera gives at about 100 Hz with a fixed exposure, and the window
+ * shows them enlarged. Tracking runs in its own thread, and the main thread draws and shows the frames, the last one it
+ * is given, so that the window never slows tracking down (display.h).
  */
 
 #include <algorithm>
@@ -70,15 +66,14 @@ constexpr double pixelStd = 1.5;              // Standard deviation of a pixel m
 constexpr double maxInlierDistance = 3.0;     // Pixels, for 1-point RANSAC
 constexpr double maxNIS = 9.210340371976184;  // Chi-squared, 2 degrees of freedom, 99%
 
-constexpr std::size_t minConstrained = 4;  // Measurements needed to fix a pose beyond doubt
+constexpr std::size_t minConstrained = 4;  // Matches needed to constrain the pose well
 
 constexpr double goodAlignmentVariance = 0.04;  // Largest of a match aligned well, in pixels^2: 1 in 10 is worse
 
 /*
- * Returns the noise of a match: the pixel noise, made larger in the directions in which the
- * alignment of its patch was worse than a good one, as along an edge, or with a patch that does not look
- * like the frame. It is never smaller, since the pixel noise also covers what the alignment does
- * not see.
+ * Returns the noise of a match. It is the pixel noise, enlarged in the directions in which the alignment of its patch
+ * was worse than a good one: along an edge, or where the patch does not look like the frame. It is never smaller, since
+ * the pixel noise also covers what the alignment does not see.
  *
  * alignment    Covariance of the alignment of the patch
  */
@@ -128,8 +123,8 @@ constexpr const char* usage =
   "                dropped and those shown\n";
 
 /*
- * Reports every 30 frames, with --timing, the mean and largest frame interval and processing time,
- * the decoding time, and the frames dropped: live, frames are dropped while one is processed.
+ * Reports every 30 frames, with --timing, the mean and largest frame interval and processing time, the decoding time,
+ * and the frames dropped: live, frames are dropped while one is processed.
  */
 class TimingReport
 {
@@ -162,8 +157,8 @@ class TimingReport
     std::size_t numDropped_ = 0;
     std::size_t previousShown_ = 0;
 
-    // The frame period of the camera, to count the frames dropped: half the shortest two intervals
-    // in a row, since some cameras alternate a short and a long one (8 and 12 ms at 100 Hz)
+    // The frame period of the camera, to count the frames dropped: half the shortest two intervals in a row, since some
+    // cameras alternate a short and a long one (8 and 12 ms at 100 Hz)
     double framePeriod_ = HUGE_VAL;
     double previousInterval_ = HUGE_VAL;
 };
@@ -175,8 +170,7 @@ std::optional<Options>
 parseOptions(int argc, char* argv[]);
 
 /*
- * Initializes from the pattern and tracks until the input ends, or the display is stopped. Returns
- * the exit status.
+ * Initializes from the pattern and tracks until the input ends, or the display is stopped. Returns the exit status.
  *
  * options    Command line
  * camera     Camera model
@@ -190,8 +184,8 @@ track(const Options& options,
       monoslam::Display* display);
 
 /*
- * Shows the frames posted to the display until it is stopped, and stops it if the user presses
- * escape. Must run in the main thread, as OpenCV's GUI needs.
+ * Shows the frames posted to the display until it is stopped, and stops it if the user presses escape. Must run
+ * in the main thread, as OpenCV's GUI needs.
  */
 void
 show(monoslam::Display& display);
@@ -312,7 +306,7 @@ track(const Options& options,
     monoslam::Mapper mapper(features.size());
     monoslam::Keyframes keyframes;
 
-    monoslam::StateStream stream;
+    monoslam::StateStream stream(camera);
 
     if (!options.streamFile.empty() && !stream.open(options.streamFile)) {
         std::cerr << "Could not open " << options.streamFile << '\n';
@@ -331,8 +325,8 @@ track(const Options& options,
 
         const auto processingStart = std::chrono::steady_clock::now();
 
-        // 1. Predict the state, and the position of the features in the image. Live, frames are
-        //    dropped while one is processed, so the interval is the real one
+        // 1. Predict the state, and the position of the features in the image. Live, frames are dropped while one
+        //    is processed, so the interval is the real one
         const double dt = source.time() > previousTime ? source.time() - previousTime : 1.0 / imagesFps;
         previousTime = source.time();
 
@@ -340,9 +334,9 @@ track(const Options& options,
 
         std::vector<cv::Point2f>& seeds = tracker.predict(gray);
 
-        // 2. After a weak frame the state may be wrong: the features are looked for where the
-        //    keyframes that look like the frame saw them, or else anywhere in the frame by their
-        //    descriptors, and the camera is moved where they say
+        // 2. After a weak frame the state may be wrong. The features are searched where the keyframes that look like
+        //    the frame saw them, or else anywhere in the frame by their descriptors, and the camera is reset
+        //    to the pose they give
         if (weak) {
             std::optional<monoslam::Relocalization> found = keyframes.match(gray, features, camera, ekf);
 
@@ -361,8 +355,8 @@ track(const Options& options,
             }
         }
 
-        // 3. Search the features in view around their seeds, and those the camera comes back to
-        //    around their prediction, and let the filter decide which matches to use
+        // 3. Search the features in view around their seeds, and those the camera comes back to around
+        //    their prediction, and let the filter decide which matches to use
         const monoslam::Observation observation = ekf.observe();
         const std::vector<std::size_t>& searched = observation.features;
 
@@ -378,17 +372,18 @@ track(const Options& options,
 
         std::vector<std::size_t> used = ekf.update(observation, matches, noises);
 
-        // What to show, if anything shows it
+        // The matches to draw, for the window, --annotate or the stream
         const bool shown = display != nullptr || !options.annotateDir.empty();
         monoslam::Snapshot snapshot;
 
-        if (shown) {
+        if (shown || stream.isOpen()) {
             snapshot = { gray, monoslam::usedMatches(observation, seeds, matches, used) };
         }
 
         const std::size_t numUsed = used.size();
 
-        // 4. The seeds follow the state if it is well constrained, and the images otherwise
+        // 4. If the state is well constrained, the seeds are replaced by the projections of the features. Otherwise
+        //    they keep the positions given by the optical flow
         const std::vector<cv::Point2f> projections = ekf.project(seeds);
 
         if (numUsed >= minConstrained) {
@@ -396,14 +391,14 @@ track(const Options& options,
         }
 
         if (stream.isOpen()) {
-            stream.write(index, ekf, features, searched, used);
+            stream.write(index, source.time(), gray, ekf, features, searched, used, snapshot.matches);
         }
 
-        // 5. Keep the map: remove the features rarely matched, and add new ones where too few are in
-        //    view. Not while most of the features searched fail, though: the state may be wrong, and
-        //    then the features would be blamed for it, and the new ones placed where they are not.
-        //    Few features in view, most of them found, is a new part of the scene instead, which
-        //    needs new features: without them tracking would stay weak, and the map frozen, for good
+        // 5. Keep the map: remove the features rarely matched, and add new ones where too few are in view.
+        //    Not while most of the features searched fail, though: the state may be wrong, the failures would then
+        //    count against the features, and new ones would be placed in the wrong position. Few features in view,
+        //    with most of them found, means a new part of the scene instead, which needs new features: without them
+        //    tracking would stay weak and the map frozen indefinitely
         weak = numUsed < minConstrained || 2 * numUsed < searched.size();
 
         if (2 * numUsed >= searched.size()) {
