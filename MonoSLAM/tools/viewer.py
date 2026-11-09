@@ -31,8 +31,8 @@ from pathlib import Path
 
 import numpy as np
 import rerun as rr
-from PIL import Image
 import rerun.blueprint as rrb
+from PIL import Image
 
 COLORS = {0: (128, 128, 128), 1: (255, 200, 0), 2: (255, 40, 40)}  # By status
 
@@ -69,17 +69,17 @@ def records(stream):
 
         elif fields[0] == "frame":
             values = [float(v) for v in fields[2:]]
-            frame = dict(
-                index=int(fields[1]),
-                r=values[0:3],
-                o=np.array(values[3:6]),
-                used=values[6],
-                std=values[7],
-                time=values[8],
-                image=None,
-                features=[],
-                matches=[],
-            )
+            frame = {
+                "index": int(fields[1]),
+                "r": values[0:3],
+                "o": np.array(values[3:6]),
+                "used": values[6],
+                "std": values[7],
+                "time": values[8],
+                "image": None,
+                "features": [],
+                "matches": [],
+            }
 
         elif fields[0] == "image" and frame is not None:
             frame["image"] = base64.b64decode(fields[1])
@@ -305,8 +305,15 @@ def main():
     else:
         rr.save(save)
 
-    stream = open(arguments[0]) if arguments else sys.stdin
-    paced = not arguments and save is None
+    if arguments:
+        with open(arguments[0]) as stream:
+            show(stream, paced=False)
+    else:
+        show(sys.stdin, paced=save is None)
+
+
+def show(stream, paced):
+    """Logs the records of a stream. If paced, the frames are logged no faster than they were captured."""
     scene = Scene()
     first = None  # Index and capture time of the first frame, and the time it was logged
     layout = False  # Whether the layout was sent

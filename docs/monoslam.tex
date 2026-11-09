@@ -533,7 +533,8 @@ directions they leave free. And the curvature it would correct is small for the 
 
 \paragraph{Adding.}
 While the update of the frame used fewer than $12$ of the features in view, up to two new ones are
-added per frame. A feature predicted in view but not found does not count:
+added per frame. Features predicted in view but not found do not count (see below). Each new
+feature is chosen as follows:
 \begin{enumerate}
   \item \emph{Where.} A box a quarter of the frame in each dimension slides over it in steps of half
         its size, staying $10$~px from the border. The positions with no feature in view inside are
@@ -561,7 +562,7 @@ added per frame. A feature predicted in view but not found does not count:
         features in view, or $0.02$~cm$^{-1}$ ($50$~cm) if there are none. Its uncertainty is
         $\sigma_\rho = \rho_0$, so the $2\sigma$ interval covers everything from a third of that
         distance to infinity.
-    \item The feature gets its patch, a descriptor (section~\ref{sec:global}) and a seed.
+      \item The feature gets its patch, a descriptor (section~\ref{sec:global}) and a seed.
 \end{enumerate}
 
 \paragraph{Counting the features used.}
@@ -569,9 +570,10 @@ Counting all the features predicted in view lets the ones that fail keep the new
 camera turns, the features about to leave the frame, blurred or seen from a new angle, are still
 predicted in view: on sequences 7 and 8, in the frames where the update used fewer than $8$
 features, a median of $13$ were predicted in view and only $7$ used. Over $15$ runs, counting the
-features used recovers $26$ kidnaps of $30$ instead of $22$, closes the loop of sequence~6 at frame
-$836$ in every run instead of $11$, and halves the error at the return of sequence~7, from $3.3$ to
-$1.4$~cm, where it falls from $7.4$ to $3.6$ times the standard deviation the filter reports. It
+features used recovers $26$ kidnaps of $30$ instead of $22$, and closes the loop of sequence~6 at
+frame $836$ in every run instead of in $11$. It also halves the error at the return of sequence~7,
+from $3.3$ to $1.4$~cm, which is then $3.6$ times the standard deviation the filter reports instead
+of $7.4$. It
 costs a larger map, $15$ to $40\%$ more features at the end of a sequence, about $2$~ms per frame,
 and one run of sequence~2 that is lost. Spreading the features further apart instead, at least
 $30$, $45$ or $60$~px from those in view rather than $15$, did not help: with $45$ and $60$~px only
@@ -769,7 +771,8 @@ sequences 2 and 3 in every run.
         matter for fast live motion. \texttt{evaluate\_tracking.py} would then need it as well,
         since it projects with a single pose per frame.
   \item The features used for a long time are never removed, so the map, and the cost of the
-        filter, grow with the explored scene.
+        filter, grow with the explored scene. On sequence~9, a minute through a room, a corridor
+        and back, the map reaches $120$ to $150$ features, and a frame takes $20$ to $30$~ms.
   \item The global match only describes detected corners, which lie a few pixels away from where
         the descriptor of a feature would match best, and ORB descriptors change a lot over a few
         pixels. On the return to the board at the end of sequence~6, most visible features match

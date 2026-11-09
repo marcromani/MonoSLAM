@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr std::size_t minUsedInView = 12;  // Features are added while fewer features in view were used than this
+constexpr std::size_t minUsedInView = 12;  // Features are added while the update used fewer of those in view
 constexpr std::size_t maxNewPerFrame = 2;  // And at most this many per frame
 
 constexpr int boxDivisions = 4;  // The box where a feature is added is this many times smaller than the frame
