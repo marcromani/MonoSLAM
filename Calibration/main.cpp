@@ -1,9 +1,9 @@
 /*
- * Calibrates the camera with a chessboard: it captures a view of the pattern every two seconds
- * until Escape is pressed, fits the pinhole model and the lens distortion to all of them, drops
- * the views that the fit explains badly, fits again, and saves the result for monoslam. The fit is
- * on the largest frames the camera gives of the same view as monoslam's, where the corners are the
- * most precise, and the model is saved for monoslam's frames, scaled to their size.
+ * Calibrates the camera with a chessboard. It captures a view of the pattern every two seconds until Escape is pressed,
+ * and fits the pinhole model and the lens distortion to all the views. It then drops the views that the fit explains
+ * badly, fits again, and saves the result for monoslam. The fit uses the largest frame size the camera gives
+ * with the same field of view as monoslam's frames, where the corners are the most precise. The model is then scaled
+ * to the size of monoslam's frames.
  */
 
 #include <charconv>
@@ -25,8 +25,8 @@
 namespace {
 
 const cv::Size frameSize(320, 240);  // Of the frames monoslam works on
-// The largest mode of the camera with the same view as frameSize, only larger. Not every mode of
-// the same shape is one: this camera's 1024 x 768 sees a view 12% wider and taller than its 320 x 240
+// The largest mode of the camera with the same field of view as frameSize. A mode with the same aspect ratio may see
+// more: this camera's 1024 x 768 sees 12% more in each direction than 320 x 240
 const cv::Size captureSize(640, 480);
 
 constexpr double autoExposure = 3.0;  // V4L2_EXPOSURE_APERTURE_PRIORITY, which monoslam turns off
@@ -129,8 +129,7 @@ try {
 
     std::cout << "Press Escape to finish capturing views\n";
 
-    // The camera on the left, and the last view captured on the right, in gray with the pattern
-    // found in color
+    // The camera on the left, and the last view captured on the right, in gray with the pattern found in color
     cv::Mat3b display(imageSize.height, 2 * imageSize.width, cv::Vec3b::zeros());
     cv::Mat3b live = display(cv::Rect(0, 0, imageSize.width, imageSize.height));
     cv::Mat3b captured = display(cv::Rect(imageSize.width, 0, imageSize.width, imageSize.height));

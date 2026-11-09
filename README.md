@@ -32,10 +32,10 @@ $$
 
 the camera position $r$, its orientation error $e$, its linear and angular velocities $v$ and
 $\omega$, and the features. Features are static points in inverse depth
-([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)),
-$y = (a, \theta, \phi, \rho)$: the anchor $a$, where the camera was when it first saw the point, the
+([Civera, Davison and Montiel, 2008](https://www.doc.ic.ac.uk/~ajd/Publications/civera_etal_tro2008.pdf)).
+Each one is $y = (a, \theta, \phi, \rho)$: the anchor $a$, where the camera was when it first saw the point, the
 azimuth $\theta$ and elevation $\phi$ of the ray from there, and the inverse depth $\rho$ along it.
-They keep this parametrization for their whole life. The orientation is a rotation matrix $R$
+They are never converted to plain 3D points. The orientation is a rotation matrix $R$
 kept outside the state, and the state only holds a small rotation $e$ on top of it, so the
 orientation is $R \exp([e]_\times)$. After every update $R$ absorbs $e$ (an error-state EKF), and
 there is no quaternion to normalize. The motion model is constant velocity, but the velocities
@@ -46,7 +46,7 @@ Wrong matches are rejected with 1-point RANSAC
 using nothing but the filter's own models and covariances. Before that, a match is dropped if
 something else in its search region looks almost the same. Each match is refined to subpixel
 precision with Lucas-Kanade
-([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)), and when the
+([Baker and Matthews, 2004](https://doi.org/10.1023/B:VISI.0000011205.11775.fd)). When the
 alignment is poor in some direction, along an edge for example, the match gets a larger noise in
 that direction.
 
@@ -58,13 +58,13 @@ its prediction instead, within three standard deviations of its innovation.
 New features are added where the frame has none, as in
 [Davison et al., 2007](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
 They have to be textured enough to be located, and must not look like anything around them.
-Features that stop being matched are removed, unless they have been used long enough to be part of
-the map the camera comes back to.
+Features that are no longer matched are removed, unless they have been used often enough to be
+part of the map, which the camera may come back to.
 
-After a weak frame, the map is looked for with keyframes, small blurred copies of frames where
-tracking went well
-([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)): the features are searched
-where the most similar keyframes saw them. If that fails, the whole frame is searched with the ORB
+After a frame where few matches were used, the system tries to find the map again with keyframes
+([Klein and Murray, 2008](https://doi.org/10.1007/978-3-540-88688-4_59)). These are small blurred
+copies of frames where tracking went well, and the features are searched where the most similar
+keyframes saw them. If that fails, the whole frame is searched with the ORB
 descriptors that every feature collects as its appearance changes
 ([Williams, Klein and Reid, 2011](https://doi.org/10.1109/TPAMI.2011.41)).
 
@@ -74,16 +74,16 @@ with its parameters and the evidence behind them, and the current results.
 ## How far a filter goes
 
 This is about as far as monocular EKF SLAM goes. When the camera turns away from the mapped part
-of the scene, every feature in view is new, with a very uncertain depth, and the filter linearizes
-its updates at depths that later turn out wrong. It can't go back on those updates, so it becomes
+of the scene, every feature in view is new and has a very uncertain depth. The filter linearizes
+its updates at those depths, which later turn out wrong. It can't go back on those updates, so it becomes
 confident about a pose that is off. In a simulation where all the models are exact, the pose error
-ends up over a hundred times larger than the filter thinks, while features that enter at their
-true depth keep it consistent. None of the classic remedies helps: second-order terms, Schmidt
+ends up over a hundred times larger than the filter thinks. Features that enter at their true
+depth keep it consistent. None of the classic remedies helps: second-order terms, Schmidt
 updates, first-estimate Jacobians, an iterated EKF, delayed initialization. A bundle adjustment
 over the same matches does recover the motion, so the information is in the images.
 
 That is what [Strasdat, Montiel and Davison, 2012](https://doi.org/10.1016/j.imavis.2012.02.009)
-found, and what ended the filtering era of visual SLAM. The next step would be tracking against a
+found, and why visual SLAM moved from filters to bundle adjustment. The next step would be tracking against a
 map kept by bundle adjustment, as PTAM and its successors do, not a better filter. The last section
 of `docs/monoslam.tex` has the evidence.
 
@@ -134,8 +134,8 @@ All three programs need the camera device, given with `--device`. `v4l2-ctl --li
 the cameras; for each camera, the first device is the one that gives frames.
 
 The calibration grabs a view of the chessboard every two seconds until you press Escape. It fits
-the camera model at 640 x 480, the largest frames the camera gives with the same field of view, and
-saves it scaled down to the 320 x 240 that MonoSLAM uses. Note that a larger mode with the same
+the camera model on 640 x 480 frames, the largest size the camera gives with the same field of
+view. It then saves the model scaled down to the 320 x 240 frames that MonoSLAM uses. Note that a larger mode with the same
 aspect ratio doesn't necessarily have the same field of view: at 1024 x 768 this camera sees 12%
 more in each direction. MonoSLAM refuses a calibration made for any other size, since the pixel
 lengths in the code are tuned for 320 x 240. The calibration takes these options after the camera
@@ -151,8 +151,8 @@ MonoSLAM takes these options after the camera file:
 
 ```text
 --device D    Camera device, such as /dev/video4 (required, unless --images)
---exposure E  Exposure time of the camera, in ms (default 5): fixed, so that
-              the frame rate is too
+--exposure E  Exposure time of the camera, in ms (default 5), fixed so that
+              the frame rate does not change
 --images D    Replay the sorted images of directory D instead of a camera
 --frames N    Stop after N frames
 --stream F    Write the state of every frame to F, for the viewer and
@@ -181,11 +181,13 @@ itself.
 ## Seeing the scene in 3D
 
 `MonoSLAM/tools/viewer.py` shows the scene as the filter sees it, in [Rerun](https://rerun.io).
-You get the chessboard plane, the camera and its trajectory, and the features: red if the last
+You get the axes of the chessboard, the camera and its trajectory, and the features: red if the last
 update used them, yellow if they were in view but not used, and gray otherwise. Each feature is
-drawn as the segment of its ray within two standard deviations of its inverse depth. All the frames
-stay on the timeline, so you can go back to any of them, and there are plots of the number of
-features used and of the position uncertainty.
+drawn as the segment of its ray within two standard deviations of its inverse depth, and with its
+patch, on the plane that the tracker uses to warp it. Next to the scene is the camera frame,
+undistorted, with the matches drawn as in the MonoSLAM window. Hover a pixel of the frame and the
+scene shows its ray. All the frames stay on the timeline, so you can go back to any of them, and
+there are plots of the number of features used and of the position uncertainty.
 
 The viewer needs Rerun and NumPy. Recent Ubuntu releases don't let `pip` install into the system
 Python, so install them in a virtual environment, anywhere you like, and activate it before using
@@ -270,6 +272,7 @@ Source code formatting depends on:
 ```text
 clang-format 23.1.4
 cmakefmt 2.3.1
+ruff 0.17.4
 ```
 
 Usage:
@@ -280,7 +283,11 @@ clang-format -i Calibration/*.cpp \
   MonoSLAM/tests/*.cpp \
   MonoSLAM/tools/*.cpp
 cmakefmt -i .
+ruff format MonoSLAM/tools
 ```
+
+Ruff formats the Python tools, with the settings in `ruff.toml`. Install it with `pip install ruff`,
+in the same environment as the viewer.
 
 ## References
 
@@ -302,26 +309,30 @@ Titles link to a free copy of the paper when there is one, and the DOI to the pu
    [MonoSLAM: real-time single camera SLAM](https://www.doc.ic.ac.uk/~ajd/Publications/davison_etal_pami2007.pdf).
    *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 29(6):1052–1067, 2007.
    DOI: [10.1109/TPAMI.2007.1049](https://doi.org/10.1109/TPAMI.2007.1049)
-5. E. J. Lefferts, F. L. Markley and M. D. Shuster.
+5. G. Klein and D. Murray.
+   [Improving the agility of keyframe-based SLAM](https://doi.org/10.1007/978-3-540-88688-4_59).
+   *Proceedings of the European Conference on Computer Vision*, 802–815, 2008.
+   DOI: [10.1007/978-3-540-88688-4_59](https://doi.org/10.1007/978-3-540-88688-4_59)
+6. E. J. Lefferts, F. L. Markley and M. D. Shuster.
    [Kalman filtering for spacecraft attitude estimation](https://doi.org/10.2514/3.56190).
    *Journal of Guidance, Control, and Dynamics*, 5(5):417–429, 1982.
    DOI: [10.2514/3.56190](https://doi.org/10.2514/3.56190)
-6. B. D. Lucas and T. Kanade.
+7. B. D. Lucas and T. Kanade.
    [An iterative image registration technique with an application to stereo vision](https://ijcai.org/Proceedings/81-2/Papers/017.pdf).
    *Proceedings of the 7th International Joint Conference on Artificial Intelligence*, 674–679, 1981.
-7. E. Rublee, V. Rabaud, K. Konolige and G. Bradski.
+8. E. Rublee, V. Rabaud, K. Konolige and G. Bradski.
    [ORB: an efficient alternative to SIFT or SURF](https://web.archive.org/web/20150415004214/http://www.willowgarage.com/sites/default/files/orb_final.pdf).
    *Proceedings of the IEEE International Conference on Computer Vision*, 2564–2571, 2011.
    DOI: [10.1109/ICCV.2011.6126544](https://doi.org/10.1109/ICCV.2011.6126544)
-8. J. Shi and C. Tomasi.
+9. J. Shi and C. Tomasi.
    [Good features to track](https://users.cs.duke.edu/~tomasi/papers/shi/shiCvpr94.pdf).
    *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*, 593–600, 1994.
    DOI: [10.1109/CVPR.1994.323794](https://doi.org/10.1109/CVPR.1994.323794)
-9. H. Strasdat, J. M. M. Montiel and A. J. Davison.
-   [Visual SLAM: why filter?](https://doi.org/10.1016/j.imavis.2012.02.009).
-   *Image and Vision Computing*, 30(2):65–77, 2012.
-   DOI: [10.1016/j.imavis.2012.02.009](https://doi.org/10.1016/j.imavis.2012.02.009)
-10. B. Williams, G. Klein and I. Reid.
+10. H. Strasdat, J. M. M. Montiel and A. J. Davison.
+    [Visual SLAM: why filter?](https://doi.org/10.1016/j.imavis.2012.02.009).
+    *Image and Vision Computing*, 30(2):65–77, 2012.
+    DOI: [10.1016/j.imavis.2012.02.009](https://doi.org/10.1016/j.imavis.2012.02.009)
+11. B. Williams, G. Klein and I. Reid.
     [Automatic relocalization and loop closing for real-time monocular SLAM](https://doi.org/10.1109/TPAMI.2011.41).
     *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 33(9):1699–1712, 2011.
     DOI: [10.1109/TPAMI.2011.41](https://doi.org/10.1109/TPAMI.2011.41)

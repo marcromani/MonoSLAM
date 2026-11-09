@@ -14,9 +14,9 @@
 namespace monoslam {
 
 /*
- * Follows the image motion of every feature from frame to frame, independently of the filter, so
- * that each feature can be searched in a small region around where it moved, its seed. The motion
- * model of the filter cannot predict a jerk of the hand, but the images can.
+ * Follows the image motion of every feature from frame to frame, independently of the filter, so that each feature can
+ * be searched in a small region around where it moved, its seed. The motion model of the filter cannot predict a jerk
+ * of the hand, but the images can.
  */
 class FlowTracker
 {
@@ -28,21 +28,20 @@ class FlowTracker
     FlowTracker(const cv::Mat1b& frame, const std::vector<cv::Point2f>& positions);
 
     /*
-     * Moves the seeds to a new frame and returns them. Each seed follows an affine motion fitted
-     * to the generic corners around it, which unlike a global model does not assume anything about
-     * the structure of the scene, only that close points in the image move alike. The corners are
-     * followed from frame to frame, and new ones are detected only when too many are lost. The
-     * flow of the feature itself takes over only if it agrees with that motion, since the flow of
-     * a single point is more precise, but it can also jump to a look-alike neighbor. Seeds more
-     * than 25 pixels out of the frame stay where they are.
+     * Moves the seeds to a new frame and returns them. Each seed follows an affine motion fitted to the generic corners
+     * around it. Unlike a global model, this assumes nothing about the structure of the scene, only that close points
+     * in the image move alike. The corners are followed from frame to frame, and new ones are detected only when too
+     * many are lost. The flow of the feature itself takes over only if it agrees with that motion, since the flow
+     * of a single point is more precise, but it can also jump to a look-alike neighbor. Seeds more than 25 pixels out
+     * of the frame stay where they are.
      *
      * frame    New frame
      */
     std::vector<cv::Point2f>& predict(const cv::Mat1b& frame);
 
     /*
-     * Replaces the seeds with better positions. Those coming from the filter state make the
-     * features agree with each other, so that a feature that slipped cannot stay lost.
+     * Replaces the seeds with better positions. Those coming from the filter state make the features agree
+     * with each other, so that a feature that slipped cannot stay lost.
      */
     void correct(const std::vector<cv::Point2f>& positions) { seeds_ = positions; }
 
@@ -58,8 +57,7 @@ class FlowTracker
 
   private:
     /*
-     * Detects new generic corners in the last frame, away from those still tracked, up to the
-     * maximum number.
+     * Detects new generic corners in the last frame, away from those still tracked, up to the maximum number.
      */
     void detectCorners();
 
@@ -70,11 +68,11 @@ class FlowTracker
 };
 
 /*
- * Searches a feature around a pixel, and returns where it is found, if anywhere. The patch of the
- * feature is first warped to how it would look from the current pose, with the homography of the
- * plane of the patch between the two views. The search is a zero-mean normalized cross-correlation
- * over the warped patch, and its peak is refined to subpixel precision by aligning the patch with
- * the frame. Returns nothing if the best score is low, or if another peak scores almost as high.
+ * Searches a feature around a pixel, and returns where it is found, if anywhere. The patch of the feature is first
+ * warped to how it would look from the current pose, with the homography of the plane of the patch between the two
+ * views. The search is a zero-mean normalized cross-correlation over the warped patch, and its peak is refined
+ * to subpixel precision by aligning the patch with the frame. Returns nothing if the best score is low, or if another
+ * peak scores almost as high.
  *
  * frame       Current frame
  * feature     Feature to look for
@@ -96,11 +94,10 @@ findPatch(const cv::Mat1b& frame,
           cv::Matx22d* covariance = nullptr);
 
 /*
- * Searches the features in view in a frame, each in a small region around its seed, or around its
- * predicted measurement if its seed is not in view. A feature that comes back into view after a
- * while is searched around its prediction instead, within three standard deviations of its
- * innovation, as in the active search of Davison et al. Telling the right matches from the wrong
- * ones is left to the filter. Returns the pixel of each feature of o, if it was found.
+ * Searches the features in view in a frame, each in a small region around its seed, or around its predicted measurement
+ * if its seed is not in view. A feature that comes back into view after a while is searched around its prediction
+ * instead, within three standard deviations of its innovation, as in the active search of Davison et al. Telling
+ * the right matches from the wrong ones is left to the filter. Returns the pixel of each feature of o, if it was found.
  *
  * frame       Current frame
  * features    All the features

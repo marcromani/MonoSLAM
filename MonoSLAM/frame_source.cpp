@@ -33,8 +33,8 @@ monoslam::FrameSource::openCamera(const std::string& device, const cv::Size& fra
     device_.set(cv::CAP_PROP_FPS, cameraFps);
     device_.set(cv::CAP_PROP_AUTO_EXPOSURE, manualExposure);
     device_.set(cv::CAP_PROP_EXPOSURE, std::round(exposure / exposureUnit));
-    // Two buffers: with one, the camera cannot fill the next frame while the last one is read, and
-    // gives half its frame rate. With more, a slow iteration would leave older frames waiting
+    // Two buffers: with one, the camera cannot fill the next frame while the last one is read, and gives half its frame
+    // rate. With more, a slow iteration would leave older frames waiting
     device_.set(cv::CAP_PROP_BUFFERSIZE, 2);
 
     // A camera without the mode gives another one
@@ -77,8 +77,8 @@ monoslam::FrameSource::openImages(const std::string& directory, const cv::Size& 
 
     std::sort(files_.begin(), files_.end());
 
-    // The capture times, if the file has a column capture_us (older recordings only have the time
-    // at which the recorder read the frames, which is no use)
+    // The capture times, if the file has a column capture_us (older recordings only have the time at which the recorder
+    // read the frames, which is no use)
     std::map<std::string, double> captureTimes;
     std::ifstream file(fs::path(directory) / "timestamps.csv");
     std::string line;

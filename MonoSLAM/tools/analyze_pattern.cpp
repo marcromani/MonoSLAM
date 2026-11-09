@@ -1,11 +1,10 @@
 /*
- * analyze_pattern: the ground truth of a recorded sequence, from the calibration pattern, for the
- * evaluation of monoslam only. It finds the whole pattern, 9 x 6 inner corners, in every frame,
- * fits the camera pose to its 54 corners, and prints for every frame:
+ * analyze_pattern: the ground truth of a recorded sequence, from the calibration pattern, for the evaluation
+ * of monoslam only. It finds the whole pattern, 9 x 6 inner corners, in every frame, fits the camera pose to its 54
+ * corners, and prints for every frame:
  *
- *   - rms=, the RMS reprojection error of the corners, in pixels: near the border of the frame,
- *     where the lens model is least accurate, it can reach several pixels, and the pose is then
- *     less reliable
+ *   - rms=, the RMS reprojection error of the corners, in pixels. Near the border of the frame, where the lens model
+ *     is least accurate, it can reach several pixels, and the pose is then less reliable
  *   - pos=, the camera position, in world coordinates
  *   - rot=, the camera orientation, as the rotation vector from camera to world
  *   - sel=, the pixels of the five corners that monoslam initializes as features

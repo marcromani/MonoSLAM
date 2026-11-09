@@ -17,9 +17,9 @@ constexpr int orbPatchSize = 31;  // Pixels
 constexpr int orbRadius = orbPatchSize / 2;
 
 /*
- * Returns the orientation of the patch around a pixel, in degrees: the direction from the pixel to
- * the centroid of the intensities of the disc around it, which turns with the image. ORB only
- * computes it for the keypoints it detects itself.
+ * Returns the orientation of the patch around a pixel, in degrees: the direction from the pixel to the centroid
+ * of the intensities of the disc around it, which turns with the image. ORB only computes it for the keypoints it
+ * detects itself.
  */
 float
 orientation(const cv::Mat1b& frame, const cv::Point& center)
@@ -110,8 +110,8 @@ countPatchesAt(const cv::Mat1b& frame,
 }
 
 /*
- * Fits a pose to features found in a frame with P3P and RANSAC, taking their positions as exact,
- * and accepts it if the patches of the candidates are also found where it projects them.
+ * Fits a pose to features found in a frame with P3P and RANSAC, taking their positions as exact, and accepts it
+ * if the patches of the candidates are also found where it projects them.
  *
  * frame         Current frame
  * features      All the features
@@ -183,8 +183,8 @@ fitPose(const cv::Mat1b& frame,
 }
 
 /*
- * Returns a frame shrunk and blurred, with zero mean, as in Klein and Murray (2008): small enough to
- * compare with many others, and blurred enough to compare across small changes of the pose.
+ * Returns a frame shrunk and blurred, with zero mean, as in Klein and Murray (2008): small enough to compare with many
+ * others, and blurred enough to compare across small changes of the pose.
  */
 cv::Mat1f
 thumbnail(const cv::Mat1b& frame)
@@ -198,8 +198,7 @@ thumbnail(const cv::Mat1b& frame)
 }
 
 /*
- * Returns the mean squared difference of two thumbnails, the second shifted by some pixels, over
- * the pixels they share.
+ * Returns the mean squared difference of two thumbnails, the second shifted by some pixels, over the pixels they share.
  */
 double
 difference(const cv::Mat1f& a, const cv::Mat1f& b, int dx, int dy)
@@ -360,8 +359,8 @@ monoslam::matchGlobally(const cv::Mat1b& frame,
 {
     const cv::Mat1d& x = ekf.state();
 
-    // Only the features whose position is known can tell the pose, and those of the pattern are all
-    // alike. Each feature has a descriptor for every way it has looked
+    // Only the features whose position is known can constrain the pose, and those of the pattern all look alike.
+    // Each feature has one descriptor per distinct appearance
     std::vector<std::size_t> candidates;
     std::vector<std::size_t> owners;  // Feature of each descriptor
     cv::Mat descriptors;
@@ -387,8 +386,8 @@ monoslam::matchGlobally(const cv::Mat1b& frame,
         return std::nullopt;
     }
 
-    // Each feature is matched to its nearest corner, if it is clearly nearer than any corner
-    // elsewhere. The corners around the same structure look alike, but are not an ambiguity
+    // Each feature is matched to its nearest corner, if it is clearly nearer than any corner elsewhere. The corners
+    // around the same structure look alike, but are not an ambiguity
     std::vector<std::vector<cv::DMatch>> nearest;
     cv::BFMatcher(cv::NORM_HAMMING).knnMatch(descriptors, frameDescriptors, nearest, numNearest);
 

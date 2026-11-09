@@ -13,17 +13,16 @@
 namespace monoslam {
 
 /*
- * The state is [r, e, v, w, y_1, ..., y_N]: camera position (3), orientation error (3), linear
- * velocity (3), angular velocity in camera coordinates (3), and the inverse depth parameters of
- * every feature (6 each, see inverse_depth.h). The functions below are the only places that need to
- * know this layout.
+ * The state is [r, e, v, w, y_1, ..., y_N]: camera position (3), orientation error (3), linear velocity (3), angular
+ * velocity in camera coordinates (3), and the inverse depth parameters of every feature (6 each, see inverse_depth.h).
+ * The functions below are the only places that need to know this layout.
  *
- * The orientation itself is a rotation matrix R, from camera to world, kept by the filter next to
- * the state (an error-state, or multiplicative, EKF). The state only holds a small rotation e of the
- * camera on top of it, the true orientation being R exp(e), and P its uncertainty. After every
- * update R absorbs e, which goes back to zero. Unlike a quaternion, e has as many entries as the
- * orientation has degrees of freedom, so there is no unit norm to keep, and unlike a rotation vector
- * of the whole orientation, it stays small, far from the angle of pi where that wraps around.
+ * The orientation itself is a rotation matrix R, from camera to world, kept by the filter next to the state (an
+ * error-state, or multiplicative, EKF). The state only holds a small rotation e of the camera on top of it, the true
+ * orientation being R exp(e), and P its uncertainty. After every update R absorbs e, which is reset to zero. Unlike
+ * a quaternion, e has as many entries as the orientation has degrees of freedom, so there is no unit norm to keep.
+ * Unlike a rotation vector of the whole orientation, it stays small, far from the angle of pi where a rotation vector
+ * wraps around.
  */
 inline constexpr int cameraStateSize = 12;
 inline constexpr int featureSize = inverse_depth::size;
@@ -77,12 +76,11 @@ numFeatures(const cv::Mat1d& x)
 }
 
 /*
- * Constant velocity model whose velocities decay towards zero. Between two frames the camera
- * undergoes a random, constant acceleration, and its linear and angular velocities decay with time
- * constants tau, v_new = exp(-dt / tau) v_old + big_v. A hand-held camera keeps moving from one
- * frame to the next, but not for long in the same way, and the decay stops the prediction from
- * drifting away when nothing is measured. For tau -> infinity this is the plain constant velocity
- * model of Davison et al.
+ * Constant velocity model whose velocities decay towards zero. Between two frames the camera undergoes a random,
+ * constant acceleration, and its linear and angular velocities decay with time constants tau, v_new = exp(-dt / tau)
+ * v_old + big_v. A hand-held camera keeps moving between consecutive frames, but its velocity does not stay the same
+ * for long, and the decay stops the prediction from drifting away when nothing is measured. For tau -> infinity
+ * this is the plain constant velocity model of Davison et al.
  */
 struct MotionModel
 {
@@ -92,9 +90,9 @@ struct MotionModel
     double angularDecayTime;  // Time constant of the decay of the angular velocity
 
     /*
-     * Returns the camera part of the state after dt, moves the orientation, and optionally returns
-     * the Jacobians of the new camera state with respect to the old one, F (12 x 12), and to the
-     * noise, the velocity changes big_v and big_w, W (12 x 6). The orientation error must be zero.
+     * Returns the camera part of the state after dt, and updates the orientation. Optionally, it also returns
+     * the Jacobians of the new camera state: F (12 x 12) with respect to the old one, and W (12 x 6) with respect
+     * to the noise, the velocity changes big_v and big_w. The orientation error must be zero.
      *
      * x     State, of which only the camera part is used
      * R     Orientation, from camera to world
@@ -115,7 +113,7 @@ struct MotionModel
 };
 
 /*
- * How the pixels where the features are found are trusted.
+ * The noise of the pixels where the features are found, and the thresholds that decide which of them the update uses.
  */
 struct MeasurementModel
 {
@@ -139,8 +137,8 @@ struct Observation
 };
 
 /*
- * The EKF of the camera and the map. The camera moves with the motion model, the features are
- * static, and the measurements are the pixels where the features are found.
+ * The EKF of the camera and the map. The camera moves with the motion model, the features are static,
+ * and the measurements are the pixels where the features are found.
  */
 class EKF
 {
@@ -170,8 +168,8 @@ class EKF
     CameraPose pose() const { return CameraPose(cameraPosition(x_), R_); }
 
     /*
-     * Moves the camera dt into the future. The features do not move, so only the camera block of
-     * P and its correlations with the features change.
+     * Moves the camera dt into the future. The features do not move, so only the camera block of P and its correlations
+     * with the features change.
      */
     void predict(double dt);
 
@@ -181,11 +179,11 @@ class EKF
     Observation observe() const;
 
     /*
-     * Updates the state with the matches of the features in view, and returns the features whose
-     * matches were used. Wrong matches are left out with 1-point RANSAC (Civera et al., 2010): every
-     * match proposes the state that the update with it alone would give, the matches close enough
-     * to their prediction from it support it, and the state is updated with the largest support.
-     * Then the matches that the updated state explains are rescued and used in a second update.
+     * Updates the state with the matches of the features in view, and returns the features whose matches were used.
+     * Wrong matches are left out with 1-point RANSAC (Civera et al., 2010). Every match proposes the state
+     * that an update with that match alone would give. The matches close enough to their prediction from that state
+     * support it, and the state is updated with the largest support. Then the matches that the updated state explains
+     * are rescued and used in a second update.
      *
      * o          Observation, from observe
      * matches    Pixel of each feature of o, if it was found
@@ -196,10 +194,9 @@ class EKF
                                     const std::vector<cv::Matx22d>& noises);
 
     /*
-     * Adds a feature first seen at a pixel. Its anchor and ray come from the camera pose and the
-     * pixel, so they inherit the uncertainty of both, and its correlation with the camera. Its
-     * inverse depth is a guess with a large uncertainty, which the following updates refine as the
-     * camera moves.
+     * Adds a feature first seen at a pixel. Its anchor and ray come from the camera pose and the pixel, so they inherit
+     * the uncertainty of both, and its correlation with the camera. Its inverse depth is a guess with a large
+     * uncertainty, which the following updates refine as the camera moves.
      *
      * pixel              Pixel where the feature is seen
      * inverseDepth       Initial inverse depth
@@ -215,9 +212,9 @@ class EKF
     void removeFeatures(const std::vector<std::size_t>& features);
 
     /*
-     * Moves the camera to a pose found without the filter. The features keep their estimates and
-     * their uncertainty, the camera gets a large uncertainty, without correlations with the
-     * features, and no velocity, since nothing is known about the motion that took it there.
+     * Moves the camera to a pose found without the filter. The features keep their estimates and their uncertainty,
+     * the camera gets a large uncertainty, without correlations with the features, and no velocity, since nothing
+     * is known about the motion that took it there.
      *
      * r    Camera position
      * R    Camera orientation, from camera to world
@@ -225,8 +222,8 @@ class EKF
     void resetCamera(const cv::Vec3d& r, const cv::Matx33d& R);
 
     /*
-     * Returns whether the position of a feature is known well enough to treat it as exact, as PnP
-     * does: its distance must be known within 10%.
+     * Returns whether the position of a feature is known well enough to treat it as exact, as PnP does: its distance
+     * must be known within 10%.
      */
     bool isWellLocated(std::size_t i) const;
 
@@ -239,14 +236,14 @@ class EKF
 
   private:
     /*
-     * Returns the features in view from a state, their predicted measurements and Jacobian. The
-     * orientation is R exp(e), with the error e of the state.
+     * Returns the features in view from a state, their predicted measurements and Jacobian. The orientation is R
+     * exp(e), with the error e of the state.
      */
     Observation predictMeasurements(const cv::Mat1d& x) const;
 
     /*
-     * Gives some features of an observation their own measurement noise in S, instead of the pixel
-     * noise of the constructor, which observe uses.
+     * Gives some features of an observation their own measurement noise in S, instead of the pixel noise
+     * of the constructor, which observe uses.
      *
      * o           Observation
      * features    Features

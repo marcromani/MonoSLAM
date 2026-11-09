@@ -39,15 +39,15 @@ constexpr double defaultInverseDepth = 0.02;  // 1 / cm, that is 50 cm away, wit
 constexpr int maxDescriptors = 8;    // Per feature
 constexpr double minNovelty = 30.0;  // Bits, from the closest descriptor the feature already has
 
-constexpr int minAttempts = 10;     // Before a feature can be judged
-constexpr int recentAttempts = 20;  // It is judged on these last ones, at most
-constexpr int minFramesAway = 10;   // Out of view, after which a feature is judged anew
+constexpr int minAttempts = 10;     // Before a feature can be removed
+constexpr int recentAttempts = 20;  // Only the last ones count, at most this many
+constexpr int minFramesAway = 10;   // Out of view, after which the count of a feature starts again
 constexpr double minMatchRatio = 0.5;
 constexpr int establishedUses = 30;  // Uses after which a feature is never removed
 
 /*
- * Returns the inverse of the median distance of the well located features in view, the best guess
- * for the depth of a new one, or defaultInverseDepth if there are none.
+ * Returns the inverse of the median distance of the well located features in view, the best guess for the depth
+ * of a new one, or defaultInverseDepth if there are none.
  *
  * ekf       Filter
  * camera    Camera model
@@ -80,9 +80,9 @@ typicalInverseDepth(const monoslam::EKF& ekf, const monoslam::CameraModel& camer
 }
 
 /*
- * Slides a box a fraction of the size of the frame over it, by half its size, and returns the
- * positions with no feature inside, the farthest from the features first, since that is where a
- * new one is most needed (Davison et al. place the box randomly instead).
+ * Slides a box a fraction of the size of the frame over it, by half its size, and returns the positions with no feature
+ * inside. The positions farthest from the features come first, since that is where a new one is most needed.
+ * Davison et al. place the box randomly instead.
  *
  * inside      Region of the frame where features can be added
  * features    Image positions of the features in view
@@ -138,12 +138,12 @@ findEmptyBoxes(const cv::Rect& inside, const std::vector<cv::Point2f>& features)
 }
 
 /*
- * Returns how well the patch around a pixel can be located along its least textured direction: the
- * root mean square of the intensity gradient along that direction, in gray levels per pixel. This
- * is the smaller eigenvalue of the gradient matrix of the patch, as in Shi and Tomasi (1994), but
- * absolute rather than relative to the best corner around, so that a blank wall scores low however
- * blank the rest of the frame is. The correlation of the patch search cannot tell this: it divides
- * by the contrast of the patch, and on a blank wall what is left is camera noise.
+ * Returns how well the patch around a pixel can be located along its least textured direction: the root mean square
+ * of the intensity gradient along that direction, in gray levels per pixel. This is the smaller eigenvalue
+ * of the gradient matrix of the patch, as in Shi and Tomasi (1994). Here it is absolute rather than relative
+ * to the best corner around, so that a blank wall scores low however blank the rest of the frame is. The correlation
+ * of the patch search cannot tell this: it divides by the contrast of the patch, and on a blank wall what is left
+ * is camera noise.
  *
  * frame    Frame
  * pixel    Center of the patch
@@ -222,9 +222,9 @@ monoslam::Mapper::recordMatches(std::vector<Feature>& features,
             continue;
         }
 
-        // A feature that comes back into view after a while is judged anew: the failures before it
-        // left, near the border or blurred by the turn, and the drift of the pose while it was away,
-        // say nothing about the feature itself
+        // A feature that comes back into view after a while starts counting again. Its failures before it left, near
+        // the border or blurred by the turn, are not the feature's fault, and neither is the drift of the pose while it
+        // was away
         if (feature.framesAway >= minFramesAway) {
             feature.matchingAttempts = 0;
             feature.matchHistory = 0;
@@ -279,9 +279,9 @@ monoslam::Mapper::removeUnreliable(EKF& ekf, std::vector<Feature>& features, Flo
     for (std::size_t i = 0; i < features.size(); ++i) {
         const Feature& feature = features[i];
 
-        // The corners of the pattern hold the scale of the map, and a feature used for long is part
-        // of the map that the camera can come back to and close the loop with. Either may fail for a
-        // while, blurred, occluded or seen from far away, but it is not a bad feature
+        // The corners of the pattern hold the scale of the map, and a feature used for long is part of the map
+        // that the camera can come back to and close the loop with. Either may fail for a while, blurred, occluded
+        // or seen from far away, without being a bad feature
         if (feature.knownSurface || feature.timesUsed >= establishedUses) {
             continue;
         }
@@ -290,8 +290,8 @@ monoslam::Mapper::removeUnreliable(EKF& ekf, std::vector<Feature>& features, Flo
             continue;
         }
 
-        // Only the recent attempts count: a feature that was good for a long time and is now
-        // occluded, or was on something that moved, has to go as quickly as a new one
+        // Only the recent attempts count: a feature that was reliable for a long time and is now occluded, or was
+        // on something that moved, must be removed as quickly as a new one
         const int recent = std::min(feature.matchingAttempts, recentAttempts);
         const std::uint32_t mask = (1u << recent) - 1u;
         const auto matches = static_cast<double>(std::bitset<32>(feature.matchHistory & mask).count());
@@ -341,15 +341,15 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
 
     const CameraPose pose = ekf.pose();
 
-    // New features are probably about as far as the others, but they may be anywhere from a third
-    // of that distance to infinity, within two standard deviations
+    // New features are probably about as far as the others, but they may be anywhere from a third of that distance
+    // to infinity, within two standard deviations
     const double inverseDepth = typicalInverseDepth(ekf, camera);
     const double inverseDepthStd = inverseDepth;
 
     std::size_t added = 0;
 
-    // The boxes overlap, and are searched again for every feature added, so the same corner can be
-    // a candidate many times: whether it is good enough is only computed once
+    // The boxes overlap, and are searched again for every feature added, so the same corner can be a candidate many
+    // times: whether it is good enough is only computed once
     std::map<std::pair<float, float>, bool> isGood;
 
     const auto good = [&](const cv::Point2f& pixel) {
@@ -363,13 +363,13 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
     };
 
     while (inView.size() < minVisible && added < maxNewPerFrame) {
-        // The most salient distinctive corner of the emptiest box that has one, away from the
-        // features near it. A box can be empty because there is nothing to track there
+        // The most salient distinctive corner of the emptiest box that has one, away from the features near it. A box
+        // can be empty because there is nothing to track there
         std::optional<cv::Point2f> found;
 
         for (const cv::Rect& box : findEmptyBoxes(inside, inView)) {
-            // The corners are only looked for in the box, with a margin around it so that those on
-            // its border are scored with their true neighbors
+            // The corners are only looked for in the box, with a margin around it so that those on its border
+            // are scored with their true neighbors
             const cv::Rect region = (box + cv::Size(8, 8) - cv::Point(4, 4)) & cv::Rect(0, 0, frame.cols, frame.rows);
 
             cv::Mat1b mask(region.size(), 0);

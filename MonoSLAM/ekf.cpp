@@ -41,8 +41,8 @@ selectRowsCols(const cv::Mat1d& m, const Indices& rows, const Indices& cols)
 }
 
 /*
- * Returns A H^T, skipping the zeros of H. A pixel depends on the camera and on its own feature only,
- * so most of H is zero, and with many features this saves most of the product.
+ * Returns A H^T, skipping the zeros of H. A pixel depends on the camera and on its own feature only, so most of H
+ * is zero, and with many features this saves most of the product.
  */
 cv::Mat1d
 multiplyTransposed(const cv::Mat1d& A, const cv::Mat1d& H)
@@ -115,8 +115,8 @@ rowsOf(const monoslam::Observation& o, std::size_t feature)
 }
 
 /*
- * Returns the factor a velocity decays by in a time step, and the time the velocity it had at the
- * start of the step would take to cover the same distance, tau (1 - exp(-dt / tau)).
+ * Returns the factor a velocity decays by in a time step, and the duration h = tau (1 - exp(-dt / tau)). Moving
+ * at its initial velocity for h, the camera would cover the same distance as with the decaying velocity over the step.
  */
 void
 decay(double dt, double tau, double& factor, double& duration)
@@ -126,8 +126,8 @@ decay(double dt, double tau, double& factor, double& duration)
 }
 
 /*
- * Returns the right Jacobian of SO(3), J_r(v), with exp(v + d) = exp(v) exp(J_r(v) d) to first
- * order: J_r(v) = I - (1 - cos|v|) / |v|^2 [v]x + (|v| - sin|v|) / |v|^3 [v]x^2.
+ * Returns the right Jacobian of SO(3), J_r(v), with exp(v + d) = exp(v) exp(J_r(v) d) to first order: J_r(v) = I - (1 -
+ * cos|v|) / |v|^2 [v]x + (|v| - sin|v|) / |v|^3 [v]x^2.
  */
 cv::Matx33d
 rightJacobian(const cv::Vec3d& v)
@@ -158,8 +158,8 @@ monoslam::MotionModel::predict(const cv::Mat1d& x,
     decay(dt, linearDecayTime, linearFactor, linearDuration);
     decay(dt, angularDecayTime, angularFactor, angularDuration);
 
-    // r_new = r_old + v_old h_v, R_new = R_old exp(w_old h_w), with h the durations of the decay.
-    // w is in camera coordinates, so its rotation applies on the right
+    // r_new = r_old + v_old h_v, R_new = R_old exp(w_old h_w), with h the durations of the decay. w is in camera
+    // coordinates, so its rotation applies on the right
     const cv::Vec3d step = cv::Vec3d(x(9), x(10), x(11)) * angularDuration;
     const cv::Matx33d stepRotation = rotation(step);
 
@@ -175,8 +175,8 @@ monoslam::MotionModel::predict(const cv::Mat1d& x,
         return xNew;
     }
 
-    // The error after the step is e_new with R_new exp(e_new) = R_old exp(e) exp((w_old + dw) h),
-    // which to first order is e_new = exp(-w_old h) e + J_r(w_old h) h dw
+    // The error after the step is e_new with R_new exp(e_new) = R_old exp(e) exp((w_old + dw) h), which to first order
+    // is e_new = exp(-w_old h) e + J_r(w_old h) h dw
     const cv::Matx33d Jr = rightJacobian(step);
 
     if (F != nullptr) {
@@ -200,9 +200,9 @@ monoslam::MotionModel::predict(const cv::Mat1d& x,
         *W = W->zeros();
 
         for (int i = 0; i < 3; ++i) {
-            // The acceleration is constant during the step, so the position only gets half of the
-            // velocity change on average: r_new = r_old + (v_old + big_v / 2) dt, and likewise the
-            // rotation of the step is w_old h + big_w dt / 2
+            // The acceleration is constant during the step, so on average the position only gets half of the velocity
+            // change: r_new = r_old + (v_old + big_v / 2) dt. Likewise, the rotation of the step is w_old h + big_w dt
+            // / 2
             (*W)(i, i) = 0.5 * dt;
 
             for (int j = 0; j < 3; ++j) {
@@ -256,8 +256,8 @@ monoslam::EKF::predict(double dt)
     cv::Matx<double, c, 6> W;
     x_ = motion_.predict(x_, R_, dt, &F, &W);
 
-    // Only the camera moves: its block of P becomes F Pcc F^T + W Q W^T, its correlations with the
-    // features F Pcf, and the block of the features does not change
+    // Only the camera moves: its block of P becomes F Pcc F^T + W Q W^T, its correlations with the features F Pcf,
+    // and the block of the features does not change
     const int n = x_.rows;
 
     cv::Matx<double, c, c> Pcc;
@@ -372,8 +372,8 @@ monoslam::EKF::correct(const Observation& o, const Indices& rows, const cv::Mat1
     x_ += Kt.t() * (z - h);
     cv::gemm(PHt, Kt, -1.0, P_, 1.0, P_);  // P = P - P H^T K^T, in place since P is large
 
-    // R absorbs the orientation error, which goes back to zero, and the uncertainty of the error
-    // moves to the new reference: an error d about R exp(e) is one of G d, G = I - [e / 2]x, about R
+    // R absorbs the orientation error, which is reset to zero. The covariance of the error must then be expressed about
+    // the new reference: an error d about R exp(e) is an error G d about R, with G = I - [e / 2]x
     const cv::Vec3d e = orientationError(x_);
     const cv::Mat1d G(cv::Matx33d::eye() - 0.5 * skew(e));
 
@@ -557,8 +557,8 @@ monoslam::EKF::addFeature(const cv::Point2d& pixel, double inverseDepth, double 
     const double pixelVariance = measurement_.pixelStd * measurement_.pixelStd;
     const CameraPose pose = this->pose();
 
-    // J is the Jacobian with respect to the camera position and orientation error, the pixel and
-    // the inverse depth, in this order
+    // J is the Jacobian with respect to the camera position and orientation error, the pixel and the inverse depth,
+    // in this order
     cv::Matx<double, featureSize, 9> J;
     const inverse_depth::Parameters y = inverse_depth::fromPixel(pose, camera_, pixel, inverseDepth, J);
 
@@ -627,7 +627,7 @@ monoslam::EKF::resetCamera(const cv::Vec3d& r, const cv::Matx33d& R)
     x_(cv::Rect(0, 3, 1, 9)).setTo(0.0);  // Orientation error and velocities
     R_ = R;
 
-    // The new pose has nothing to do with the old one, and neither have their correlations
+    // The new pose is unrelated to the old one, so its correlations with the features are dropped
     P_.rowRange(0, cameraStateSize).setTo(0.0);
     P_.colRange(0, cameraStateSize).setTo(0.0);
 

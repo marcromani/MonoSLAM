@@ -1,11 +1,10 @@
 /*
- * record_sequence: records a sequence for monoslam to replay with --images. The frames are saved
- * as frame_000000.png, ... in grayscale, at the size of the calibration, and timestamps.csv has the
- * time at which the camera captured each of them, which is what the filter needs. The calibration is
- * copied next to them, as camera.json.
+ * record_sequence: records a sequence for monoslam to replay with --images. The frames are saved as frame_000000.png,
+ * ... in grayscale, at the size of the calibration, and timestamps.csv has the time at which the camera captured
+ * each of them, which is what the filter needs. The calibration is copied next to them, as camera.json.
  *
- * With --frames or --seconds, recording starts right away and stops at the limit. Otherwise it
- * starts when Space is pressed in the preview window. Escape stops it in both cases.
+ * With --frames or --seconds, recording starts right away and stops at the limit. Otherwise it starts when Space
+ * is pressed in the preview window. Escape stops it in both cases.
  */
 
 #include <charconv>

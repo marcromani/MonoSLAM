@@ -24,8 +24,7 @@ constexpr double angularVelStd = 1.5;         // rad/s
 constexpr double featureVariance = 0.05;      // cm^2
 
 /*
- * Returns the corners of the pattern that become features: the four outermost ones, and the one
- * closest to the center.
+ * Returns the corners of the pattern that become features: the four outermost ones, and the one closest to the center.
  *
  * patternSize    Number of inner corners of the pattern, per row and per column
  */
@@ -161,8 +160,8 @@ monoslam::initializeFromPattern(const cv::Mat1b& frame,
 
         features.push_back(feature);
 
-        // The corner, seen from the initial camera position, which stays fixed as its anchor. The
-        // uncertainty of its position is carried by the angles and the inverse depth
+        // The corner, seen from the initial camera position, which stays fixed as its anchor. The uncertainty
+        // of its position is carried by the angles and the inverse depth
         const cv::Vec3d corner(point.x, point.y, point.z);
         const inverse_depth::Parameters y = inverse_depth::fromPoint(t, corner);
         const cv::Matx33d J = inverse_depth::fromPointJacobian(t, corner);

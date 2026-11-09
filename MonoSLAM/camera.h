@@ -9,8 +9,7 @@
 namespace monoslam {
 
 /*
- * Returns the rotation matrix of a rotation vector, the exponential map of SO(3): the rotation by
- * |v| radians about v.
+ * Returns the rotation matrix of a rotation vector, the exponential map of SO(3): the rotation by |v| radians about v.
  */
 cv::Matx33d
 rotation(const cv::Vec3d& v);
@@ -22,8 +21,8 @@ cv::Matx33d
 skew(const cv::Vec3d& v);
 
 /*
- * The pose of a camera, with its rotation both ways, since both are needed many times per frame.
- * A point with camera coordinates p_c has world coordinates R p_c + r.
+ * The pose of a camera, with its rotation both ways, since both are needed many times per frame. A point with camera
+ * coordinates p_c has world coordinates R p_c + r.
  */
 class CameraPose
 {
@@ -55,8 +54,8 @@ class CameraModel
     CameraModel(const cv::Matx33d& K, const cv::Vec<double, 5>& distCoeffs, const cv::Size& frameSize);
 
     /*
-     * Reads a camera model from a calibration file, as written by the calibration program.
-     * Returns nothing if the file cannot be read or misses a value.
+     * Reads a camera model from a calibration file, as written by the calibration program. Returns nothing if the file
+     * cannot be read or misses a value.
      *
      * filename    Calibration file
      */
@@ -67,16 +66,15 @@ class CameraModel
     const cv::Size& frameSize() const { return frameSize_; }
 
     /*
-     * Returns the pixel of a point in world coordinates, seen from a pose, or nothing if it is
-     * behind the camera or out of the frame.
+     * Returns the pixel of a point in world coordinates, seen from a pose, or nothing if it is behind the camera or out
+     * of the frame.
      */
     std::optional<cv::Point2d> project(const CameraPose& pose, const cv::Vec3d& p) const;
 
     /*
-     * Projects a point given in camera coordinates, and computes the Jacobian of its pixel with
-     * respect to it, lens distortion included. The point can be scaled by any positive factor,
-     * the pixel only depends on its direction. Returns false if the point is behind the camera or
-     * its pixel is out of the frame.
+     * Projects a point given in camera coordinates, and computes the Jacobian of its pixel with respect to it, lens
+     * distortion included. The point can be scaled by any positive factor, the pixel only depends on its direction.
+     * Returns false if the point is behind the camera or its pixel is out of the frame.
      *
      * p        Point, in camera coordinates
      * pixel    Its pixel
@@ -100,8 +98,8 @@ class CameraModel
     cv::Matx22d distortionJacobian(double x, double y) const;
 
     /*
-     * Returns the direction of the 3D ray associated to a pixel, in camera coordinates and with unit
-     * depth, that is, (x, y, 1) with x and y its normalized camera coordinates.
+     * Returns the direction of the 3D ray associated to a pixel, in camera coordinates and with unit depth, that is,
+     * (x, y, 1) with x and y its normalized camera coordinates.
      */
     cv::Vec3d unproject(const cv::Point2d& pixel) const;
 

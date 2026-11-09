@@ -82,8 +82,8 @@ monoslam::inverse_depth::fromPixel(const CameraPose& pose,
                                    double inverseDepth,
                                    cv::Matx<double, size, 9>& J)
 {
-    // Ray of the pixel in camera coordinates, and its derivative with respect to the pixel, which
-    // is the inverse of the derivative of the projection
+    // Ray of the pixel in camera coordinates, and its derivative with respect to the pixel, which is the inverse
+    // of the derivative of the projection
     const cv::Vec3d rayCamera = camera.unproject(pixel);
     const cv::Matx22d dNormalized = camera.distortionJacobian(rayCamera[0], rayCamera[1]).inv();
 
@@ -100,8 +100,8 @@ monoslam::inverse_depth::fromPixel(const CameraPose& pose,
         J(i, i) = 1.0;
     }
 
-    // The angles depend on the orientation, through the ray in world coordinates: rotating the
-    // camera by e turns the ray into R exp(e) ray_c ~ R (ray_c + e x ray_c) = ray - R [ray_c]x e
+    // The angles depend on the orientation, through the ray in world coordinates: rotating the camera by e turns
+    // the ray into R exp(e) ray_c ~ R (ray_c + e x ray_c) = ray - R [ray_c]x e
     const cv::Matx23d dAnglesOrientation = Jangles * (-pose.R() * skew(rayCamera));
 
     for (int i = 0; i < 2; ++i) {

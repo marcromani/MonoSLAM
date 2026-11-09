@@ -67,7 +67,7 @@ monoslam::draw(const Snapshot& snapshot)
         const cv::RotatedRect e(
           scaled(d.ellipse.center), d.ellipse.size * static_cast<float>(snapshot.scale), d.ellipse.angle);
 
-        // Ellipses much larger than the image say nothing, and are expensive to draw
+        // Ellipses much larger than the image carry no information, and are expensive to draw
         if (std::isfinite(e.size.width) && e.size.width < 20.0F * static_cast<float>(image.cols)) {
             ellipses.push_back(e);
         }

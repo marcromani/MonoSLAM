@@ -14,8 +14,8 @@
 namespace monoslam {
 
 /*
- * A match the filter used, as drawn: the predicted measurement with the 99% ellipse of its
- * innovation covariance, the seed, and the match.
+ * A match the filter used, as drawn: the predicted measurement with the 99% ellipse of its innovation covariance,
+ * the seed, and the match.
  */
 struct DrawnMatch
 {
@@ -50,16 +50,16 @@ usedMatches(const Observation& o,
             const std::vector<std::size_t>& used);
 
 /*
- * Draws a snapshot: the predicted measurement (cyan) with its ellipse, the seed (magenta), the
- * match (amber), and the innovation from the prediction to the match (white).
+ * Draws a snapshot: the predicted measurement (cyan) with its ellipse, the seed (magenta), the match (amber),
+ * and the innovation from the prediction to the match (white).
  */
 cv::Mat3b
 draw(const Snapshot& snapshot);
 
 /*
- * Hands the frames from the tracking thread to the one that shows them, so that drawing and
- * showing never delay tracking. It holds only the last frame: one the display had no time for is
- * replaced by the next, never waited for.
+ * Hands the frames from the tracking thread to the one that shows them, so that drawing and showing never delay
+ * tracking. It holds only the last frame: a frame that the display had no time to show is replaced by the next one,
+ * and tracking never waits for it.
  */
 class Display
 {

@@ -93,9 +93,8 @@ toMat(const monoslam::inverse_depth::Parameters& y)
 }
 
 /*
- * Returns the camera state predicted from one with an orientation error e, the orientation being
- * orientation exp(e), with its new error measured from a nominal predicted orientation. This is
- * what F and W are the derivatives of.
+ * Returns the camera state predicted from one with an orientation error e, the orientation being orientation exp(e),
+ * with its new error measured from a nominal predicted orientation. This is what F and W are the derivatives of.
  */
 cv::Mat1d
 predictWithError(const cv::Mat1d& v, const cv::Matx33d& nominal, double dt)
@@ -152,8 +151,8 @@ testProcessJacobian()
       cv::Mat1d(F), x, [&](const cv::Mat1d& v) { return predictWithError(v, nominal, dt); }, 1e-6, "F");
 }
 
-// W must move the orientation like an angular acceleration that is constant during the step,
-// which adds 0.5 * big_w * dt to the rotation, w_old * h, where h is the duration of the decay
+// W must move the orientation like an angular acceleration that is constant during the step. Such an acceleration adds
+// 0.5 * big_w * dt to the rotation w_old * h, where h is the duration of the decay
 bool
 testProcessNoiseJacobian()
 {
@@ -205,8 +204,8 @@ testUnproject()
     return cv::norm(ray - cv::Vec3d(0.3, -0.2, 1.0)) < 1e-4;
 }
 
-// Two regions moving apart, as two surfaces at different depths do, cannot be explained by a
-// single plane: each seed has to follow the motion of its own surroundings
+// Two regions moving apart, as two surfaces at different depths do, cannot be explained by a single plane: each seed
+// has to follow the motion of its own surroundings
 bool
 testFlowFollowsDepthLayers()
 {
@@ -278,8 +277,8 @@ testInverseDepthPoint()
       "fromPoint");
 }
 
-// The Jacobian of fromPixel must match the numerical derivative with respect to the camera
-// position and orientation error, the pixel and the inverse depth
+// The Jacobian of fromPixel must match the numerical derivative with respect to the camera position and orientation
+// error, the pixel and the inverse depth
 bool
 testInitializationJacobian()
 {
@@ -308,9 +307,8 @@ testInitializationJacobian()
 }
 
 /*
- * Runs the filter on a synthetic sequence: the camera moves sideways at a known speed, looking at
- * a single point, which is added from its first pixel with a wrong inverse depth. Returns the final
- * state and covariance.
+ * Runs the filter on a synthetic sequence: the camera moves sideways at a known speed, looking at a single point,
+ * which is added from its first pixel with a wrong inverse depth. Returns the final state and covariance.
  *
  * point           True position of the point
  * inverseDepth    Initial inverse depth of the feature
