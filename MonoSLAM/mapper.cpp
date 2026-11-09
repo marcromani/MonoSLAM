@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr std::size_t minVisible = 12;     // Features are added below this number in view
+constexpr std::size_t minUsedInView = 12;  // Features are added while fewer features in view were used than this
 constexpr std::size_t maxNewPerFrame = 2;  // And at most this many per frame
 
 constexpr int boxDivisions = 4;  // The box where a feature is added is this many times smaller than the frame
@@ -323,19 +323,26 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
 {
     const cv::Rect inside(border, border, frame.cols - 2 * border, frame.rows - 2 * border);
 
-    // The features in view, where new ones must not be
+    // The features in view, where new ones must not be, and how many of them the update of this frame used. A feature
+    // predicted in view but not found, occluded or blurred by a turn, does not count: otherwise the features that fail
+    // would keep out the new ones the camera needs
     std::vector<cv::Point2f> inView;
+    std::size_t numUsed = 0;
 
     const std::vector<cv::Point2f> projections =
       ekf.project(std::vector<cv::Point2f>(features.size(), cv::Point2f(-1.0f, -1.0f)));
 
-    for (const cv::Point2f& projection : projections) {
-        if (camera.inView(projection)) {
-            inView.push_back(projection);
+    for (std::size_t i = 0; i < features.size(); ++i) {
+        if (camera.inView(projections[i])) {
+            inView.push_back(projections[i]);
+
+            if (features[i].framesAway == 0 && (features[i].matchHistory & 1u) != 0) {
+                ++numUsed;
+            }
         }
     }
 
-    if (inView.size() >= minVisible) {
+    if (numUsed >= minUsedInView) {
         return;
     }
 
@@ -362,7 +369,7 @@ monoslam::Mapper::addFeatures(const cv::Mat1b& frame,
         return known->second;
     };
 
-    while (inView.size() < minVisible && added < maxNewPerFrame) {
+    while (numUsed + added < minUsedInView && added < maxNewPerFrame) {
         // The most salient distinctive corner of the emptiest box that has one, away from the features near it. A box
         // can be empty because there is nothing to track there
         std::optional<cv::Point2f> found;

@@ -532,7 +532,8 @@ directions they leave free. And the curvature it would correct is small for the 
 \texttt{Mapper} maintains the map at the end of every frame that is not weak.
 
 \paragraph{Adding.}
-While fewer than $12$ features are in view, up to two new ones are added per frame:
+While the update of the frame used fewer than $12$ of the features in view, up to two new ones are
+added per frame. A feature predicted in view but not found does not count:
 \begin{enumerate}
   \item \emph{Where.} A box a quarter of the frame in each dimension slides over it in steps of half
         its size, staying $10$~px from the border. The positions with no feature in view inside are
@@ -560,8 +561,21 @@ While fewer than $12$ features are in view, up to two new ones are added per fra
         features in view, or $0.02$~cm$^{-1}$ ($50$~cm) if there are none. Its uncertainty is
         $\sigma_\rho = \rho_0$, so the $2\sigma$ interval covers everything from a third of that
         distance to infinity.
-  \item The feature gets its patch, a descriptor (section~\ref{sec:global}) and a seed.
+    \item The feature gets its patch, a descriptor (section~\ref{sec:global}) and a seed.
 \end{enumerate}
+
+\paragraph{Counting the features used.}
+Counting all the features predicted in view lets the ones that fail keep the new ones out. When the
+camera turns, the features about to leave the frame, blurred or seen from a new angle, are still
+predicted in view: on sequences 7 and 8, in the frames where the update used fewer than $8$
+features, a median of $13$ were predicted in view and only $7$ used. Over $15$ runs, counting the
+features used recovers $26$ kidnaps of $30$ instead of $22$, closes the loop of sequence~6 at frame
+$836$ in every run instead of $11$, and halves the error at the return of sequence~7, from $3.3$ to
+$1.4$~cm, where it falls from $7.4$ to $3.6$ times the standard deviation the filter reports. It
+costs a larger map, $15$ to $40\%$ more features at the end of a sequence, about $2$~ms per frame,
+and one run of sequence~2 that is lost. Spreading the features further apart instead, at least
+$30$, $45$ or $60$~px from those in view rather than $15$, did not help: with $45$ and $60$~px only
+$14$ kidnaps of $30$ were recovered.
 
 \paragraph{Removing.}
 In every frame, each feature that is searched counts an attempt, and a match if the update used
@@ -676,13 +690,13 @@ five sets of initial chessboard corners, each with three negligible changes of t
 \begin{tabular}{ll}
   sequence & result over $15$ runs \\
   \hline
-  1 & median $0$ frames over $5$~px, at most $3$ \\
-  2 & median $6$ frames over $5$~px, at most $8$ \\
-  3 & median $2$ frames over $5$~px, never lost \\
-  5, back on the board at frames 336, 514, 566 & median errors $1.5$, $1.7$, $1.9$~cm \\
-  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $9$ and $13$ runs \\
-  6, board visits at frames 359, 411 & median errors $3.7$, $1.4$~cm \\
-  6, board visits at frames 771, 836 & median errors $4.9$, $1.1$~cm \\
+    1 & median $0$ frames over $5$~px, at most $3$ \\
+  2 & median $5$ frames over $5$~px, lost in $1$ run \\
+  3 & median $3$ frames over $5$~px, at most $53$ \\
+  5, back on the board at frames 336, 514, 566 & median errors $1.6$, $1.5$, $2.7$~cm \\
+  5, kidnaps: frames 141--249 and 421--479 cut & recovered in $12$ and $14$ runs \\
+  6, board visits at frames 359, 411 & median errors $4.4$, $1.8$~cm \\
+  6, board visits at frames 771, 836 & median errors $3.0$, $1.7$~cm \\
   6, board visits at frames 1413, 1549 & lost in every run \\
 \end{tabular}
 \end{center}
@@ -692,14 +706,17 @@ initialization and track natural features, such as a table, a bowl, a cable, cha
 with $5$ to $20$ features per frame. Sequence~5 comes back to the board twice. Sequence~6 is a
 minute long and comes back three times. The map holds the first time. The second excursion drifts,
 often by tens of cm by the time the board comes back into view at frame 771. The features kept
-from the first visit then close the loop: by frame 836, $11$ runs out of $15$ are within $10$~cm. Before
+from the first visit then close the loop: by frame 836, every run is within $10$~cm. Before
 the third visit the camera sweeps a blurred, almost textureless sofa, and tracking is lost in every
-run. The global match does not find the map again before the end. The losses of sequence~3 all
-come from the same set of initial corners, where the camera swings fast and the board is blurred.
+run. The global match does not find the map again before the end. In the run lost on sequence~2, a
+chessboard feature locks onto the wrong corner at frame $406$, and the five features then project
+about $110$~px away from the board.
 
 \paragraph{Speed.}
-On sequence~6, while tracking, a frame takes $6$~ms, the median of the averages over every second,
-against $14$~ms with the same code on $640 \times 480$ frames. At that size the filter took $1$ to
+On sequence~6, while tracking, a frame took $6$~ms, the median of the averages over every second,
+against $14$~ms with the same code on $640 \times 480$ frames. Since new features are added while
+fewer than $12$ are used (section~\ref{sec:map}), the map is larger, and a frame takes $9$~ms on
+this machine, against $7$~ms measured again without that change. At that size the filter took $1$ to
 $3$~ms, and most of the time went to the images. The optical flow took $6$ to $10$~ms, of which
 $4$~ms went to the Lucas--Kanade tracking of the $150$ corners forwards and backwards, and up to
 $3$~ms to the affine motion fitted around each seed. The search of the patches took $2$ to $6$~ms.
@@ -737,7 +754,7 @@ sequences 2 and 3 in every run.
   \item At a depth discontinuity, the seed of a feature follows the surface with more corners.
         Keeping both predictions, the flow of the feature itself and the motion of its neighbors,
         and letting the update choose, would fix it.
-  \item $8$ of the $30$ kidnaps are not recovered in time, mostly the first one, where the camera
+  \item $4$ of the $30$ kidnaps are not recovered in time, mostly the first one, where the camera
         sees, after the cut, a part of the scene it had not seen before. Which kidnaps are recovered
         changes a lot from run to run: the floating point rounding of the faster correlation alone
         moved the first kidnap from $13$ recoveries to $9$, and the second from $10$ to $11$, out
@@ -830,7 +847,9 @@ board is detected less reliably near the border of the frame, where its corners 
 RMS of $2$ to $4$~px instead of less than $1$, so only frames fitted within $1.5$~px are scored. In
 the runs that close the loop, the position error is $1$ to $4$~cm, about $2$ to $3$ times the
 standard deviation the filter reports. On sequence~7, two of the five runs, which differ only in
-their initial corners, end $80$ to $120$~cm off.
+their initial corners, end $80$ to $120$~cm off. These runs, and the analysis below, predate the
+count of the features used (section~\ref{sec:map}), which halves the error at the return of
+sequence~7.
 
 These two runs go wrong between frames $860$ and $1000$, when the board leaves the view and the
 camera pans from the table to a bookshelf. By then all the features in view are new, and the five

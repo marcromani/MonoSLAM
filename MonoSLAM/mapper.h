@@ -65,12 +65,13 @@ class Mapper
     void removeUnreliable(EKF& ekf, std::vector<Feature>& features, FlowTracker& tracker) const;
 
     /*
-     * Adds new features while fewer than a dozen are in view, where the frame has none, to keep their density about
-     * constant over it, as Davison et al. do. A box a quarter of the size of the frame is placed where it has
-     * no feature inside. The most salient corner in it is added, away from the border of the frame and
-     * from the features near the box. Corners must also be textured enough to be located, which a blank wall is not.
-     * They must also be distinctive: a corner that looks like something within its search region would be confused
-     * with it, as happens on any repeated texture.
+     * Adds new features where the frame has none, while fewer than a dozen features in view were used in this frame,
+     * to keep their density about constant over it, as Davison et al. do. Features in view that were not found do
+     * not count, so that they cannot keep new ones out. Must be called after recordMatches. A box a quarter of the size
+     * of the frame is placed where it has no feature inside. The most salient corner in it is added, away
+     * from the border of the frame and from the features near the box. Corners must also be textured enough
+     * to be located, which a blank wall is not. They must also be distinctive: a corner that looks like something
+     * within its search region would be confused with it, as happens on any repeated texture.
      *
      * frame       Current frame
      * camera      Camera model
